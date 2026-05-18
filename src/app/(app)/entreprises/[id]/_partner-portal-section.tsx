@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   Check,
@@ -75,10 +75,15 @@ export function PartnerPortalSection({
   const [pending, startTransition] = useTransition();
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const origin =
-    typeof window !== "undefined" ? window.location.origin : "";
-  const portalUrl = token ? `${origin}/partenaire/${token}` : null;
+  // Origin calcule cote client uniquement, apres mount.
+  // Au premier rendu (SSR ET premier paint client), origin = "" pour
+  // que le HTML serveur et client soient identiques (sinon erreur
+  // d'hydration React). Puis useEffect met a jour avec la vraie valeur.
+  const [origin, setOrigin] = useState("");
+  useEffect(() => {
+    setOrigin(window.location.origin);
+  }, []);
+  const portalUrl = token && origin ? `${origin}/partenaire/${token}` : null;
 
   function activate() {
     setError(null);
