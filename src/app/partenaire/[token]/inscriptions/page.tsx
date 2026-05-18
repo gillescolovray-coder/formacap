@@ -95,10 +95,13 @@ export default async function PartnerInscriptionsPage({
   const rows = ((requests ?? []) as unknown as Row[]).map((r) => {
     const learner = Array.isArray(r.learner) ? r.learner[0] : r.learner;
     const session = Array.isArray(r.session) ? r.session[0] : r.session;
-    const formation =
-      session && Array.isArray(session.formation)
-        ? session.formation[0]
-        : (session?.formation ?? null);
+    // TypeScript ne suit pas bien le narrowing imbriqué, on type explicitement
+    let formation: { id: string; title: string } | null = null;
+    if (session?.formation) {
+      formation = Array.isArray(session.formation)
+        ? (session.formation[0] ?? null)
+        : session.formation;
+    }
     return {
       id: r.id,
       received_at: r.received_at,
