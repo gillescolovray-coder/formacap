@@ -68,16 +68,22 @@ export async function getReferentEmailsForSessionCompany(
   companyId: string,
 ): Promise<string[]> {
   // 1. Récupère toutes les inscription_requests ciblant cette session
-  //    pour cette société.
+  //    pour cette société. On embarque aussi `contact_referent_email`
+  //    saisi directement lors de l'inscription (migration 0093) — source
+  //    alternative aux référents sélectionnés via le module dédié.
   const { data: requests } = await supabase
     .from("inscription_requests")
-    .select("id")
+    .select("id, contact_referent_email")
     .eq("target_session_id", sessionId)
     .eq("company_id", companyId);
-  const ids = ((requests ?? []) as Array<{ id: string }>).map((r) => r.id);
+  const reqRows = (requests ?? []) as Array<{
+    id: string;
+    contact_referent_email: string | null;
+  }>;
+  const ids = reqRows.map((r) => r.id);
   if (ids.length === 0) return [];
 
-  // 2. Récupère tous les emails de référents pour ces inscriptions.
+  // 2. Référents explicites (table inscription_referent_contacts)
   const { data } = await supabase
     .from("inscription_referent_contacts")
     .select("contact:company_contacts(email)")
@@ -85,12 +91,20 @@ export async function getReferentEmailsForSessionCompany(
   const rows = (data ?? []) as unknown as Array<{
     contact: { email: string | null } | null;
   }>;
-  const emails = rows
+  const explicitEmails = rows
     .map((r) => r.contact?.email)
     .filter((e): e is string => Boolean(e && e.trim().length > 0));
-  // Dédup
-  return Array.from(new Set(emails.map((e) => e.toLowerCase()))).map(
-    (lc) => emails.find((e) => e.toLowerCase() === lc) ?? lc,
+
+  // 3. Emails de contact référent saisis directement à l'inscription
+  //    (formulaire pré-inscription publique ou portail prescripteur).
+  const inlineEmails = reqRows
+    .map((r) => r.contact_referent_email)
+    .filter((e): e is string => Boolean(e && e.trim().length > 0));
+
+  // 4. Union dédupliquée (case-insensitive)
+  const all = [...explicitEmails, ...inlineEmails];
+  return Array.from(new Set(all.map((e) => e.toLowerCase()))).map(
+    (lc) => all.find((e) => e.toLowerCase() === lc) ?? lc,
   );
 }
 

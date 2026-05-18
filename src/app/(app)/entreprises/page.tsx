@@ -95,10 +95,13 @@ export default async function CompaniesListPage({
       .from("companies")
       .select("id", { count: "exact", head: true })
       .eq("type", "client"),
+    // La carte « OF / Prescripteurs » regroupe les deux types — un OF
+    // partenaire et un prescripteur jouent un rôle similaire (apporteur
+    // d'affaires) côté UX, on les compte ensemble.
     supabase
       .from("companies")
       .select("id", { count: "exact", head: true })
-      .eq("type", "prescripteur"),
+      .in("type", ["prescripteur", "of"]),
     supabase
       .from("companies")
       .select("id", { count: "exact", head: true })
@@ -162,7 +165,13 @@ export default async function CompaniesListPage({
       query = query.or(ors.join(","));
     }
   }
-  if (typeFilter) query = query.eq("type", typeFilter);
+  if (typeFilter === "of_prescripteur") {
+    // Filtre composite : la carte « OF / Prescripteurs » regroupe les
+    // deux types côté UX.
+    query = query.in("type", ["prescripteur", "of"]);
+  } else if (typeFilter) {
+    query = query.eq("type", typeFilter);
+  }
   if (activeFilter === "yes") query = query.eq("is_active", true);
   if (activeFilter === "no") query = query.eq("is_active", false);
   if (hierarchyFilter === "parents") {
@@ -446,8 +455,11 @@ export default async function CompaniesListPage({
         "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-900",
       icon: Share2,
       iconClass: "text-blue-600 dark:text-blue-400",
-      href: "/entreprises?type=prescripteur",
-      active: typeFilter === "prescripteur",
+      href: "/entreprises?type=of_prescripteur",
+      active:
+        typeFilter === "of_prescripteur" ||
+        typeFilter === "prescripteur" ||
+        typeFilter === "of",
     },
     {
       label: "Financeurs",

@@ -1,7 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { BookOpen, Handshake, LayoutDashboard, ListChecks } from "lucide-react";
+import {
+  BookOpen,
+  ClipboardList,
+  Handshake,
+  LayoutDashboard,
+  ListChecks,
+} from "lucide-react";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { resolvePartnerContext } from "./_resolve";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +30,26 @@ export default async function PartnerLayout({
   if (!ctx) notFound();
 
   const base = `/partenaire/${token}`;
+
+  // Compteur des pré-inscriptions en attente — affiché en badge
+  // sur l'onglet « À valider » pour attirer l'œil.
+  const supabase = createAdminClient();
+  const { data: stage } = await supabase
+    .from("inscription_stages")
+    .select("id")
+    .eq("organization_id", ctx.company.organization_id)
+    .eq("key", "partner_preinscription")
+    .maybeSingle<{ id: string }>();
+  let preinscriptionsCount = 0;
+  if (stage?.id) {
+    const { count } = await supabase
+      .from("inscription_requests")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", ctx.company.organization_id)
+      .eq("referrer_company_id", ctx.company.id)
+      .eq("stage_id", stage.id);
+    preinscriptionsCount = count ?? 0;
+  }
 
   return (
     <div className="min-h-screen bg-zinc-50">
@@ -46,14 +73,25 @@ export default async function PartnerLayout({
               </p>
             </div>
           </div>
-          <div className="text-right">
-            <p className="text-[10px] uppercase tracking-wider text-zinc-500">
-              Connecté en tant que
-            </p>
-            <p className="text-sm font-bold text-zinc-900 inline-flex items-center gap-1.5">
-              <Handshake className="h-4 w-4 text-cyan-600" />
-              {ctx.company.name}
-            </p>
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <p className="text-[10px] uppercase tracking-wider text-zinc-500">
+                Connecté en tant que
+              </p>
+              <p className="text-sm font-bold text-zinc-900 inline-flex items-center gap-1.5">
+                <Handshake className="h-4 w-4 text-cyan-600" />
+                {ctx.company.name}
+              </p>
+            </div>
+            {/* Logo du partenaire à droite (à côté de son nom). */}
+            {ctx.company.logo_url && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={ctx.company.logo_url}
+                alt={ctx.company.name}
+                className="h-10 w-auto max-w-[120px] object-contain"
+              />
+            )}
           </div>
         </div>
         <nav className="bg-zinc-50 border-t border-zinc-200">
@@ -62,7 +100,15 @@ export default async function PartnerLayout({
             <NavLink
               href={`${base}/catalogue`}
               icon={BookOpen}
-              label="Catalogue distanciel"
+              label={
+                ctx.company.type === "of" ? "Catalogue distanciel" : "Catalogue"
+              }
+            />
+            <NavLink
+              href={`${base}/preinscriptions`}
+              icon={ClipboardList}
+              label="À valider"
+              badge={preinscriptionsCount > 0 ? preinscriptionsCount : undefined}
             />
             <NavLink
               href={`${base}/inscriptions`}
@@ -87,10 +133,12 @@ function NavLink({
   href,
   icon: Icon,
   label,
+  badge,
 }: {
   href: string;
   icon: React.ComponentType<{ className?: string }>;
   label: string;
+  badge?: number;
 }) {
   return (
     <Link
@@ -99,6 +147,11 @@ function NavLink({
     >
       <Icon className="h-3.5 w-3.5" />
       {label}
+      {badge !== undefined && badge > 0 && (
+        <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-amber-500 text-white text-[10px] font-black">
+          {badge}
+        </span>
+      )}
     </Link>
   );
 }

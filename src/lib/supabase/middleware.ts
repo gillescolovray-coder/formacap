@@ -13,6 +13,7 @@ const PUBLIC_PATHS = [
   // Le token dans l'URL fait office d'authentification (verifie cote serveur
   // a chaque page via createAdminClient + resolve token -> entity).
   "/partenaire/", // Portail OF / prescripteur
+  "/preinscription/", // Page publique de pré-inscription (lien diffusé par un partenaire)
   "/mon-parcours/", // Portail apprenant (quiz, emargement, certificat...)
   "/formateur/", // Portail formateur (planning, emargement, positionnement)
   "/emarger/", // Signature emargement apprenant (lien email)

@@ -31,6 +31,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+# detached dev server logs (Start-Process redirect)
+dev-server.log
+dev-server.err.log
 
 # env files (can opt-in for committing if needed)
 .env*

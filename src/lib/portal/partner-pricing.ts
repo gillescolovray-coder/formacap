@@ -64,10 +64,11 @@ export async function upsertPartnerPrice(
  * selon les règles métier du portail :
  *
  *   1) Override spécifique (`partner_pricing`) → utilise le prix override
- *   2) Sinon, selon le type :
- *        - prescripteur : daily_rate × duration_days
- *        - of           : quiz_unit_price (forfait par apprenant)
- *   3) Sinon → null (l'UI affichera "Nous consulter")
+ *   2) Sinon : daily_rate × duration_days (selon la modalité), pour OF
+ *      ET prescripteur. Modèle harmonisé depuis 2026-05-18.
+ *   3) Fallback OF legacy : quiz_unit_price (forfait par apprenant) si
+ *      l'OF n'a pas encore migré vers les tarifs jour.
+ *   4) Sinon → null (l'UI affichera "Nous consulter")
  */
 export type PartnerType = "of" | "prescripteur";
 
@@ -106,63 +107,62 @@ export function computeEffectivePartnerPrice(input: {
     };
   }
 
-  // 2) Calcul auto selon type
-  if (input.partnerType === "of") {
-    if (
-      typeof input.quizUnitPriceHt === "number" &&
-      Number.isFinite(input.quizUnitPriceHt)
-    ) {
-      return {
-        price: input.quizUnitPriceHt,
-        source: "auto",
-        explain: "Forfait quiz / apprenant",
-      };
-    }
+  // 2) Calcul auto : tarif jour × durée (OF ET prescripteur depuis
+  //    l'harmonisation 2026-05-18).
+  // Choix du tarif jour selon la modalité. Pour "hybride", on prend le
+  // présentiel par défaut (plus élevé), fallback distanciel sinon.
+  let dailyRate: number | null = null;
+  let modalityLabel = "";
+  if (input.modality === "presentiel") {
+    dailyRate = input.dailyRatePresentielHt;
+    modalityLabel = "présentiel";
+  } else if (input.modality === "distanciel") {
+    dailyRate = input.dailyRateDistancielHt;
+    modalityLabel = "distanciel";
+  } else if (input.modality === "hybride") {
+    dailyRate = input.dailyRatePresentielHt ?? input.dailyRateDistancielHt;
+    modalityLabel = "hybride";
   } else {
-    // prescripteur : tarif jour différencié selon la modalité.
-    // Pour "hybride", on prend le tarif présentiel par défaut (plus élevé),
-    // sinon fallback distanciel si présentiel non défini.
-    let dailyRate: number | null = null;
-    let modalityLabel = "";
-    if (input.modality === "presentiel") {
-      dailyRate = input.dailyRatePresentielHt;
-      modalityLabel = "présentiel";
-    } else if (input.modality === "distanciel") {
-      dailyRate = input.dailyRateDistancielHt;
-      modalityLabel = "distanciel";
-    } else if (input.modality === "hybride") {
-      dailyRate =
-        input.dailyRatePresentielHt ?? input.dailyRateDistancielHt;
-      modalityLabel = "hybride";
-    } else {
-      // Modalité inconnue : tente distanciel en premier, sinon présentiel.
-      dailyRate =
-        input.dailyRateDistancielHt ?? input.dailyRatePresentielHt;
-    }
+    // Modalité inconnue : tente distanciel en premier, sinon présentiel.
+    dailyRate = input.dailyRateDistancielHt ?? input.dailyRatePresentielHt;
+  }
 
-    if (typeof dailyRate === "number" && Number.isFinite(dailyRate)) {
-      // Détermine la durée en jours : duration_days > duration_hours/7
-      let days = input.durationDays;
-      if (!days && input.durationHours) {
-        days = input.durationHours / 7;
-      }
-      if (days && days > 0) {
-        const total = Math.round(dailyRate * days * 100) / 100;
-        const daysLabel = Number.isInteger(days)
-          ? `${days} j`
-          : `${days.toFixed(1)} j`;
-        return {
-          price: total,
-          source: "auto",
-          explain: modalityLabel
-            ? `${dailyRate.toFixed(2)} € × ${daysLabel} (tarif ${modalityLabel})`
-            : `${dailyRate.toFixed(2)} € × ${daysLabel}`,
-        };
-      }
+  if (typeof dailyRate === "number" && Number.isFinite(dailyRate)) {
+    // Détermine la durée en jours : duration_days > duration_hours/7
+    let days = input.durationDays;
+    if (!days && input.durationHours) {
+      days = input.durationHours / 7;
+    }
+    if (days && days > 0) {
+      const total = Math.round(dailyRate * days * 100) / 100;
+      const daysLabel = Number.isInteger(days)
+        ? `${days} j`
+        : `${days.toFixed(1)} j`;
+      return {
+        price: total,
+        source: "auto",
+        explain: modalityLabel
+          ? `${dailyRate.toFixed(2)} € × ${daysLabel} (tarif ${modalityLabel})`
+          : `${dailyRate.toFixed(2)} € × ${daysLabel}`,
+      };
     }
   }
 
-  // 3) Rien
+  // 3) Fallback OF legacy : forfait quiz par apprenant (rétrocompat
+  //    pour les OF qui n'ont pas encore renseigné les tarifs jour).
+  if (
+    input.partnerType === "of" &&
+    typeof input.quizUnitPriceHt === "number" &&
+    Number.isFinite(input.quizUnitPriceHt)
+  ) {
+    return {
+      price: input.quizUnitPriceHt,
+      source: "auto",
+      explain: "Forfait quiz / apprenant (legacy)",
+    };
+  }
+
+  // 4) Rien
   return { price: null, source: null, explain: null };
 }
 

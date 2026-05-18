@@ -10,6 +10,7 @@ import {
   Euro,
   FileText,
   Globe,
+  Handshake,
   Mail,
   MapPin,
   Search,
@@ -25,6 +26,9 @@ export type CatalogueSession = {
   end_date: string | null;
   /** TRUE si format = intra (session dédiée au prescripteur). */
   is_intra: boolean;
+  /** TRUE si ce partenaire est le prescripteur référent de la session
+   *  (qu'elle soit INTRA ou INTER). Sert au filtre « Mes sessions ». */
+  is_own: boolean;
   /** Modalité de la formation (presentiel, distanciel, hybride). */
   modality: string | null;
   /** Statut de la session : "planned" | "confirmed" | ... */
@@ -38,8 +42,22 @@ export type CatalogueSession = {
     title: string;
     subtitle: string | null;
     duration_hours: number | null;
+    /** Durée en jours pour l'affichage « N j / Hh ». */
+    duration_days: number | null;
     /** URL publique du PDF du programme de formation (Qualiopi). */
     programme_pdf_url: string | null;
+  } | null;
+  /** Lieu détaillé pour le présentiel/hybride (référencé ou texte libre). */
+  location_detail: {
+    name: string | null;
+    address: string | null;
+    postal_code: string | null;
+    city: string | null;
+  } | null;
+  /** Visio pour le distanciel/hybride : application + lien de connexion. */
+  visio: {
+    app: string | null;
+    link: string | null;
   } | null;
   /** Prix HT effectif (override ou calculé), undefined si pas de tarif. */
   negotiated_price_ht: number | undefined;
@@ -56,6 +74,44 @@ function formatDate(s: string | null): string {
     month: "long",
     year: "numeric",
   });
+}
+
+/**
+ * Formate une plage de dates pour l'en-tête de carte session :
+ *   - 1 jour              → « 3 juin 2026 »
+ *   - même mois & année   → « 3 – 5 juin 2026 »
+ *   - mois ou année ≠     → « 3 juin – 7 juillet 2026 »
+ *   - sans end_date       → fallback formatDate(start_date)
+ */
+function formatDateRange(
+  start: string | null,
+  end: string | null,
+): string {
+  if (!start) return "—";
+  if (!end || end === start) return formatDate(start);
+  const s = new Date(start + "T00:00:00");
+  const e = new Date(end + "T00:00:00");
+  const sameMonth =
+    s.getMonth() === e.getMonth() && s.getFullYear() === e.getFullYear();
+  if (sameMonth) {
+    return `${s.getDate()} – ${e.toLocaleDateString("fr-FR", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    })}`;
+  }
+  const sameYear = s.getFullYear() === e.getFullYear();
+  if (sameYear) {
+    return `${s.toLocaleDateString("fr-FR", {
+      day: "numeric",
+      month: "long",
+    })} – ${e.toLocaleDateString("fr-FR", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    })}`;
+  }
+  return `${formatDate(start)} – ${formatDate(end)}`;
 }
 
 function normalize(s: string): string {
@@ -77,12 +133,12 @@ export function CatalogueList({
   sessions: CatalogueSession[];
 }) {
   const [query, setQuery] = useState("");
-  const [onlyNegotiated, setOnlyNegotiated] = useState(false);
+  const [onlyOwn, setOnlyOwn] = useState(false);
 
   const filtered = useMemo(() => {
     const q = normalize(query.trim());
     return sessions.filter((s) => {
-      if (onlyNegotiated && s.negotiated_price_ht === undefined) return false;
+      if (onlyOwn && !s.is_own) return false;
       if (!q) return true;
       const haystack = normalize(
         [
@@ -93,11 +149,9 @@ export function CatalogueList({
       );
       return haystack.includes(q);
     });
-  }, [sessions, query, onlyNegotiated]);
+  }, [sessions, query, onlyOwn]);
 
-  const negotiatedCount = sessions.filter(
-    (s) => s.negotiated_price_ht !== undefined,
-  ).length;
+  const ownCount = sessions.filter((s) => s.is_own).length;
 
   return (
     <div className="space-y-4">
@@ -123,16 +177,28 @@ export function CatalogueList({
             </button>
           )}
         </div>
-        <label className="inline-flex items-center gap-2 text-xs font-medium text-zinc-700 cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={onlyNegotiated}
-            onChange={(e) => setOnlyNegotiated(e.target.checked)}
-            className="rounded border-zinc-300"
-          />
-          Tarif partenaire uniquement
-          <span className="text-zinc-400">({negotiatedCount})</span>
-        </label>
+        {ownCount > 0 && (
+          <label
+            className={
+              onlyOwn
+                ? "inline-flex items-center gap-2 text-xs font-bold cursor-pointer select-none px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-300"
+                : "inline-flex items-center gap-2 text-xs font-medium text-indigo-700 cursor-pointer select-none px-2.5 py-1 rounded-full border border-indigo-200 hover:bg-indigo-50"
+            }
+            title="Filtrer pour ne voir que les sessions où vous êtes le prescripteur référent"
+          >
+            <input
+              type="checkbox"
+              checked={onlyOwn}
+              onChange={(e) => setOnlyOwn(e.target.checked)}
+              className="rounded border-indigo-300"
+            />
+            <Handshake className="h-3.5 w-3.5" />
+            Mes sessions
+            <span className={onlyOwn ? "text-indigo-700" : "text-indigo-400"}>
+              ({ownCount})
+            </span>
+          </label>
+        )}
       </div>
 
       <div className="text-xs text-zinc-500">
@@ -161,9 +227,15 @@ export function CatalogueList({
               <article
                 key={s.id}
                 className={
-                  s.status === "confirmed"
-                    ? "rounded-2xl bg-emerald-50/40 border-2 border-emerald-300 p-5 flex flex-col gap-3 hover:border-emerald-400 hover:shadow-md transition-all"
-                    : "rounded-2xl bg-white border border-zinc-200 p-5 flex flex-col gap-3 hover:border-cyan-300 hover:shadow-sm transition-all"
+                  // Priorité visuelle : sessions "Mes sessions" (où le
+                  // partenaire est prescripteur) → bordure indigo distinctive,
+                  // peu importe le statut. Sinon : vert si confirmée, blanc
+                  // sinon.
+                  s.is_own
+                    ? "rounded-2xl bg-indigo-50/40 border-2 border-indigo-300 p-5 flex flex-col gap-3 hover:border-indigo-400 hover:shadow-md transition-all"
+                    : s.status === "confirmed"
+                      ? "rounded-2xl bg-emerald-50/40 border-2 border-emerald-300 p-5 flex flex-col gap-3 hover:border-emerald-400 hover:shadow-md transition-all"
+                      : "rounded-2xl bg-white border border-zinc-200 p-5 flex flex-col gap-3 hover:border-cyan-300 hover:shadow-sm transition-all"
                 }
               >
                 <div className="flex items-start justify-between gap-2">
@@ -194,13 +266,22 @@ export function CatalogueList({
                         Distanciel
                       </span>
                     )}
-                    {s.is_intra && (
+                    {s.is_own && (
+                      <span
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-bold uppercase tracking-wider border border-indigo-200"
+                        title="Vous êtes le prescripteur référent de cette session"
+                      >
+                        <Handshake className="h-3 w-3" />
+                        Vous prescripteur
+                      </span>
+                    )}
+                    {s.is_intra && !s.is_own && (
                       <span
                         className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[10px] font-bold uppercase tracking-wider"
-                        title="Session INTRA dédiée à votre structure"
+                        title="Session INTRA dédiée"
                       >
                         <Star className="h-3 w-3" />
-                        Session dédiée
+                        INTRA
                       </span>
                     )}
                     {s.status === "confirmed" ? (
@@ -223,16 +304,106 @@ export function CatalogueList({
                 </div>
 
                 <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
-                  <div className="flex items-center gap-1.5 text-zinc-600">
-                    <Calendar className="h-3.5 w-3.5 text-zinc-400" />
-                    {formatDate(s.start_date)}
+                  {/* Date(s) en gras et plus grosse, durée à la suite */}
+                  <div className="flex items-center gap-2 col-span-2 flex-wrap">
+                    <Calendar className="h-4 w-4 text-zinc-500 shrink-0" />
+                    <span className="text-sm font-bold text-zinc-900">
+                      {formatDateRange(s.start_date, s.end_date)}
+                    </span>
+                    {(() => {
+                      const h = s.formation?.duration_hours;
+                      const d = s.formation?.duration_days;
+                      const dayLabel =
+                        d != null && d > 0
+                          ? Number.isInteger(d)
+                            ? `${d} j`
+                            : `${d.toFixed(1)} j`
+                          : null;
+                      const hourLabel =
+                        h != null && h > 0 ? `${h} h` : null;
+                      const dur =
+                        dayLabel && hourLabel
+                          ? `${dayLabel} / ${hourLabel}`
+                          : dayLabel ?? hourLabel ?? null;
+                      if (!dur) return null;
+                      return (
+                        <span className="inline-flex items-center gap-1 text-xs text-zinc-600">
+                          <Clock className="h-3.5 w-3.5 text-zinc-400" />
+                          {dur}
+                        </span>
+                      );
+                    })()}
                   </div>
-                  <div className="flex items-center gap-1.5 text-zinc-600">
-                    <Clock className="h-3.5 w-3.5 text-zinc-400" />
-                    {s.formation?.duration_hours
-                      ? `${s.formation.duration_hours} h`
-                      : "—"}
-                  </div>
+                  {/* Ligne lieu (présentiel/hybride) — passe en pleine largeur */}
+                  {(s.modality === "presentiel" ||
+                    s.modality === "hybride") &&
+                    s.location_detail && (
+                      <div className="flex items-start gap-1.5 text-zinc-600 col-span-2">
+                        <MapPin className="h-3.5 w-3.5 text-zinc-400 mt-0.5 shrink-0" />
+                        <span className="text-zinc-700">
+                          {s.location_detail.name && (
+                            <span className="font-semibold">
+                              {s.location_detail.name}
+                            </span>
+                          )}
+                          {(() => {
+                            const addrLine = [
+                              s.location_detail.address,
+                              [
+                                s.location_detail.postal_code,
+                                s.location_detail.city,
+                              ]
+                                .filter(Boolean)
+                                .join(" "),
+                            ]
+                              .filter((x) => x && x.length > 0)
+                              .join(", ");
+                            if (!addrLine) return null;
+                            return (
+                              <span
+                                className={
+                                  s.location_detail.name
+                                    ? "block text-[11px] text-zinc-500"
+                                    : ""
+                                }
+                              >
+                                {addrLine}
+                              </span>
+                            );
+                          })()}
+                        </span>
+                      </div>
+                    )}
+                  {/* Ligne visio (distanciel/hybride) — appli + lien cliquable */}
+                  {(s.modality === "distanciel" ||
+                    s.modality === "hybride") &&
+                    s.visio && (
+                      <div className="flex items-start gap-1.5 text-zinc-600 col-span-2">
+                        <Globe className="h-3.5 w-3.5 text-zinc-400 mt-0.5 shrink-0" />
+                        <span className="text-zinc-700">
+                          {s.visio.app && (
+                            <span className="font-semibold">
+                              {s.visio.app}
+                            </span>
+                          )}
+                          {s.visio.link && (
+                            <a
+                              href={s.visio.link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className={
+                                s.visio.app
+                                  ? "block text-[11px] text-cyan-700 hover:underline break-all"
+                                  : "text-cyan-700 hover:underline break-all"
+                              }
+                              title="Ouvrir le lien de connexion"
+                            >
+                              {s.visio.link}
+                            </a>
+                          )}
+                        </span>
+                      </div>
+                    )}
                   <div className="flex items-center gap-1.5 text-zinc-600 col-span-2">
                     <Users className="h-3.5 w-3.5 text-zinc-400" />
                     {(() => {

@@ -28,6 +28,9 @@ export type PartnerContext = {
     show_inter_catalog: boolean;
     /** Voir ses sessions INTRA rattachées (prescripteur). */
     show_own_intra: boolean;
+    /** URL libre du logo du partenaire (affiché sur la page publique
+     *  de pré-inscription). Null = fallback sur le logo de l'orga. */
+    logo_url: string | null;
   };
   organization: {
     id: string;
@@ -70,6 +73,19 @@ export async function resolvePartnerContext(
       partner_portal_show_inter_catalog: boolean | null;
       partner_portal_show_own_intra: boolean | null;
     }>();
+
+  // Fetch séparé du logo : la colonne `logo_url` n'existe que si la
+  // migration 0091 a été appliquée. On reste tolérant : si la colonne
+  // manque, on récupère null sans casser le contexte du partenaire.
+  let companyLogoUrl: string | null = null;
+  if (company) {
+    const { data: logoRow } = await supabase
+      .from("companies")
+      .select("logo_url")
+      .eq("id", company.id)
+      .maybeSingle<{ logo_url: string | null }>();
+    companyLogoUrl = logoRow?.logo_url ?? null;
+  }
   if (!company) return null;
 
   // Seuls les OF et prescripteurs ont accès au portail partenaire.
@@ -117,6 +133,7 @@ export async function resolvePartnerContext(
           : null,
       show_inter_catalog: company.partner_portal_show_inter_catalog ?? true,
       show_own_intra: company.partner_portal_show_own_intra ?? true,
+      logo_url: companyLogoUrl,
     },
     organization: org,
   };

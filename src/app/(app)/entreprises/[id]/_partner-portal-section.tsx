@@ -8,6 +8,7 @@ import {
   Euro,
   ExternalLink,
   Handshake,
+  Image as ImageIcon,
   Plus,
   RefreshCw,
   Trash2,
@@ -16,11 +17,13 @@ import { CollapsibleSection } from "@/components/collapsible-section";
 import { Button } from "@/components/ui/button";
 import {
   activatePartnerPortal,
+  deletePartnerLogo,
   removePartnerPrice,
   revokePartnerPortal,
   savePartnerGeneralRate,
   savePartnerPortalVisibility,
   savePartnerPrice,
+  uploadPartnerLogo,
 } from "./partner-actions";
 
 type FormationOption = {
@@ -54,6 +57,9 @@ type Props = {
   showInterCatalog: boolean;
   /** Voir ses sessions INTRA rattachées (prescripteur). */
   showOwnIntra: boolean;
+  /** URL du logo du partenaire (affiché sur la page publique de
+   *  pré-inscription). Null = fallback sur le logo de l'organisation. */
+  logoUrl: string | null;
   formations: FormationOption[];
   pricing: PricingRow[];
 };
@@ -68,6 +74,7 @@ export function PartnerPortalSection({
   quizUnitPriceHt,
   showInterCatalog,
   showOwnIntra,
+  logoUrl,
   formations,
   pricing,
 }: Props) {
@@ -223,6 +230,11 @@ export function PartnerPortalSection({
             showOwnIntra={showOwnIntra}
           />
         )}
+
+        {/* Logo du partenaire — affiché sur la page publique de
+            pré-inscription. URL libre, le partenaire colle un lien vers
+            son logo déjà hébergé (site, Drive public, etc.). */}
+        <LogoEditor companyId={companyId} logoUrl={logoUrl} />
 
         {/* Tarif général appliqué automatiquement */}
         <GeneralRateEditor
@@ -578,6 +590,139 @@ function VisibilityToggles({
 }
 
 // ============================================================
+// Logo du partenaire (upload de fichier)
+// ============================================================
+
+function LogoEditor({
+  companyId,
+  logoUrl,
+}: {
+  companyId: string;
+  logoUrl: string | null;
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [fileInputKey, setFileInputKey] = useState(0);
+
+  function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError(null);
+    setSaved(false);
+    const fd = new FormData();
+    fd.append("logo", file);
+    startTransition(async () => {
+      const res = await uploadPartnerLogo(companyId, fd);
+      if (!res.ok) {
+        setError(res.error ?? "Erreur lors de l'envoi.");
+        // Réinitialise l'input pour permettre une nouvelle sélection
+        setFileInputKey((k) => k + 1);
+        return;
+      }
+      setSaved(true);
+      setFileInputKey((k) => k + 1);
+      router.refresh();
+      setTimeout(() => setSaved(false), 2000);
+    });
+  }
+
+  function handleDelete() {
+    if (!confirm("Supprimer le logo actuel ?")) return;
+    setError(null);
+    setSaved(false);
+    startTransition(async () => {
+      const res = await deletePartnerLogo(companyId);
+      if (!res.ok) {
+        setError(res.error ?? "Erreur");
+        return;
+      }
+      router.refresh();
+    });
+  }
+
+  return (
+    <div className="space-y-3 pt-2 border-t border-zinc-200 dark:border-zinc-800">
+      <div className="pt-3">
+        <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 inline-flex items-center gap-2">
+          <ImageIcon className="h-4 w-4 text-purple-600" />
+          Logo affiché sur le formulaire public
+        </h3>
+        <p className="text-[11px] text-zinc-500 mt-0.5">
+          Importez le logo du partenaire (PNG, JPEG, SVG ou WebP — max 2 Mo).
+          Il apparaîtra en haut de la page{" "}
+          <code>/preinscription/[token]</code> que vos clients ouvrent.
+        </p>
+      </div>
+
+      {error && (
+        <div className="rounded-md bg-red-50 border border-red-200 p-2 text-xs text-red-700">
+          {error}
+        </div>
+      )}
+
+      {/* Aperçu si un logo est déjà uploadé */}
+      {logoUrl && (
+        <div className="rounded-md bg-zinc-50 border border-zinc-200 p-3 flex items-center gap-3 flex-wrap">
+          <span className="text-[11px] uppercase tracking-wider font-bold text-zinc-500 shrink-0">
+            Logo actuel :
+          </span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={logoUrl}
+            alt="Logo partenaire"
+            className="h-14 w-auto max-w-[220px] object-contain"
+          />
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={pending}
+            className="ml-auto inline-flex items-center gap-1 text-xs text-rose-700 hover:text-rose-900 disabled:opacity-30"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Supprimer
+          </button>
+        </div>
+      )}
+
+      <div className="flex items-center gap-2 flex-wrap">
+        <label
+          htmlFor={`logo-file-${companyId}`}
+          className={
+            pending
+              ? "inline-flex items-center gap-2 px-4 py-2 rounded-md border border-purple-300 bg-purple-50 text-purple-700 text-sm font-bold opacity-50 cursor-not-allowed"
+              : "inline-flex items-center gap-2 px-4 py-2 rounded-md border border-purple-300 bg-purple-50 text-purple-700 text-sm font-bold hover:bg-purple-100 cursor-pointer"
+          }
+        >
+          <ImageIcon className="h-4 w-4" />
+          {logoUrl ? "Remplacer le logo" : "Importer un logo"}
+        </label>
+        <input
+          key={fileInputKey}
+          id={`logo-file-${companyId}`}
+          type="file"
+          accept="image/png,image/jpeg,image/svg+xml,image/webp"
+          onChange={handleFileSelected}
+          disabled={pending}
+          className="sr-only"
+        />
+        {pending && (
+          <span className="text-[11px] text-zinc-500 italic">
+            Envoi en cours…
+          </span>
+        )}
+        {saved && (
+          <span className="text-[11px] text-emerald-700 font-medium">
+            Logo enregistré.
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 // Tarif général (par jour pour prescripteur, forfait pour OF)
 // ============================================================
 
@@ -597,10 +742,11 @@ function GeneralRateEditor({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
-  // États selon le type
-  const [quizValue, setQuizValue] = useState<string>(
-    quizUnitPriceHt !== null ? String(quizUnitPriceHt) : "",
-  );
+  // Tarifs jour différenciés par modalité — UI commune OF / prescripteur
+  // (cf. demande Gilles 2026-05-18 : harmoniser l'UX tarifs OF avec
+  // celle des prescripteurs). Le forfait OF historique quiz_unit_price_ht
+  // est conservé en fallback côté calcul (computeEffectivePartnerPrice)
+  // pour ne pas casser les OF qui avaient déjà saisi un tarif.
   const [distancielValue, setDistancielValue] = useState<string>(
     dailyRateDistancielHt !== null ? String(dailyRateDistancielHt) : "",
   );
@@ -622,32 +768,16 @@ function GeneralRateEditor({
     setError(null);
     setSaved(false);
     startTransition(async () => {
-      let payload:
-        | { quizUnitPriceHt: number | null }
-        | {
-            dailyRateDistancielHt: number | null;
-            dailyRatePresentielHt: number | null;
-          };
-      if (companyType === "of") {
-        const v = parseRate(quizValue);
-        if (v === "invalid") {
-          setError("Tarif forfait invalide.");
-          return;
-        }
-        payload = { quizUnitPriceHt: v };
-      } else {
-        const d = parseRate(distancielValue);
-        const p = parseRate(presentielValue);
-        if (d === "invalid" || p === "invalid") {
-          setError("Tarif invalide.");
-          return;
-        }
-        payload = {
-          dailyRateDistancielHt: d,
-          dailyRatePresentielHt: p,
-        };
+      const d = parseRate(distancielValue);
+      const p = parseRate(presentielValue);
+      if (d === "invalid" || p === "invalid") {
+        setError("Tarif invalide.");
+        return;
       }
-      const res = await savePartnerGeneralRate(companyId, payload);
+      const res = await savePartnerGeneralRate(companyId, {
+        dailyRateDistancielHt: d,
+        dailyRatePresentielHt: p,
+      });
       if (!res.ok) {
         setError(res.error ?? "Erreur");
         return;
@@ -659,13 +789,16 @@ function GeneralRateEditor({
   }
 
   const hasAnyRate =
-    companyType === "of"
-      ? quizUnitPriceHt !== null
-      : dailyRateDistancielHt !== null || dailyRatePresentielHt !== null;
+    dailyRateDistancielHt !== null || dailyRatePresentielHt !== null;
+  const hasLegacyOfForfait =
+    companyType === "of" &&
+    quizUnitPriceHt !== null &&
+    dailyRateDistancielHt === null &&
+    dailyRatePresentielHt === null;
 
   const help =
     companyType === "of"
-      ? "Forfait par apprenant pour accéder aux quiz pré + post de CAP NUMÉRIQUE. CAP NUMÉRIQUE ne génère pas la convocation ni la convention : c'est votre OF qui s'en charge."
+      ? "Multiplié automatiquement par la durée de la formation (en jours). Pour les OF en workflow quiz only, seul le tarif distanciel est utilisé en pratique — le tarif présentiel reste optionnel."
       : "Multiplié automatiquement par la durée de chaque formation (en jours). Le tarif appliqué dépend de la modalité de la formation (distanciel ou présentiel).";
 
   return (
@@ -684,96 +817,71 @@ function GeneralRateEditor({
         </div>
       )}
 
-      {companyType === "of" ? (
-        <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 items-end">
-          <div>
+      {hasLegacyOfForfait && (
+        <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+          Ancien forfait quiz détecté : <strong>{quizUnitPriceHt} € HT /
+          apprenant</strong>. Il reste actif en fallback. Renseignez un tarif
+          jour ci-dessous pour basculer sur le nouveau mode (durée × tarif).
+        </p>
+      )}
+
+      <div className="space-y-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="rounded-lg border border-cyan-200 bg-cyan-50/30 p-3">
             <label
-              htmlFor={`general-quiz-${companyId}`}
-              className="block text-[11px] uppercase tracking-wider font-bold text-zinc-600 mb-1"
+              htmlFor={`general-distanciel-${companyId}`}
+              className="block text-[11px] uppercase tracking-wider font-bold text-cyan-700 mb-1"
             >
-              Tarif quiz HT par apprenant (forfait)
+              Tarif jour DISTANCIEL
             </label>
             <div className="flex items-center gap-2">
               <input
-                id={`general-quiz-${companyId}`}
+                id={`general-distanciel-${companyId}`}
                 type="number"
                 step="0.01"
                 min="0"
-                value={quizValue}
-                onChange={(e) => setQuizValue(e.target.value)}
-                placeholder="ex : 65"
-                className="h-9 w-40 rounded-md border border-zinc-300 bg-white px-2 text-sm tabular-nums"
+                value={distancielValue}
+                onChange={(e) => setDistancielValue(e.target.value)}
+                placeholder="ex : 250"
+                className="h-9 w-32 rounded-md border border-zinc-300 bg-white px-2 text-sm tabular-nums"
               />
-              <span className="text-sm text-zinc-500 font-medium">
-                € HT / apprenant
+              <span className="text-xs text-zinc-500 font-medium">
+                € HT / jour / apprenant
               </span>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Button type="button" size="sm" onClick={save} disabled={pending}>
-              {saved ? "Enregistré" : "Enregistrer"}
-            </Button>
-          </div>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="rounded-lg border border-cyan-200 bg-cyan-50/30 p-3">
-              <label
-                htmlFor={`general-distanciel-${companyId}`}
-                className="block text-[11px] uppercase tracking-wider font-bold text-cyan-700 mb-1"
-              >
-                Tarif jour DISTANCIEL
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  id={`general-distanciel-${companyId}`}
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={distancielValue}
-                  onChange={(e) => setDistancielValue(e.target.value)}
-                  placeholder="ex : 250"
-                  className="h-9 w-32 rounded-md border border-zinc-300 bg-white px-2 text-sm tabular-nums"
-                />
-                <span className="text-xs text-zinc-500 font-medium">
-                  € HT / jour / apprenant
-                </span>
-              </div>
-            </div>
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50/30 p-3">
-              <label
-                htmlFor={`general-presentiel-${companyId}`}
-                className="block text-[11px] uppercase tracking-wider font-bold text-emerald-700 mb-1"
-              >
-                Tarif jour PRÉSENTIEL
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  id={`general-presentiel-${companyId}`}
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={presentielValue}
-                  onChange={(e) => setPresentielValue(e.target.value)}
-                  placeholder="ex : 400"
-                  className="h-9 w-32 rounded-md border border-zinc-300 bg-white px-2 text-sm tabular-nums"
-                />
-                <span className="text-xs text-zinc-500 font-medium">
-                  € HT / jour / apprenant
-                </span>
-              </div>
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50/30 p-3">
+            <label
+              htmlFor={`general-presentiel-${companyId}`}
+              className="block text-[11px] uppercase tracking-wider font-bold text-emerald-700 mb-1"
+            >
+              Tarif jour PRÉSENTIEL
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                id={`general-presentiel-${companyId}`}
+                type="number"
+                step="0.01"
+                min="0"
+                value={presentielValue}
+                onChange={(e) => setPresentielValue(e.target.value)}
+                placeholder="ex : 400"
+                className="h-9 w-32 rounded-md border border-zinc-300 bg-white px-2 text-sm tabular-nums"
+              />
+              <span className="text-xs text-zinc-500 font-medium">
+                € HT / jour / apprenant
+              </span>
             </div>
           </div>
-          <div className="flex justify-end">
-            <Button type="button" size="sm" onClick={save} disabled={pending}>
-              {saved ? "Enregistré" : "Enregistrer"}
-            </Button>
-          </div>
         </div>
-      )}
+        <div className="flex justify-end">
+          <Button type="button" size="sm" onClick={save} disabled={pending}>
+            {saved ? "Enregistré" : "Enregistrer"}
+          </Button>
+        </div>
+      </div>
 
-      {!hasAnyRate && (
+      {!hasAnyRate && !hasLegacyOfForfait && (
         <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 inline-block">
           Aucun tarif général : seules les formations avec un tarif spécifique
           seront accessibles à l&apos;inscription dans le portail.

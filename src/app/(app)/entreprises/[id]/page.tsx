@@ -245,6 +245,7 @@ export default async function CompanyDetailPage({
   let partnerQuizUnitPriceHt: number | null = null;
   let partnerShowInterCatalog = true;
   let partnerShowOwnIntra = true;
+  let partnerLogoUrl: string | null = null;
   let partnerFormations: Array<{
     id: string;
     title: string;
@@ -319,6 +320,14 @@ export default async function CompanyDetailPage({
     partnerShowInterCatalog =
       ratesRow?.partner_portal_show_inter_catalog ?? true;
     partnerShowOwnIntra = ratesRow?.partner_portal_show_own_intra ?? true;
+    // Fetch séparé du logo : la colonne n'existe que si la migration
+    // 0091 a été appliquée. Best-effort, ne casse pas la page si absente.
+    const { data: logoRow } = await supabase
+      .from("companies")
+      .select("logo_url")
+      .eq("id", id)
+      .maybeSingle<{ logo_url: string | null }>();
+    partnerLogoUrl = logoRow?.logo_url ?? null;
     partnerFormations = (
       (formationsRows ?? []) as Array<{
         id: string;
@@ -496,6 +505,7 @@ export default async function CompanyDetailPage({
             quizUnitPriceHt={partnerQuizUnitPriceHt}
             showInterCatalog={partnerShowInterCatalog}
             showOwnIntra={partnerShowOwnIntra}
+            logoUrl={partnerLogoUrl}
             formations={partnerFormations}
             pricing={partnerPricing}
           />

@@ -26,6 +26,7 @@ import { type LocationPickerItem } from "./_location-picker";
 import { LocationSection } from "./_location-section";
 import { PlanningSection } from "./_planning-section";
 import { PricingBlock } from "./_pricing-block";
+import { SubcontractPrescriberFields } from "./_subcontract-prescriber-fields";
 import type { Formation } from "@/lib/formations/types";
 import type {
   OrgDefaultHours,
@@ -284,56 +285,11 @@ export function SessionForm({
             </div>
           </label>
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="subcontractor_name">
-            Organisme donneur d&apos;ordre (si sous-traitance)
-          </Label>
-          <Input
-            id="subcontractor_name"
-            name="subcontractor_name"
-            list="subcontractor-companies"
-            defaultValue={session?.subcontractor_name ?? ""}
-            placeholder="Sélectionnez ou tapez la raison sociale de l'OF principal"
-          />
-          {/* Liste d'auto-complétion : entreprises déjà connues */}
-          {companies && companies.length > 0 && (
-            <datalist id="subcontractor-companies">
-              {companies.map((c) => (
-                <option key={c.id} value={c.name} />
-              ))}
-            </datalist>
-          )}
-          <p className="text-xs text-zinc-500">
-            Tapez les premières lettres pour voir les OF déjà enregistrés dans
-            le module Entreprises, ou saisissez une raison sociale libre.
-          </p>
-        </div>
-
-        {/* Prescripteur référent : rend la session visible dans le
-            portail partenaire de ce prescripteur (typiquement INTRA). */}
-        <div className="space-y-2 pt-2 border-t border-zinc-200 dark:border-zinc-800">
-          <Label htmlFor="prescriber_company_id">Prescripteur référent</Label>
-          <select
-            id="prescriber_company_id"
-            name="prescriber_company_id"
-            defaultValue={session?.prescriber_company_id ?? ""}
-            className="flex h-9 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-transparent px-3 py-1 text-sm shadow-sm"
-          >
-            <option value="">— Aucun —</option>
-            {(companies ?? [])
-              .filter((c) => c.type === "prescripteur")
-              .map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-          </select>
-          <p className="text-xs text-zinc-500">
-            Si renseigné, ce prescripteur verra cette session dans son portail
-            partenaire (Espace partenaire → Catalogue). Utile pour les sessions
-            INTRA dédiées à un prescripteur précis.
-          </p>
-        </div>
+        <SubcontractPrescriberFields
+          companies={companies}
+          defaultSubcontractorName={session?.subcontractor_name ?? ""}
+          defaultPrescriberCompanyId={session?.prescriber_company_id ?? ""}
+        />
       </CollapsibleSection>
 
       {/* Qualiopi */}

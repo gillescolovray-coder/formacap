@@ -366,13 +366,36 @@ export async function submitPartnerBatchEnrollmentForm(formData: FormData) {
   // Parsing inputs
   const companyJson = String(formData.get("company") ?? "");
   const learnersJson = String(formData.get("learners") ?? "");
+  const financingJson = String(formData.get("financing") ?? "");
+  const contactJson = String(formData.get("contact_referent") ?? "");
   const message = String(formData.get("message") ?? "").trim();
 
   let company: CompanyInput;
   let learners: LearnerInput[];
+  // Financement (Qualiopi indic. 9). Optionnel pour rétrocompat avec
+  // d'éventuels appels antérieurs sans ce champ — défaut : employeur.
+  type FinancingPayload =
+    | { mode: "employeur" }
+    | { mode: "opco"; opco_name: string; subrogation: boolean };
+  let financing: FinancingPayload = { mode: "employeur" };
+  // Contact référent pédagogique (recevra la convention)
+  type ContactPayload = {
+    first_name: string;
+    last_name: string;
+    email: string;
+    phone: string | null;
+    role: string | null;
+  };
+  let contactReferent: ContactPayload | null = null;
   try {
     company = JSON.parse(companyJson);
     learners = JSON.parse(learnersJson);
+    if (financingJson) {
+      financing = JSON.parse(financingJson) as FinancingPayload;
+    }
+    if (contactJson) {
+      contactReferent = JSON.parse(contactJson) as ContactPayload;
+    }
   } catch {
     return redirectError("Donnees invalides.");
   }
@@ -380,6 +403,25 @@ export async function submitPartnerBatchEnrollmentForm(formData: FormData) {
   if (!company.siret || !company.name) {
     return redirectError("SIRET et raison sociale de l'entreprise obligatoires.");
   }
+  if (financing.mode === "opco" && !financing.opco_name?.trim()) {
+    return redirectError("Nom de l'OPCO obligatoire.");
+  }
+  if (
+    !contactReferent?.first_name?.trim() ||
+    !contactReferent?.last_name?.trim() ||
+    !/^\S+@\S+\.\S+$/.test(contactReferent?.email ?? "")
+  ) {
+    return redirectError(
+      "Contact référent (prénom, nom, email) obligatoire pour la convention.",
+    );
+  }
+  // Sérialisation pour l'INSERT : mode + détails texte (nom OPCO +
+  // subrogation oui/non). Permet à l'admin de lire l'info sans déplier.
+  const financingMode: "employeur" | "opco" = financing.mode;
+  const financingDetails =
+    financing.mode === "opco"
+      ? `${financing.opco_name.trim()} — ${financing.subrogation ? "avec subrogation" : "sans subrogation"}`
+      : null;
   if (!Array.isArray(learners) || learners.length === 0) {
     return redirectError("Ajoutez au moins un apprenant.");
   }
@@ -566,7 +608,13 @@ export async function submitPartnerBatchEnrollmentForm(formData: FormData) {
         stage_id: confirmedStageId,
         referrer_company_id: ctx.company.id,
         via_partner_portal: true,
-        financing_mode: "employeur",
+        financing_mode: financingMode,
+        financing_details: financingDetails,
+        contact_referent_first_name: contactReferent.first_name.trim(),
+        contact_referent_last_name: contactReferent.last_name.trim(),
+        contact_referent_email: contactReferent.email.trim(),
+        contact_referent_phone: contactReferent.phone,
+        contact_referent_role: contactReferent.role,
         quote_amount_ht: unitPriceHt,
         request_message: message || null,
         contract_signed_at: new Date().toISOString(),

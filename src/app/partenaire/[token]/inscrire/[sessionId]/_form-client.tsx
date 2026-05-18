@@ -1,7 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { Building2, Plus, Send, Trash2, User } from "lucide-react";
+import {
+  Building2,
+  Euro,
+  Plus,
+  Send,
+  Trash2,
+  User,
+} from "lucide-react";
 import { SireneLookup } from "@/app/(app)/entreprises/_sirene-lookup";
 import type { SireneCompany } from "@/lib/sirene/types";
 import { submitPartnerBatchEnrollmentForm } from "../../actions";
@@ -53,6 +60,21 @@ export function PartnerInscribeForm({
     city: "",
   });
   const [learners, setLearners] = useState<LearnerForm[]>([emptyLearner()]);
+  // Financement : Employeur direct / OPCO sans subro / OPCO avec subro.
+  // Qualiopi indic. 9 — info à tracer côté inscription_request.
+  const [financing, setFinancing] = useState<
+    "employeur" | "opco_sans_sub" | "opco_avec_sub"
+  >("employeur");
+  const [opcoName, setOpcoName] = useState("");
+  // Contact référent pédagogique (RH / responsable formation côté
+  // entreprise) — distinct des apprenants, recevra la convention.
+  const [contact, setContact] = useState({
+    firstName: "",
+    lastName: "",
+    email: "",
+    phone: "",
+    role: "",
+  });
 
   function handleSirenePick(c: SireneCompany) {
     setCompany({
@@ -92,9 +114,17 @@ export function PartnerInscribeForm({
   }
 
   const totalHt = unitPriceHt * learners.length;
+  const financingOk =
+    financing === "employeur" ? true : opcoName.trim().length > 0;
+  const contactOk =
+    contact.firstName.trim().length > 0 &&
+    contact.lastName.trim().length > 0 &&
+    /^\S+@\S+\.\S+$/.test(contact.email.trim());
   const canSubmit =
     company.siret.trim().length > 0 &&
     company.name.trim().length > 0 &&
+    financingOk &&
+    contactOk &&
     learners.every(
       (l) =>
         l.firstName.trim() &&
@@ -124,6 +154,31 @@ export function PartnerInscribeForm({
             birthYear: l.birthYear,
           })),
         )}
+      />
+      {/* Financement sérialisé pour la server action */}
+      <input
+        type="hidden"
+        name="financing"
+        value={JSON.stringify(
+          financing === "employeur"
+            ? { mode: "employeur" }
+            : {
+                mode: "opco",
+                opco_name: opcoName.trim(),
+                subrogation: financing === "opco_avec_sub",
+              },
+        )}
+      />
+      <input
+        type="hidden"
+        name="contact_referent"
+        value={JSON.stringify({
+          first_name: contact.firstName.trim(),
+          last_name: contact.lastName.trim(),
+          email: contact.email.trim(),
+          phone: contact.phone.trim() || null,
+          role: contact.role.trim() || null,
+        })}
       />
 
       {/* ===== ENTREPRISE DES APPRENANTS ===== */}
@@ -199,6 +254,93 @@ export function PartnerInscribeForm({
               onChange={(e) => updateCompany("city", e.target.value)}
               className="w-full h-9 rounded-md border border-zinc-300 px-3 text-sm"
             />
+          </div>
+        </div>
+
+        {/* Contact référent pédagogique (recevra la convention) */}
+        <div className="pt-3 mt-2 border-t border-zinc-100 space-y-3">
+          <div>
+            <h4 className="text-xs font-bold text-zinc-900 uppercase tracking-wider inline-flex items-center gap-1.5">
+              <User className="h-3.5 w-3.5 text-cyan-600" />
+              Contact référent pédagogique (recevra la convention)
+            </h4>
+            <p className="text-[11px] text-zinc-500 mt-0.5">
+              Personne RH / responsable formation côté entreprise — distincte
+              des apprenants. C&apos;est elle qui recevra la convention
+              de formation et les documents administratifs.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-zinc-700 mb-1">
+                Prénom <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={contact.firstName}
+                onChange={(e) =>
+                  setContact((c) => ({ ...c, firstName: e.target.value }))
+                }
+                required
+                className="w-full h-9 rounded-md border border-zinc-300 px-3 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-zinc-700 mb-1">
+                Nom <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={contact.lastName}
+                onChange={(e) =>
+                  setContact((c) => ({ ...c, lastName: e.target.value }))
+                }
+                required
+                className="w-full h-9 rounded-md border border-zinc-300 px-3 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-zinc-700 mb-1">
+                Email (convention) <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="email"
+                value={contact.email}
+                onChange={(e) =>
+                  setContact((c) => ({ ...c, email: e.target.value }))
+                }
+                required
+                className="w-full h-9 rounded-md border border-zinc-300 px-3 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-zinc-700 mb-1">
+                Téléphone
+              </label>
+              <input
+                type="text"
+                value={contact.phone}
+                onChange={(e) =>
+                  setContact((c) => ({ ...c, phone: e.target.value }))
+                }
+                placeholder="06 …"
+                className="w-full h-9 rounded-md border border-zinc-300 px-3 text-sm"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-bold text-zinc-700 mb-1">
+                Fonction
+              </label>
+              <input
+                type="text"
+                value={contact.role}
+                onChange={(e) =>
+                  setContact((c) => ({ ...c, role: e.target.value }))
+                }
+                placeholder="Ex : Responsable formation"
+                className="w-full h-9 rounded-md border border-zinc-300 px-3 text-sm"
+              />
+            </div>
           </div>
         </div>
       </section>
@@ -331,6 +473,83 @@ export function PartnerInscribeForm({
             </div>
           </div>
         ))}
+      </section>
+
+      {/* ===== FINANCEMENT ===== */}
+      <section className="rounded-2xl bg-white border border-zinc-200 p-5 space-y-3">
+        <h3 className="font-bold text-zinc-900 inline-flex items-center gap-2">
+          <Euro className="h-4 w-4 text-emerald-600" />
+          Financement
+        </h3>
+        <p className="text-xs text-zinc-500 -mt-2">
+          Mode de prise en charge déclaré (Qualiopi indic. 9). Identique pour
+          tous les apprenants du lot.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          {([
+            {
+              key: "employeur",
+              label: "Employeur",
+              desc: "Paiement direct par l'entreprise",
+            },
+            {
+              key: "opco_sans_sub",
+              label: "OPCO sans subrogation",
+              desc: "L'entreprise paie, l'OPCO la rembourse",
+            },
+            {
+              key: "opco_avec_sub",
+              label: "OPCO avec subrogation",
+              desc: "L'OPCO paie directement CAP NUMÉRIQUE",
+            },
+          ] as const).map((opt) => (
+            <label
+              key={opt.key}
+              className={
+                financing === opt.key
+                  ? "rounded-lg border-2 border-cyan-500 bg-cyan-50/60 p-3 cursor-pointer flex flex-col gap-1 text-sm transition-all"
+                  : "rounded-lg border border-zinc-200 bg-white p-3 cursor-pointer flex flex-col gap-1 text-sm hover:border-cyan-300 transition-all"
+              }
+            >
+              <input
+                type="radio"
+                name="financing-choice"
+                value={opt.key}
+                checked={financing === opt.key}
+                onChange={() => setFinancing(opt.key)}
+                className="sr-only"
+              />
+              <span className="font-bold text-zinc-900 inline-flex items-center gap-1.5">
+                <span
+                  className={
+                    financing === opt.key
+                      ? "h-3 w-3 rounded-full border-2 border-cyan-600 bg-cyan-600 ring-2 ring-white"
+                      : "h-3 w-3 rounded-full border-2 border-zinc-300"
+                  }
+                />
+                {opt.label}
+              </span>
+              <span className="text-[11px] text-zinc-500 leading-snug">
+                {opt.desc}
+              </span>
+            </label>
+          ))}
+        </div>
+        {(financing === "opco_sans_sub" || financing === "opco_avec_sub") && (
+          <div>
+            <label className="block text-xs font-bold text-zinc-700 mb-1">
+              Nom de l&apos;OPCO <span className="text-rose-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={opcoName}
+              onChange={(e) => setOpcoName(e.target.value)}
+              required
+              placeholder="Ex : Constructys, OCAPIAT, AFDAS, OPCO EP…"
+              className="w-full h-9 rounded-md border border-zinc-300 px-3 text-sm"
+            />
+          </div>
+        )}
       </section>
 
       {/* ===== MESSAGE OPTIONNEL ===== */}

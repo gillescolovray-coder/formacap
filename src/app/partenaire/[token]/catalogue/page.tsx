@@ -7,6 +7,14 @@ import { CatalogueList, type CatalogueSession } from "./_list-client";
 
 type Params = { token: string };
 
+type LocationObj = {
+  id: string;
+  name: string | null;
+  address: string | null;
+  postal_code: string | null;
+  city: string | null;
+};
+
 type SessionRow = {
   id: string;
   internal_code: string | null;
@@ -16,6 +24,14 @@ type SessionRow = {
   is_inter: boolean;
   modality: string | null;
   max_participants: number | null;
+  prescriber_company_id: string | null;
+  /** Texte libre rétro-compat si pas de lieu référencé. */
+  location: string | null;
+  /** Application visio (Zoom, Teams, Meet, …) pour le distanciel. */
+  video_app: string | null;
+  /** Lien direct de connexion à la visio. */
+  video_link: string | null;
+  location_obj: LocationObj | LocationObj[] | null;
   formation:
     | {
         id: string;
@@ -51,12 +67,14 @@ export default async function PartnerCataloguePage({
   const today = new Date().toISOString().slice(0, 10);
 
   // Pour les PRESCRIPTEURS, on combine selon les toggles :
-  //   - show_inter_catalog → toutes les sessions distanciel INTER à venir
-  //   - show_own_intra     → toutes ses sessions INTRA rattachées
+  //   - show_inter_catalog → catalogue distanciel INTER public à venir
+  //   - show_own_intra     → toutes ses sessions propres (INTRA + INTER)
+  //                          où il est prescriber_company_id (toutes
+  //                          modalités confondues)
   // Pour les OF, on garde uniquement distanciel INTER (modèle quiz only).
   const isPrescripteur = ctx.company.type === "prescripteur";
   const showInter = !isPrescripteur || ctx.company.show_inter_catalog;
-  const showIntra = isPrescripteur && ctx.company.show_own_intra;
+  const showOwn = isPrescripteur && ctx.company.show_own_intra;
 
   type RawRow = SessionRow;
   const collected: RawRow[] = [];
@@ -69,8 +87,9 @@ export default async function PartnerCataloguePage({
       .from("sessions")
       .select(
         `
-      id, internal_code, start_date, end_date, status, is_inter, modality, max_participants,
-      formation:formations!inner(id, title, duration_hours, duration_days, subtitle, modality, programme_pdf_url)
+      id, internal_code, start_date, end_date, status, is_inter, modality, max_participants, prescriber_company_id, location, video_app, video_link,
+      formation:formations!inner(id, title, duration_hours, duration_days, subtitle, modality, programme_pdf_url),
+      location_obj:formation_locations!location_id(id, name, address, postal_code, city)
     `,
       )
       .eq("organization_id", ctx.company.organization_id)
@@ -88,13 +107,16 @@ export default async function PartnerCataloguePage({
     }
   }
 
-  if (showIntra) {
+  if (showOwn) {
+    // Toutes les sessions rattachées au prescripteur (INTER + INTRA, toutes
+    // modalités) — quel que soit le statut public du catalogue.
     const { data: rows } = await supabase
       .from("sessions")
       .select(
         `
-      id, internal_code, start_date, end_date, status, is_inter, modality, max_participants,
-      formation:formations!inner(id, title, duration_hours, duration_days, subtitle, modality, programme_pdf_url)
+      id, internal_code, start_date, end_date, status, is_inter, modality, max_participants, prescriber_company_id, location, video_app, video_link,
+      formation:formations!inner(id, title, duration_hours, duration_days, subtitle, modality, programme_pdf_url),
+      location_obj:formation_locations!location_id(id, name, address, postal_code, city)
     `,
       )
       .eq("organization_id", ctx.company.organization_id)
@@ -155,6 +177,34 @@ export default async function PartnerCataloguePage({
         ? (s.formation[0] ?? null)
         : s.formation;
       const isIntra = s.is_inter === false;
+      // is_own = ce partenaire est le prescripteur référent de cette session
+      // (true qu'elle soit INTRA ou INTER). Permet au client de filtrer
+      // « Mes sessions ».
+      const isOwn = s.prescriber_company_id === ctx.company.id;
+      // Lieu détaillé : la jointure peut renvoyer un objet ou un tableau.
+      const locObj = Array.isArray(s.location_obj)
+        ? (s.location_obj[0] ?? null)
+        : s.location_obj;
+      const locationDetail = locObj
+        ? {
+            name: locObj.name,
+            address: locObj.address,
+            postal_code: locObj.postal_code,
+            city: locObj.city,
+          }
+        : s.location
+          ? // Fallback texte libre (legacy avant la table formation_locations)
+            {
+              name: s.location,
+              address: null,
+              postal_code: null,
+              city: null,
+            }
+          : null;
+      const visio =
+        s.video_app || s.video_link
+          ? { app: s.video_app, link: s.video_link }
+          : null;
       if (!formation) {
         return {
           id: s.id,
@@ -162,11 +212,14 @@ export default async function PartnerCataloguePage({
           start_date: s.start_date,
           end_date: s.end_date,
           is_intra: isIntra,
+          is_own: isOwn,
           modality: null,
           status: s.status,
           enrolled_count: enrolledBySession.get(s.id) ?? 0,
           max_participants: s.max_participants,
           formation: null,
+          location_detail: locationDetail,
+          visio,
           negotiated_price_ht: undefined,
           price_source: null,
           price_explain: null,
@@ -192,6 +245,7 @@ export default async function PartnerCataloguePage({
         start_date: s.start_date,
         end_date: s.end_date,
         is_intra: isIntra,
+        is_own: isOwn,
         modality: formation.modality ?? null,
         status: s.status,
         enrolled_count: enrolledBySession.get(s.id) ?? 0,
@@ -201,8 +255,11 @@ export default async function PartnerCataloguePage({
           title: formation.title,
           subtitle: formation.subtitle,
           duration_hours: formation.duration_hours,
+          duration_days: formation.duration_days,
           programme_pdf_url: formation.programme_pdf_url,
         },
+        location_detail: locationDetail,
+        visio,
         negotiated_price_ht: effective.price ?? undefined,
         price_source: effective.source,
         price_explain: effective.explain,
@@ -210,25 +267,54 @@ export default async function PartnerCataloguePage({
     },
   );
 
+  // Libelles adaptes au type de partenaire : un OF (workflow quiz only) ne
+  // voit QUE le distanciel ; un prescripteur peut voir INTER distanciel public
+  // + ses sessions propres (INTRA + INTER) toutes modalites. On evite ainsi
+  // le titre "distanciel" alors que des sessions presentielles peuvent y
+  // figurer (sessions dediees).
+  const isOf = ctx.company.type === "of";
+  const catalogTitle = isOf ? "Catalogue distanciel" : "Catalogue";
+  const catalogDescription = isOf ? (
+    <>
+      Sessions <strong>INTER</strong> en <strong>distanciel</strong> à venir,
+      proposées par {ctx.organization.name}.
+    </>
+  ) : showOwn && showInter ? (
+    <>
+      Sessions <strong>INTER distanciel</strong> du catalogue et{" "}
+      <strong>vos sessions dédiées</strong> (INTRA et INTER) où{" "}
+      {ctx.company.name} est prescripteur, proposées par {ctx.organization.name}
+      .
+    </>
+  ) : showInter ? (
+    <>
+      Sessions <strong>INTER</strong> en <strong>distanciel</strong> à venir,
+      proposées par {ctx.organization.name}.
+    </>
+  ) : (
+    <>
+      Vos <strong>sessions dédiées</strong> où {ctx.company.name} est
+      prescripteur, proposées par {ctx.organization.name}.
+    </>
+  );
+  const emptyText = isOf
+    ? "Aucune session distanciel INTER à venir pour le moment."
+    : "Aucune session à venir dans votre catalogue pour le moment.";
+
   return (
     <div className="space-y-5">
       <header>
         <h1 className="text-2xl font-bold text-zinc-900 inline-flex items-center gap-2">
           <BookOpen className="h-6 w-6 text-cyan-600" />
-          Catalogue distanciel
+          {catalogTitle}
         </h1>
-        <p className="text-sm text-zinc-600 mt-1">
-          Sessions <strong>INTER</strong> en <strong>distanciel</strong> à
-          venir, proposées par {ctx.organization.name}.
-        </p>
+        <p className="text-sm text-zinc-600 mt-1">{catalogDescription}</p>
       </header>
 
       {rows.length === 0 ? (
         <div className="rounded-2xl bg-white border border-zinc-200 p-8 text-center">
           <Calendar className="h-10 w-10 text-zinc-300 mx-auto mb-3" />
-          <p className="text-sm text-zinc-600">
-            Aucune session distanciel INTER à venir pour le moment.
-          </p>
+          <p className="text-sm text-zinc-600">{emptyText}</p>
           <p className="text-xs text-zinc-500 mt-2">
             Revenez prochainement ou contactez {ctx.organization.name} pour
             connaître les sessions à venir.

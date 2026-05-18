@@ -1,13 +1,13 @@
 import Link from "next/link";
 import {
   BookOpen,
+  Brain,
   Building2,
   Calendar,
   CheckCircle2,
   Clock,
   Layers,
   ListChecks,
-  MapPin,
   Plus,
   User,
   UserPlus,
@@ -135,7 +135,7 @@ export default async function SessionsListPage({
   let query = supabase
     .from("sessions")
     .select(
-      "*, formation:formations(id, title), trainer:trainers!trainer_id(id, first_name, last_name)",
+      "*, formation:formations(id, title), trainer:trainers!trainer_id(id, first_name, last_name), prescriber:companies!prescriber_company_id(id, name), quiz:quiz_templates!quiz_template_id(id, title), location_obj:formation_locations!location_id(id, name, address, postal_code, city)",
     );
 
   if (q) {
@@ -813,7 +813,7 @@ export default async function SessionsListPage({
                   <tr>
                     <th className="px-4 py-3">Dates</th>
                     <th className="px-4 py-3">Formation</th>
-                    <th className="px-4 py-3">Lieu</th>
+                    <th className="px-4 py-3 text-center">Quiz</th>
                     <th className="px-4 py-3">Formateur</th>
                     <th className="px-4 py-3 text-right">Montant HT</th>
                     <th className="px-4 py-3 text-right">Inscrits</th>
@@ -909,9 +909,75 @@ export default async function SessionsListPage({
                         : s.modality === "distanciel"
                           ? Video
                           : Layers;
-                    const modalityTitle = s.modality
-                      ? `Modalité : ${MODALITY_LABELS[s.modality]}`
-                      : "Modalité non renseignée";
+                    // Tooltip de l'avatar : modalite + détails contextuels
+                    // (presentiel → adresse complete du lieu ; distanciel →
+                    // outil visio + lien). Économise la colonne Lieu en
+                    // gardant l'info accessible au survol.
+                    const modalityTitle = (() => {
+                      if (!s.modality) return "Modalité non renseignée";
+                      const base = `Modalité : ${MODALITY_LABELS[s.modality]}`;
+                      const parts: string[] = [base];
+                      // Lieu détaillé (présentiel + hybride)
+                      if (
+                        s.modality === "presentiel" ||
+                        s.modality === "hybride"
+                      ) {
+                        const rawLoc = (
+                          s as unknown as {
+                            location_obj?:
+                              | {
+                                  name: string | null;
+                                  address: string | null;
+                                  postal_code: string | null;
+                                  city: string | null;
+                                }
+                              | Array<{
+                                  name: string | null;
+                                  address: string | null;
+                                  postal_code: string | null;
+                                  city: string | null;
+                                }>
+                              | null;
+                          }
+                        ).location_obj;
+                        const loc = Array.isArray(rawLoc)
+                          ? rawLoc[0] ?? null
+                          : rawLoc ?? null;
+                        if (loc) {
+                          const addr = [
+                            loc.address,
+                            [loc.postal_code, loc.city]
+                              .filter(Boolean)
+                              .join(" "),
+                          ]
+                            .filter((x) => x && x.length > 0)
+                            .join(", ");
+                          const locLine = loc.name
+                            ? addr
+                              ? `Lieu : ${loc.name} — ${addr}`
+                              : `Lieu : ${loc.name}`
+                            : addr
+                              ? `Lieu : ${addr}`
+                              : null;
+                          if (locLine) parts.push(locLine);
+                        } else if (s.location) {
+                          parts.push(`Lieu : ${s.location}`);
+                        }
+                      }
+                      // Visio (distanciel + hybride)
+                      if (
+                        s.modality === "distanciel" ||
+                        s.modality === "hybride"
+                      ) {
+                        if (s.video_app) {
+                          parts.push(`Visio : ${s.video_app}`);
+                        }
+                        if (s.video_link) {
+                          parts.push(`Lien : ${s.video_link}`);
+                        }
+                      }
+                      return parts.join("\n");
+                    })();
                     const statusInfo = resolveSessionStatus(
                       s.status,
                       customStatuses,
@@ -951,9 +1017,11 @@ export default async function SessionsListPage({
                             >
                               {s.formation?.title ?? "—"}
                             </Link>
-                            {/* Badge INTER/INTRA seul (la modalite est deja
-                                montree par l'icone avatar a gauche). */}
-                            <div className="flex flex-wrap items-center gap-1 mt-1">
+                            {/* Badge INTER/INTRA + nom prescripteur / OF
+                                donneur d'ordre s'il y en a un (utile pour
+                                reperer les sessions rattachees a un
+                                partenaire sans ouvrir la fiche). */}
+                            <div className="flex flex-wrap items-center gap-1.5 mt-1">
                               <span
                                 className={cn(
                                   "inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border whitespace-nowrap",
@@ -965,6 +1033,46 @@ export default async function SessionsListPage({
                               >
                                 {s.is_inter ? "INTER" : "INTRA"}
                               </span>
+                              {(() => {
+                                const rawPrescriber = (
+                                  s as unknown as {
+                                    prescriber?:
+                                      | { id: string; name: string }
+                                      | Array<{ id: string; name: string }>
+                                      | null;
+                                  }
+                                ).prescriber;
+                                const prescriber = Array.isArray(rawPrescriber)
+                                  ? rawPrescriber[0] ?? null
+                                  : rawPrescriber ?? null;
+                                if (prescriber?.name) {
+                                  return (
+                                    <span
+                                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-violet-50 border border-violet-200 text-violet-700 whitespace-nowrap max-w-[220px]"
+                                      title={`Prescripteur : ${prescriber.name}`}
+                                    >
+                                      <Building2 className="h-3 w-3 shrink-0" />
+                                      <span className="truncate">
+                                        {prescriber.name}
+                                      </span>
+                                    </span>
+                                  );
+                                }
+                                if (s.subcontractor_name) {
+                                  return (
+                                    <span
+                                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-orange-50 border border-orange-200 text-orange-700 whitespace-nowrap max-w-[220px]"
+                                      title={`Donneur d'ordre (sous-traitance) : ${s.subcontractor_name}`}
+                                    >
+                                      <Building2 className="h-3 w-3 shrink-0" />
+                                      <span className="truncate">
+                                        {s.subcontractor_name}
+                                      </span>
+                                    </span>
+                                  );
+                                }
+                                return null;
+                              })()}
                             </div>
                             {(() => {
                               const breakdown = stageBreakdown.get(s.id);
@@ -1008,17 +1116,40 @@ export default async function SessionsListPage({
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-xs">
-                        {s.location ? (
-                          <div className="inline-flex items-center gap-1 text-zinc-700 dark:text-zinc-300">
-                            <MapPin className="h-3 w-3 text-zinc-400 shrink-0" />
-                            <span className="truncate max-w-[180px]">
-                              {s.location}
+                      <td className="px-4 py-3 text-center">
+                        {(() => {
+                          const rawQuiz = (
+                            s as unknown as {
+                              quiz?:
+                                | { id: string; title: string }
+                                | Array<{ id: string; title: string }>
+                                | null;
+                            }
+                          ).quiz;
+                          const quiz = Array.isArray(rawQuiz)
+                            ? rawQuiz[0] ?? null
+                            : rawQuiz ?? null;
+                          if (quiz?.title) {
+                            return (
+                              <span
+                                className="inline-flex items-center justify-center h-7 w-7 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900 cursor-help"
+                                title={`Quiz rattaché : ${quiz.title}`}
+                                aria-label={`Quiz rattaché : ${quiz.title}`}
+                              >
+                                <Brain className="h-3.5 w-3.5" />
+                              </span>
+                            );
+                          }
+                          return (
+                            <span
+                              className="inline-flex items-center justify-center h-7 w-7 rounded-full bg-zinc-100 text-zinc-400 border border-zinc-200 dark:bg-zinc-800 dark:text-zinc-500 dark:border-zinc-700 cursor-help"
+                              title="Aucun quiz d'évaluation rattaché à cette session"
+                              aria-label="Aucun quiz rattaché"
+                            >
+                              <Brain className="h-3.5 w-3.5 opacity-50" />
                             </span>
-                          </div>
-                        ) : (
-                          <span className="text-zinc-300">—</span>
-                        )}
+                          );
+                        })()}
                       </td>
                       <td className="px-4 py-3 text-xs">
                         {trainerLabel ? (

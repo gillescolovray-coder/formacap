@@ -1,26 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import {
-  ArrowLeft,
-  Calendar,
-  CheckCircle2,
-  Clock,
-  ListChecks,
-  User,
-} from "lucide-react";
+import { ArrowLeft, CheckCircle2, ListChecks, User } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolvePartnerContext } from "../_resolve";
+import { InscriptionsList, type InscriptionRow } from "./_list";
 
 type Params = { token: string };
-
-function formatDate(s: string | null): string {
-  if (!s) return "—";
-  return new Date(s + "T00:00:00").toLocaleDateString("fr-FR", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
 
 export default async function PartnerInscriptionsPage({
   params,
@@ -36,38 +21,62 @@ export default async function PartnerInscriptionsPage({
 
   const supabase = createAdminClient();
 
-  // Toutes les inscriptions soumises par ce partenaire
+  // Toutes les inscriptions soumises par ce partenaire — on charge en
+  // plus :
+  //   • téléphone apprenant (learners + fallback prospect_phone)
+  //   • entreprise rattachée (companies via company_id) + texte libre
+  //   • contact référent pédagogique (migration 0093)
+  //   • modalité et durée de la formation
   const { data: requests } = await supabase
     .from("inscription_requests")
     .select(
       `
-      id, received_at, prospect_first_name, prospect_last_name,
-      learner:learners(id, first_name, last_name, email),
-      session:sessions(id, internal_code, start_date, end_date,
-        formation:formations(id, title))
+      id, received_at,
+      prospect_first_name, prospect_last_name, prospect_email, prospect_phone,
+      company_name_freetext,
+      contact_referent_first_name, contact_referent_last_name,
+      contact_referent_email, contact_referent_phone, contact_referent_role,
+      learner:learners(id, first_name, last_name, email, phone),
+      company:companies(id, name, city),
+      session:sessions(id, internal_code, start_date, end_date, modality,
+        formation:formations(id, title, duration_hours, duration_days))
     `,
     )
     .eq("referrer_company_id", ctx.company.id)
     .order("received_at", { ascending: false });
 
-  type Row = {
+  type Raw = {
     id: string;
     received_at: string;
     prospect_first_name: string | null;
     prospect_last_name: string | null;
+    prospect_email: string | null;
+    prospect_phone: string | null;
+    company_name_freetext: string | null;
+    contact_referent_first_name: string | null;
+    contact_referent_last_name: string | null;
+    contact_referent_email: string | null;
+    contact_referent_phone: string | null;
+    contact_referent_role: string | null;
     learner:
       | {
           id: string;
           first_name: string;
           last_name: string;
           email: string | null;
+          phone: string | null;
         }
       | Array<{
           id: string;
           first_name: string;
           last_name: string;
           email: string | null;
+          phone: string | null;
         }>
+      | null;
+    company:
+      | { id: string; name: string; city: string | null }
+      | Array<{ id: string; name: string; city: string | null }>
       | null;
     session:
       | {
@@ -75,9 +84,20 @@ export default async function PartnerInscriptionsPage({
           internal_code: string | null;
           start_date: string | null;
           end_date: string | null;
+          modality: string | null;
           formation:
-            | { id: string; title: string }
-            | Array<{ id: string; title: string }>
+            | {
+                id: string;
+                title: string;
+                duration_hours: number | null;
+                duration_days: number | null;
+              }
+            | Array<{
+                id: string;
+                title: string;
+                duration_hours: number | null;
+                duration_days: number | null;
+              }>
             | null;
         }
       | Array<{
@@ -85,40 +105,75 @@ export default async function PartnerInscriptionsPage({
           internal_code: string | null;
           start_date: string | null;
           end_date: string | null;
+          modality: string | null;
           formation:
-            | { id: string; title: string }
-            | Array<{ id: string; title: string }>
+            | {
+                id: string;
+                title: string;
+                duration_hours: number | null;
+                duration_days: number | null;
+              }
+            | Array<{
+                id: string;
+                title: string;
+                duration_hours: number | null;
+                duration_days: number | null;
+              }>
             | null;
         }>
       | null;
   };
-  const rows = ((requests ?? []) as unknown as Row[]).map((r) => {
-    const learner = Array.isArray(r.learner) ? r.learner[0] : r.learner;
-    const session = Array.isArray(r.session) ? r.session[0] : r.session;
-    // TypeScript ne suit pas bien le narrowing imbriqué, on type explicitement
-    let formation: { id: string; title: string } | null = null;
-    if (session?.formation) {
-      formation = Array.isArray(session.formation)
-        ? (session.formation[0] ?? null)
-        : session.formation;
-    }
-    return {
-      id: r.id,
-      received_at: r.received_at,
-      learnerName: learner
-        ? `${learner.first_name} ${learner.last_name}`
-        : [r.prospect_first_name, r.prospect_last_name]
-            .filter(Boolean)
-            .join(" ") || "—",
-      learnerEmail: learner?.email ?? null,
-      sessionRef: session?.internal_code ?? null,
-      startDate: session?.start_date ?? null,
-      endDate: session?.end_date ?? null,
-      formationTitle: formation?.title ?? "—",
-    };
-  });
-
-  const today = new Date().toISOString().slice(0, 10);
+  const rows: InscriptionRow[] = ((requests ?? []) as unknown as Raw[]).map(
+    (r) => {
+      const learner = Array.isArray(r.learner) ? r.learner[0] : r.learner;
+      const company = Array.isArray(r.company) ? r.company[0] : r.company;
+      const session = Array.isArray(r.session) ? r.session[0] : r.session;
+      let formation: {
+        id: string;
+        title: string;
+        duration_hours: number | null;
+        duration_days: number | null;
+      } | null = null;
+      if (session?.formation) {
+        formation = Array.isArray(session.formation)
+          ? session.formation[0] ?? null
+          : session.formation;
+      }
+      const referent =
+        r.contact_referent_email ||
+        r.contact_referent_last_name ||
+        r.contact_referent_first_name
+          ? {
+              first_name: r.contact_referent_first_name,
+              last_name: r.contact_referent_last_name,
+              email: r.contact_referent_email,
+              phone: r.contact_referent_phone,
+              role: r.contact_referent_role,
+            }
+          : null;
+      return {
+        id: r.id,
+        received_at: r.received_at,
+        learnerName: learner
+          ? `${learner.first_name} ${learner.last_name}`
+          : [r.prospect_first_name, r.prospect_last_name]
+              .filter(Boolean)
+              .join(" ") || "—",
+        learnerEmail: learner?.email ?? r.prospect_email ?? null,
+        learnerPhone: learner?.phone ?? r.prospect_phone ?? null,
+        companyName: company?.name ?? r.company_name_freetext ?? null,
+        companyCity: company?.city ?? null,
+        contact_referent: referent,
+        sessionRef: session?.internal_code ?? null,
+        startDate: session?.start_date ?? null,
+        endDate: session?.end_date ?? null,
+        modality: session?.modality ?? null,
+        formationTitle: formation?.title ?? "—",
+        durationHours: formation?.duration_hours ?? null,
+        durationDays: formation?.duration_days ?? null,
+      };
+    },
+  );
 
   return (
     <div className="space-y-5">
@@ -162,92 +217,8 @@ export default async function PartnerInscriptionsPage({
           </Link>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
-          <table className="w-full text-sm">
-            <thead className="bg-zinc-50">
-              <tr>
-                <Th>Apprenant</Th>
-                <Th>Formation</Th>
-                <Th>Dates</Th>
-                <Th>Statut</Th>
-                <Th>Inscrit le</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => {
-                const isFinished = r.endDate && r.endDate < today;
-                const isStarted = r.startDate && r.startDate <= today;
-                const statusBadge = isFinished
-                  ? {
-                      label: "Terminée",
-                      cls: "bg-emerald-100 text-emerald-700 border-emerald-200",
-                    }
-                  : isStarted
-                    ? {
-                        label: "En cours",
-                        cls: "bg-amber-100 text-amber-700 border-amber-200",
-                      }
-                    : {
-                        label: "À venir",
-                        cls: "bg-cyan-100 text-cyan-700 border-cyan-200",
-                      };
-                return (
-                  <tr
-                    key={r.id}
-                    className="border-t border-zinc-200 hover:bg-zinc-50/50"
-                  >
-                    <td className="px-3 py-2.5">
-                      <div className="font-medium text-zinc-900">
-                        {r.learnerName}
-                      </div>
-                      {r.learnerEmail && (
-                        <div className="text-[11px] text-zinc-500">
-                          {r.learnerEmail}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <div className="font-medium text-zinc-800">
-                        {r.formationTitle}
-                      </div>
-                      {r.sessionRef && (
-                        <div className="text-[11px] text-zinc-500">
-                          Réf. {r.sessionRef}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-3 py-2.5 text-xs">
-                      <div className="inline-flex items-center gap-1 text-zinc-700">
-                        <Calendar className="h-3.5 w-3.5 text-zinc-400" />
-                        {formatDate(r.startDate)}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${statusBadge.cls}`}
-                      >
-                        {statusBadge.label}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2.5 text-xs text-zinc-600 inline-flex items-center gap-1">
-                      <Clock className="h-3.5 w-3.5 text-zinc-400" />
-                      {new Date(r.received_at).toLocaleDateString("fr-FR")}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <InscriptionsList rows={rows} />
       )}
     </div>
-  );
-}
-
-function Th({ children }: { children: React.ReactNode }) {
-  return (
-    <th className="text-left text-[11px] uppercase tracking-wider font-bold text-zinc-600 px-3 py-2.5">
-      {children}
-    </th>
   );
 }
