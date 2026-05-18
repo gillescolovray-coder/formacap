@@ -9,7 +9,7 @@ type Params = { token: string };
 
 type SessionRow = {
   id: string;
-  reference: string | null;
+  internal_code: string | null;
   start_date: string | null;
   end_date: string | null;
   status: string;
@@ -66,7 +66,7 @@ export default async function PartnerCataloguePage({
       .from("sessions")
       .select(
         `
-      id, reference, start_date, end_date, status, is_inter, modality,
+      id, internal_code, start_date, end_date, status, is_inter, modality,
       formation:formations!inner(id, title, duration_hours, duration_days, subtitle, modality)
     `,
       )
@@ -90,7 +90,7 @@ export default async function PartnerCataloguePage({
       .from("sessions")
       .select(
         `
-      id, reference, start_date, end_date, status, is_inter, modality,
+      id, internal_code, start_date, end_date, status, is_inter, modality,
       formation:formations!inner(id, title, duration_hours, duration_days, subtitle, modality)
     `,
       )
@@ -133,7 +133,7 @@ export default async function PartnerCataloguePage({
       if (!formation) {
         return {
           id: s.id,
-          reference: s.reference,
+          reference: s.internal_code,
           start_date: s.start_date,
           end_date: s.end_date,
           is_intra: isIntra,
@@ -160,7 +160,7 @@ export default async function PartnerCataloguePage({
       });
       return {
         id: s.id,
-        reference: s.reference,
+        reference: s.internal_code,
         start_date: s.start_date,
         end_date: s.end_date,
         is_intra: isIntra,

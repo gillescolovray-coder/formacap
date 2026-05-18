@@ -47,7 +47,7 @@ export default async function PartnerInscribePage({
     .from("sessions")
     .select(
       `
-      id, reference, start_date, end_date, status, is_inter, prescriber_company_id,
+      id, internal_code, start_date, end_date, status, is_inter, prescriber_company_id,
       formation:formations!inner(id, title, subtitle, duration_hours, duration_days, modality)
     `,
     )
@@ -57,7 +57,7 @@ export default async function PartnerInscribePage({
   if (!sessionRaw) notFound();
   const session = sessionRaw as unknown as {
     id: string;
-    reference: string | null;
+    internal_code: string | null;
     start_date: string | null;
     end_date: string | null;
     status: string;

@@ -43,7 +43,7 @@ export default async function PartnerInscriptionsPage({
       `
       id, received_at, prospect_first_name, prospect_last_name,
       learner:learners(id, first_name, last_name, email),
-      session:sessions(id, reference, start_date, end_date,
+      session:sessions(id, internal_code, start_date, end_date,
         formation:formations(id, title))
     `,
     )
@@ -72,7 +72,7 @@ export default async function PartnerInscriptionsPage({
     session:
       | {
           id: string;
-          reference: string | null;
+          internal_code: string | null;
           start_date: string | null;
           end_date: string | null;
           formation:
@@ -82,7 +82,7 @@ export default async function PartnerInscriptionsPage({
         }
       | Array<{
           id: string;
-          reference: string | null;
+          internal_code: string | null;
           start_date: string | null;
           end_date: string | null;
           formation:
@@ -111,7 +111,7 @@ export default async function PartnerInscriptionsPage({
             .filter(Boolean)
             .join(" ") || "—",
       learnerEmail: learner?.email ?? null,
-      sessionRef: session?.reference ?? null,
+      sessionRef: session?.internal_code ?? null,
       startDate: session?.start_date ?? null,
       endDate: session?.end_date ?? null,
       formationTitle: formation?.title ?? "—",
