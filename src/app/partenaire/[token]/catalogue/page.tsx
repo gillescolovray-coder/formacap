@@ -24,6 +24,7 @@ type SessionRow = {
         duration_days: number | null;
         subtitle: string | null;
         modality: string | null;
+        programme_pdf_url: string | null;
       }
     | Array<{
         id: string;
@@ -32,6 +33,7 @@ type SessionRow = {
         duration_days: number | null;
         subtitle: string | null;
         modality: string | null;
+        programme_pdf_url: string | null;
       }>
     | null;
 };
@@ -68,7 +70,7 @@ export default async function PartnerCataloguePage({
       .select(
         `
       id, internal_code, start_date, end_date, status, is_inter, modality, max_participants,
-      formation:formations!inner(id, title, duration_hours, duration_days, subtitle, modality)
+      formation:formations!inner(id, title, duration_hours, duration_days, subtitle, modality, programme_pdf_url)
     `,
       )
       .eq("organization_id", ctx.company.organization_id)
@@ -92,7 +94,7 @@ export default async function PartnerCataloguePage({
       .select(
         `
       id, internal_code, start_date, end_date, status, is_inter, modality, max_participants,
-      formation:formations!inner(id, title, duration_hours, duration_days, subtitle, modality)
+      formation:formations!inner(id, title, duration_hours, duration_days, subtitle, modality, programme_pdf_url)
     `,
       )
       .eq("organization_id", ctx.company.organization_id)
@@ -199,6 +201,7 @@ export default async function PartnerCataloguePage({
           title: formation.title,
           subtitle: formation.subtitle,
           duration_hours: formation.duration_hours,
+          programme_pdf_url: formation.programme_pdf_url,
         },
         negotiated_price_ht: effective.price ?? undefined,
         price_source: effective.source,

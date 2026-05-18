@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   Clock,
   Euro,
+  FileText,
   Globe,
   Mail,
   MapPin,
@@ -37,6 +38,8 @@ export type CatalogueSession = {
     title: string;
     subtitle: string | null;
     duration_hours: number | null;
+    /** URL publique du PDF du programme de formation (Qualiopi). */
+    programme_pdf_url: string | null;
   } | null;
   /** Prix HT effectif (override ou calculé), undefined si pas de tarif. */
   negotiated_price_ht: number | undefined;
@@ -145,7 +148,7 @@ export function CatalogueList({
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-3">
           {filtered.map((s) => {
             const negotiated = s.negotiated_price_ht;
             const mailtoSubject = encodeURIComponent(
@@ -294,15 +297,29 @@ export function CatalogueList({
                       </a>
                     </div>
                   )}
-                  {negotiated !== undefined ? (
-                    <Link
-                      href={`/partenaire/${token}/inscrire/${s.id}`}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-cyan-600 text-white text-sm font-bold hover:bg-cyan-700"
-                    >
-                      Inscrire un apprenant
-                      <ArrowRight className="h-4 w-4" />
-                    </Link>
-                  ) : null}
+                  <div className="flex gap-2 flex-wrap">
+                    {s.formation?.programme_pdf_url && (
+                      <a
+                        href={s.formation.programme_pdf_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-zinc-300 bg-white text-zinc-700 text-sm font-medium hover:bg-zinc-50 hover:border-zinc-400"
+                        title="Ouvrir le programme detaille (PDF) dans un nouvel onglet"
+                      >
+                        <FileText className="h-4 w-4" />
+                        Programme
+                      </a>
+                    )}
+                    {negotiated !== undefined && (
+                      <Link
+                        href={`/partenaire/${token}/inscrire/${s.id}`}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-cyan-600 text-white text-sm font-bold hover:bg-cyan-700"
+                      >
+                        Inscrire un apprenant
+                        <ArrowRight className="h-4 w-4" />
+                      </Link>
+                    )}
+                  </div>
                 </div>
               </article>
             );
