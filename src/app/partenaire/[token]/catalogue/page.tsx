@@ -15,6 +15,7 @@ type SessionRow = {
   status: string;
   is_inter: boolean;
   modality: string | null;
+  max_participants: number | null;
   formation:
     | {
         id: string;
@@ -66,7 +67,7 @@ export default async function PartnerCataloguePage({
       .from("sessions")
       .select(
         `
-      id, internal_code, start_date, end_date, status, is_inter, modality,
+      id, internal_code, start_date, end_date, status, is_inter, modality, max_participants,
       formation:formations!inner(id, title, duration_hours, duration_days, subtitle, modality)
     `,
       )
@@ -90,7 +91,7 @@ export default async function PartnerCataloguePage({
       .from("sessions")
       .select(
         `
-      id, internal_code, start_date, end_date, status, is_inter, modality,
+      id, internal_code, start_date, end_date, status, is_inter, modality, max_participants,
       formation:formations!inner(id, title, duration_hours, duration_days, subtitle, modality)
     `,
       )
@@ -102,14 +103,20 @@ export default async function PartnerCataloguePage({
     if (rows) collected.push(...(rows as unknown as RawRow[]));
   }
 
-  // Déduplique (au cas où une session INTRA serait aussi distanciel
-  // INTER, ce qui est théoriquement impossible mais sait-on jamais).
+  // Déduplique + retrie par date croissante (au cas où on aurait mixé
+  // 2 requetes INTER + INTRA, l'ordre serait perdu).
   const seen = new Set<string>();
-  const sessions = collected.filter((s) => {
-    if (seen.has(s.id)) return false;
-    seen.add(s.id);
-    return true;
-  });
+  const sessions = collected
+    .filter((s) => {
+      if (seen.has(s.id)) return false;
+      seen.add(s.id);
+      return true;
+    })
+    .sort((a, b) => {
+      const da = a.start_date ?? "9999-12-31";
+      const db = b.start_date ?? "9999-12-31";
+      return da.localeCompare(db);
+    });
 
   // Overrides spécifiques par formation
   const { data: pricingRows } = await supabase
@@ -122,6 +129,22 @@ export default async function PartnerCataloguePage({
     unit_price_ht: string | number;
   }>) {
     overrideMap.set(p.formation_id, Number(p.unit_price_ht));
+  }
+
+  // Comptage des apprenants inscrits par session (statut != "cancelled")
+  // pour afficher "X / Y inscrits" sur chaque carte.
+  const enrolledBySession = new Map<string, number>();
+  const sessionIds = sessions.map((s) => s.id);
+  if (sessionIds.length > 0) {
+    const { data: enrollments } = await supabase
+      .from("session_enrollments")
+      .select("session_id")
+      .in("session_id", sessionIds)
+      .neq("status", "cancelled");
+    (enrollments ?? []).forEach((e) => {
+      const sid = e.session_id as string;
+      enrolledBySession.set(sid, (enrolledBySession.get(sid) ?? 0) + 1);
+    });
   }
 
   const rows: CatalogueSession[] = (sessions as unknown as SessionRow[]).map(
@@ -138,6 +161,9 @@ export default async function PartnerCataloguePage({
           end_date: s.end_date,
           is_intra: isIntra,
           modality: null,
+          status: s.status,
+          enrolled_count: enrolledBySession.get(s.id) ?? 0,
+          max_participants: s.max_participants,
           formation: null,
           negotiated_price_ht: undefined,
           price_source: null,
@@ -165,6 +191,9 @@ export default async function PartnerCataloguePage({
         end_date: s.end_date,
         is_intra: isIntra,
         modality: formation.modality ?? null,
+        status: s.status,
+        enrolled_count: enrolledBySession.get(s.id) ?? 0,
+        max_participants: s.max_participants,
         formation: {
           id: formation.id,
           title: formation.title,

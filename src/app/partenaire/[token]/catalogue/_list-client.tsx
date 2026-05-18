@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   ArrowRight,
   Calendar,
+  CheckCircle2,
   Clock,
   Euro,
   Globe,
@@ -12,6 +13,7 @@ import {
   MapPin,
   Search,
   Star,
+  Users,
   X,
 } from "lucide-react";
 
@@ -24,6 +26,12 @@ export type CatalogueSession = {
   is_intra: boolean;
   /** Modalité de la formation (presentiel, distanciel, hybride). */
   modality: string | null;
+  /** Statut de la session : "planned" | "confirmed" | ... */
+  status: string;
+  /** Nombre d'apprenants déjà inscrits (non annulés). */
+  enrolled_count: number;
+  /** Capacité maximale de la session (peut être null si non défini). */
+  max_participants: number | null;
   formation: {
     id: string;
     title: string;
@@ -149,7 +157,11 @@ export function CatalogueList({
             return (
               <article
                 key={s.id}
-                className="rounded-2xl bg-white border border-zinc-200 p-5 flex flex-col gap-3 hover:border-cyan-300 hover:shadow-sm transition-all"
+                className={
+                  s.status === "confirmed"
+                    ? "rounded-2xl bg-emerald-50/40 border-2 border-emerald-300 p-5 flex flex-col gap-3 hover:border-emerald-400 hover:shadow-md transition-all"
+                    : "rounded-2xl bg-white border border-zinc-200 p-5 flex flex-col gap-3 hover:border-cyan-300 hover:shadow-sm transition-all"
+                }
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
@@ -188,6 +200,22 @@ export function CatalogueList({
                         Session dédiée
                       </span>
                     )}
+                    {s.status === "confirmed" ? (
+                      <span
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-200 text-emerald-800 text-[10px] font-bold uppercase tracking-wider"
+                        title="Session confirmée — démarrage garanti"
+                      >
+                        <CheckCircle2 className="h-3 w-3" />
+                        Confirmée
+                      </span>
+                    ) : (
+                      <span
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-bold uppercase tracking-wider border border-amber-200"
+                        title="Session planifiée — démarrage selon atteinte du seuil d'apprenants"
+                      >
+                        Planifiée
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -201,6 +229,30 @@ export function CatalogueList({
                     {s.formation?.duration_hours
                       ? `${s.formation.duration_hours} h`
                       : "—"}
+                  </div>
+                  <div className="flex items-center gap-1.5 text-zinc-600 col-span-2">
+                    <Users className="h-3.5 w-3.5 text-zinc-400" />
+                    {(() => {
+                      const max = s.max_participants;
+                      const cur = s.enrolled_count;
+                      const isFull = max !== null && cur >= max;
+                      return (
+                        <span
+                          className={
+                            isFull
+                              ? "font-bold text-rose-700"
+                              : max !== null && cur >= max * 0.8
+                                ? "font-bold text-amber-700"
+                                : "text-zinc-700"
+                          }
+                        >
+                          {cur}
+                          {max !== null ? ` / ${max}` : ""} inscrit
+                          {cur > 1 ? "s" : ""}
+                          {isFull && " — Complet"}
+                        </span>
+                      );
+                    })()}
                   </div>
                 </dl>
 

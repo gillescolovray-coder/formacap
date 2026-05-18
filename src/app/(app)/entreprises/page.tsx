@@ -395,6 +395,19 @@ export default async function CompaniesListPage({
     }
   }
 
+  // Liste des company_ids ayant un portail partenaire active (token genere).
+  // Utile pour afficher une icone differente sur chaque ligne d'entreprise.
+  const partnerPortalActiveSet = new Set<string>();
+  if (companyIds.length > 0) {
+    const { data: tokens } = await supabase
+      .from("partner_portal_tokens")
+      .select("company_id")
+      .in("company_id", companyIds);
+    (tokens ?? []).forEach((t) => {
+      partnerPortalActiveSet.add(t.company_id as string);
+    });
+  }
+
   const stats = [
     {
       label: "Total",
@@ -1157,6 +1170,11 @@ export default async function CompaniesListPage({
                         }
                         parentName={parentName}
                         parentId={c.parent_company_id ?? null}
+                        partnerPortalActive={
+                          c.type === "of" || c.type === "prescripteur"
+                            ? partnerPortalActiveSet.has(c.id)
+                            : null
+                        }
                       />
                     );
                   })}

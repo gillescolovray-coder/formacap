@@ -7,6 +7,7 @@ import {
   Calendar,
   ChevronRight,
   Eye,
+  Handshake,
   MapPin,
   User,
   Users,
@@ -60,6 +61,11 @@ type Props = {
   parentId?: string | null;
   /** Force l'état déplié initial (ex. pour tout déplier en masse). */
   defaultExpanded?: boolean;
+  /** Portail partenaire activé ?
+   *  - true  : token genere, lien transmis au partenaire
+   *  - false : type OF/prescripteur mais pas encore active
+   *  - null  : type d'entreprise non eligible (pas d'icone affiche) */
+  partnerPortalActive?: boolean | null;
 };
 
 /**
@@ -77,6 +83,7 @@ export function CompanyRow({
   parentName = null,
   parentId = null,
   defaultExpanded = false,
+  partnerPortalActive = null,
 }: Props) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const hasPeople = people.length > 0;
@@ -140,7 +147,25 @@ export function CompanyRow({
                   {c.name}
                 </p>
               </Link>
-              <p className="text-xs text-zinc-500 mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5">
+              <p className="text-xs text-zinc-500 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                {/* Icone Portail partenaire (OF/prescripteur uniquement) */}
+                {partnerPortalActive !== null && (
+                  <span
+                    className={cn(
+                      "inline-flex items-center justify-center h-4 w-4 rounded-full shrink-0",
+                      partnerPortalActive
+                        ? "bg-emerald-100 text-emerald-700"
+                        : "bg-zinc-100 text-zinc-400",
+                    )}
+                    title={
+                      partnerPortalActive
+                        ? "Portail partenaire activé"
+                        : "Portail partenaire non activé"
+                    }
+                  >
+                    <Handshake className="h-2.5 w-2.5" />
+                  </span>
+                )}
                 {(c.postal_code || c.city) && (
                   <span className="inline-flex items-center gap-1">
                     <span className="tabular-nums">
