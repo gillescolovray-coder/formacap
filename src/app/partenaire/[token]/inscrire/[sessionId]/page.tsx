@@ -47,7 +47,7 @@ export default async function PartnerInscribePage({
     .from("sessions")
     .select(
       `
-      id, reference, start_date, end_date, status, format, prescriber_company_id,
+      id, reference, start_date, end_date, status, is_inter, prescriber_company_id,
       formation:formations!inner(id, title, subtitle, duration_hours, duration_days, modality)
     `,
     )
@@ -61,7 +61,7 @@ export default async function PartnerInscribePage({
     start_date: string | null;
     end_date: string | null;
     status: string;
-    format: string;
+    is_inter: boolean;
     prescriber_company_id: string | null;
     formation:
       | {
@@ -86,7 +86,7 @@ export default async function PartnerInscribePage({
     : session.formation;
   if (!formation) notFound();
   const isInterDistanciel =
-    session.format === "inter" && formation.modality === "distanciel";
+    session.is_inter && formation.modality === "distanciel";
   const isOwnIntra = session.prescriber_company_id === ctx.company.id;
   if (!isInterDistanciel && !isOwnIntra) notFound();
   if (ctx.company.type === "of" && !isInterDistanciel) notFound();

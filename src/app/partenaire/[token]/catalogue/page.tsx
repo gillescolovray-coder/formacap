@@ -13,7 +13,7 @@ type SessionRow = {
   start_date: string | null;
   end_date: string | null;
   status: string;
-  format: string | null;
+  is_inter: boolean;
   modality: string | null;
   formation:
     | {
@@ -55,7 +55,7 @@ export default async function PartnerCataloguePage({
   const showInter = !isPrescripteur || ctx.company.show_inter_catalog;
   const showIntra = isPrescripteur && ctx.company.show_own_intra;
 
-  type RawRow = SessionRow & { format: string | null };
+  type RawRow = SessionRow;
   const collected: RawRow[] = [];
 
   if (showInter) {
@@ -63,12 +63,12 @@ export default async function PartnerCataloguePage({
       .from("sessions")
       .select(
         `
-      id, reference, start_date, end_date, status, format, modality,
+      id, reference, start_date, end_date, status, is_inter, modality,
       formation:formations!inner(id, title, duration_hours, duration_days, subtitle, modality)
     `,
       )
       .eq("organization_id", ctx.company.organization_id)
-      .eq("format", "inter")
+      .eq("is_inter", true)
       .eq("formations.modality", "distanciel")
       .gte("start_date", today)
       .in("status", ["confirmed", "draft"])
@@ -81,7 +81,7 @@ export default async function PartnerCataloguePage({
       .from("sessions")
       .select(
         `
-      id, reference, start_date, end_date, status, format, modality,
+      id, reference, start_date, end_date, status, is_inter, modality,
       formation:formations!inner(id, title, duration_hours, duration_days, subtitle, modality)
     `,
       )
@@ -120,7 +120,7 @@ export default async function PartnerCataloguePage({
       const formation = Array.isArray(s.formation)
         ? (s.formation[0] ?? null)
         : s.formation;
-      const isIntra = s.format === "intra";
+      const isIntra = s.is_inter === false;
       if (!formation) {
         return {
           id: s.id,

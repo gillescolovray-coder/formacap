@@ -70,7 +70,7 @@ export default async function PartnerDashboardPage({
       head: true,
     })
     .eq("organization_id", ctx.company.organization_id)
-    .eq("format", "inter")
+    .eq("is_inter", true)
     .eq("formations.modality", "distanciel")
     .gte("start_date", today);
 

@@ -62,7 +62,7 @@ export async function submitPartnerEnrollment(formData: FormData): Promise<
   const { data: session } = await supabase
     .from("sessions")
     .select(
-      "id, organization_id, formation_id, format, prescriber_company_id, start_date, end_date, formations!inner(modality, title, duration_hours, duration_days)",
+      "id, organization_id, formation_id, is_inter, prescriber_company_id, start_date, end_date, formations!inner(modality, title, duration_hours, duration_days)",
     )
     .eq("id", sessionId)
     .eq("organization_id", ctx.company.organization_id)
@@ -72,7 +72,7 @@ export async function submitPartnerEnrollment(formData: FormData): Promise<
   }
   const sessionTyped = session as {
     formation_id: string;
-    format: string | null;
+    is_inter: boolean | null;
     prescriber_company_id: string | null;
     formations: unknown;
   };
@@ -99,7 +99,7 @@ export async function submitPartnerEnrollment(formData: FormData): Promise<
 
   // Vérification d'éligibilité côté partenaire
   const isInterDistanciel =
-    sessionTyped.format === "inter" && formation.modality === "distanciel";
+    sessionTyped.is_inter === true && formation.modality === "distanciel";
   const isOwnIntra =
     sessionTyped.prescriber_company_id === ctx.company.id;
   if (!isInterDistanciel && !isOwnIntra) {
