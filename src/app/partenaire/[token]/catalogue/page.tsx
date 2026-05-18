@@ -59,6 +59,9 @@ export default async function PartnerCataloguePage({
   const collected: RawRow[] = [];
 
   if (showInter) {
+    // On ne filtre PAS sur formation.modality dans la requete Supabase
+    // (le client JS a un bug avec les filtres sur relations aliasees
+    // qui retourne silencieusement 0). On filtre en JS apres.
     const { data: rows } = await supabase
       .from("sessions")
       .select(
@@ -69,11 +72,17 @@ export default async function PartnerCataloguePage({
       )
       .eq("organization_id", ctx.company.organization_id)
       .eq("is_inter", true)
-      .eq("formation.modality", "distanciel")
       .gte("start_date", today)
       .in("status", ["confirmed", "draft", "planned"])
       .order("start_date", { ascending: true });
-    if (rows) collected.push(...(rows as unknown as RawRow[]));
+    if (rows) {
+      // Filtre JS : ne garder que les formations DISTANCIEL
+      const filtered = (rows as unknown as RawRow[]).filter((s) => {
+        const f = Array.isArray(s.formation) ? s.formation[0] : s.formation;
+        return f?.modality === "distanciel";
+      });
+      collected.push(...filtered);
+    }
   }
 
   if (showIntra) {
