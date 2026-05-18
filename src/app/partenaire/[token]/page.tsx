@@ -72,7 +72,8 @@ export default async function PartnerDashboardPage({
     .eq("organization_id", ctx.company.organization_id)
     .eq("is_inter", true)
     .eq("formations.modality", "distanciel")
-    .gte("start_date", today);
+    .gte("start_date", today)
+    .in("status", ["confirmed", "draft", "planned"]);
 
   return (
     <div className="space-y-6">

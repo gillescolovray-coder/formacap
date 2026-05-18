@@ -71,7 +71,7 @@ export default async function PartnerCataloguePage({
       .eq("is_inter", true)
       .eq("formations.modality", "distanciel")
       .gte("start_date", today)
-      .in("status", ["confirmed", "draft"])
+      .in("status", ["confirmed", "draft", "planned"])
       .order("start_date", { ascending: true });
     if (rows) collected.push(...(rows as unknown as RawRow[]));
   }
@@ -88,7 +88,7 @@ export default async function PartnerCataloguePage({
       .eq("organization_id", ctx.company.organization_id)
       .eq("prescriber_company_id", ctx.company.id)
       .gte("start_date", today)
-      .in("status", ["confirmed", "draft"])
+      .in("status", ["confirmed", "draft", "planned"])
       .order("start_date", { ascending: true });
     if (rows) collected.push(...(rows as unknown as RawRow[]));
   }
