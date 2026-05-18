@@ -12,6 +12,13 @@ const nextConfig: NextConfig = {
   // que le bundler casse en les relocalisant. Necessaire pour la
   // generation PDF en runtime serverless Vercel.
   serverExternalPackages: ["@sparticuz/chromium", "puppeteer-core"],
+  // Force l'inclusion du binaire Chromium (fichier .br ~50 Mo) dans la
+  // fonction serverless Vercel pour les routes qui generent des PDF.
+  // Sans ca, Vercel ne copie pas le binaire car il n'est pas detecte
+  // comme dependance statique (chargement dynamique via executablePath()).
+  outputFileTracingIncludes: {
+    "/api/**": ["./node_modules/@sparticuz/chromium/bin/**"],
+  },
 };
 
 export default nextConfig;
