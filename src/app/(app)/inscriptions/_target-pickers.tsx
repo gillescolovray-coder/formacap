@@ -1,0 +1,797 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Building2,
+  Calendar,
+  CheckCircle2,
+  ChevronDown,
+  User,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { PhoneInput } from "@/components/ui/phone-input";
+import { SireneLookup } from "../entreprises/_sirene-lookup";
+import { PostalCodeCity } from "@/components/postal-code-city";
+import {
+  SIRENE_STATUS_BADGE_CLASSES,
+  SIRENE_STATUS_LABELS,
+  type SireneLegalStatus,
+} from "@/lib/sirene/types";
+
+type LearnerOption = {
+  id: string;
+  first_name: string | null;
+  last_name: string;
+  email: string | null;
+  /** Téléphone fixe (l'app a 2 champs sur learners : phone + mobile). */
+  phone: string | null;
+  /** Téléphone portable. Quand on inscrit l'apprenant, on PRIORISE
+   *  mobile sur phone (plus fiable pour joindre une personne en
+   *  formation). */
+  mobile: string | null;
+  job_title: string | null;
+  civility: string | null;
+  company_id: string | null;
+  company_name: string | null;
+};
+type CompanyOption = { id: string; name: string };
+type SessionOption = {
+  id: string;
+  label: string;
+  meta?: string | null;
+  modality?: string | null;
+};
+
+type Props = {
+  learners: LearnerOption[];
+  companies: CompanyOption[];
+  sessions: SessionOption[];
+  parcoursOptions: Array<{ id: string; label: string }>;
+  defaults: {
+    learnerId?: string | null;
+    companyId?: string | null;
+    sessionId?: string | null;
+    parcoursId?: string | null;
+    formationId?: string | null;
+    companyFreetext?: string | null;
+    prospectFirstName?: string | null;
+    prospectLastName?: string | null;
+    prospectEmail?: string | null;
+    prospectPhone?: string | null;
+    /** Mobile (champ distinct du fixe — R6+ 2026-05-14). */
+    prospectMobile?: string | null;
+    prospectBirthDate?: string | null;
+    prospectJobTitle?: string | null;
+    prospectCivility?: string | null;
+  };
+  /** Slot rendu juste après le bloc "Entreprise référencée" et avant
+   *  les pickers Session/Parcours. Utilisé pour le bloc Référents
+   *  pédagogiques (R6 — Gilles 2026-05-13) qui dépend de l'entreprise
+   *  sélectionnée. */
+  referentsSlot?: React.ReactNode;
+};
+
+/**
+ * Combobox générique : champ texte + suggestions filtrées en dropdown.
+ * Si `onCreateNew` est fourni, propose en bas du dropdown un bouton
+ * pour créer un nouvel élément à partir du texte tapé.
+ */
+function SearchableCombobox<T>({
+  value,
+  onChange,
+  query,
+  setQuery,
+  options,
+  filterFn,
+  renderOption,
+  placeholder,
+  selectedLabel,
+  emptyText,
+  onPick,
+  icon: Icon,
+  onCreateNew,
+  createNewLabel,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  query: string;
+  setQuery: (v: string) => void;
+  options: T[];
+  filterFn: (opt: T, q: string) => boolean;
+  renderOption: (opt: T) => React.ReactNode;
+  placeholder: string;
+  selectedLabel: string | null;
+  emptyText: string;
+  onPick: (opt: T) => void;
+  icon: typeof User;
+  onCreateNew?: (typedText: string) => void;
+  createNewLabel?: (typedText: string) => string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  const filtered = useMemo(() => {
+    if (!query.trim()) return options.slice(0, 30);
+    const q = query.toLowerCase();
+    return options.filter((o) => filterFn(o, q)).slice(0, 30);
+  }, [options, query, filterFn]);
+
+  return (
+    <div ref={ref} className="relative">
+      <div
+        className={cn(
+          "flex items-start gap-2 min-h-9 w-full rounded-md border bg-white dark:bg-slate-900 px-3 py-1.5 cursor-text",
+          open
+            ? "border-cyan-500 ring-1 ring-cyan-500"
+            : "border-slate-300 dark:border-slate-700",
+        )}
+        onClick={() => setOpen(true)}
+      >
+        <Icon className="h-4 w-4 text-slate-400 shrink-0 mt-0.5" />
+        {!open && value ? (
+          <span
+            className="text-sm flex-1 font-medium leading-snug break-words min-w-0"
+            title={selectedLabel ?? undefined}
+          >
+            {selectedLabel}
+          </span>
+        ) : (
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setOpen(true);
+            }}
+            onFocus={() => setOpen(true)}
+            placeholder={placeholder}
+            className="flex-1 min-w-0 bg-transparent text-sm outline-none"
+          />
+        )}
+        {value && !open && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onChange("");
+              setQuery("");
+            }}
+            className="text-xs text-slate-400 hover:text-red-600 shrink-0 mt-0.5"
+          >
+            ✕
+          </button>
+        )}
+        <ChevronDown
+          className={cn(
+            "h-4 w-4 text-slate-400 shrink-0 transition-transform mt-0.5",
+            open && "rotate-180",
+          )}
+        />
+      </div>
+
+      {open && (
+        <div className="absolute z-30 mt-1 w-full max-h-72 overflow-y-auto rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg">
+          {filtered.length === 0 ? (
+            <div className="px-3 py-2 text-xs text-slate-500 italic">
+              {emptyText}
+            </div>
+          ) : (
+            <ul>
+              {filtered.map((opt, i) => (
+                <li key={i}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onPick(opt);
+                      setOpen(false);
+                    }}
+                    className="w-full text-left px-3 py-2 hover:bg-cyan-50 dark:hover:bg-cyan-950/30 border-b border-slate-100 dark:border-slate-800 last:border-0"
+                  >
+                    {renderOption(opt)}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {/* Bouton "Créer nouveau" — affiché en bas du dropdown si callback fourni et texte tapé */}
+          {onCreateNew && query.trim().length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                onCreateNew(query.trim());
+                setOpen(false);
+              }}
+              className="w-full text-left px-3 py-2.5 border-t border-slate-200 dark:border-slate-700 bg-cyan-50 dark:bg-cyan-950/30 hover:bg-cyan-100 dark:hover:bg-cyan-950/50 text-cyan-800 dark:text-cyan-300 font-semibold text-xs inline-flex items-center gap-1.5"
+            >
+              <span className="text-lg leading-none">+</span>
+              {createNewLabel
+                ? createNewLabel(query.trim())
+                : `Créer "${query.trim()}"`}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function TargetPickers({
+  learners,
+  companies,
+  sessions,
+  parcoursOptions,
+  defaults,
+  referentsSlot,
+}: Props) {
+  // --- États ---
+  const [learnerId, setLearnerId] = useState(defaults.learnerId ?? "");
+  const [learnerQuery, setLearnerQuery] = useState("");
+
+  const [companyId, setCompanyId] = useState(defaults.companyId ?? "");
+  const [companyQuery, setCompanyQuery] = useState("");
+  const [companyFreetext, setCompanyFreetext] = useState(
+    defaults.companyFreetext ?? "",
+  );
+  // Champs supplémentaires pour la création d'une nouvelle entreprise
+  const [newCompanySiret, setNewCompanySiret] = useState("");
+  const [newCompanyAddress, setNewCompanyAddress] = useState("");
+  const [newCompanyPostalCode, setNewCompanyPostalCode] = useState("");
+  const [newCompanyCity, setNewCompanyCity] = useState("");
+  // Données enrichies via SIRENE (transmises en hidden à l'action)
+  const [newCompanySiren, setNewCompanySiren] = useState("");
+  const [newCompanyLegalForm, setNewCompanyLegalForm] = useState("");
+  const [newCompanyIndustry, setNewCompanyIndustry] = useState("");
+  const [newCompanyNafCode, setNewCompanyNafCode] = useState("");
+  const [newCompanyLegalStatus, setNewCompanyLegalStatus] = useState<
+    SireneLegalStatus | ""
+  >("");
+  const [newCompanyPappersUrl, setNewCompanyPappersUrl] = useState("");
+
+  const [sessionId, setSessionId] = useState(defaults.sessionId ?? "");
+  const [sessionQuery, setSessionQuery] = useState("");
+  const [parcoursId, setParcoursId] = useState(defaults.parcoursId ?? "");
+  const [parcoursQuery, setParcoursQuery] = useState("");
+
+  // Champs prospect (édition manuelle, mais auto-remplis quand on choisit un apprenant)
+  const [firstName, setFirstName] = useState(
+    defaults.prospectFirstName ?? "",
+  );
+  const [lastName, setLastName] = useState(
+    (defaults.prospectLastName ?? "").toLocaleUpperCase("fr-FR"),
+  );
+  const [email, setEmail] = useState(defaults.prospectEmail ?? "");
+  const [phone, setPhone] = useState(defaults.prospectPhone ?? "");
+  const [mobile, setMobile] = useState(defaults.prospectMobile ?? "");
+  const [birthDate, setBirthDate] = useState(
+    defaults.prospectBirthDate ?? "",
+  );
+  // Pré-remplit la fonction depuis le learner sélectionné si disponible
+  // (les inscription_requests ne stockent pas le job_title — il vient
+  // toujours du learner rattaché).
+  const initialJobTitle =
+    defaults.prospectJobTitle ??
+    (defaults.learnerId
+      ? (learners.find((l) => l.id === defaults.learnerId)?.job_title ?? "")
+      : "");
+  const [jobTitle, setJobTitle] = useState(initialJobTitle);
+  // Civilité du prospect — saisie explicite (M. / Mme / Autre).
+  // Évite que la fiche apprenant créée depuis l'inscription ait ce
+  // champ vide (donc le tableau Apprenants reste cohérent).
+  // Pré-remplie depuis le learner sélectionné si disponible.
+  const initialCivility =
+    defaults.prospectCivility ??
+    (defaults.learnerId
+      ? (learners.find((l) => l.id === defaults.learnerId)?.civility ?? "")
+      : "");
+  const [civility, setCivility] = useState(initialCivility);
+
+  // --- Sélections ---
+  const selectedLearner = learners.find((l) => l.id === learnerId);
+  const selectedCompany = companies.find((c) => c.id === companyId);
+  const selectedSession = sessions.find((s) => s.id === sessionId);
+  const selectedParcours = parcoursOptions.find((p) => p.id === parcoursId);
+
+  function pickLearner(l: LearnerOption) {
+    setLearnerId(l.id);
+    setLearnerQuery("");
+    // Auto-remplit les champs prospect (sauf si déjà saisis manuellement)
+    if (!firstName) setFirstName(l.first_name ?? "");
+    if (!lastName)
+      setLastName((l.last_name ?? "").toLocaleUpperCase("fr-FR"));
+    if (!email) setEmail(l.email ?? "");
+    // 2 champs téléphone distincts (fixe + mobile) depuis la fiche
+    // apprenant. Évolution 2026-05-14 : avant on n'avait qu'un seul
+    // champ, donc on perdait l'un des deux à l'inscription.
+    if (!phone) setPhone(l.phone ?? "");
+    if (!mobile) setMobile(l.mobile ?? "");
+    if (!jobTitle) setJobTitle(l.job_title ?? "");
+    if (!civility) setCivility(l.civility ?? "");
+    // Auto-rattachement à l'entreprise de l'apprenant
+    if (l.company_id) {
+      setCompanyId(l.company_id);
+      setCompanyFreetext("");
+    }
+  }
+
+  function pickCompany(c: CompanyOption) {
+    setCompanyId(c.id);
+    setCompanyQuery("");
+    setCompanyFreetext("");
+  }
+
+  function pickSession(s: SessionOption) {
+    setSessionId(s.id);
+    setSessionQuery("");
+  }
+
+  function pickParcours(p: { id: string; label: string }) {
+    setParcoursId(p.id);
+    setParcoursQuery("");
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* ============ APPRENANT ============ */}
+      <div className="rounded-lg bg-cyan-50/40 dark:bg-cyan-950/20 border border-cyan-200 dark:border-cyan-900 p-4 space-y-3">
+        <label className="text-xs font-semibold inline-flex items-center gap-2">
+          Apprenant existant
+          <span className="text-slate-500 font-normal">
+            (recherche par nom, prénom, email, société…)
+          </span>
+        </label>
+        <input type="hidden" name="learner_id" value={learnerId} />
+        <SearchableCombobox<LearnerOption>
+          value={learnerId}
+          onChange={setLearnerId}
+          query={learnerQuery}
+          setQuery={setLearnerQuery}
+          options={learners}
+          filterFn={(l, q) => {
+            const txt = [
+              l.first_name ?? "",
+              l.last_name,
+              l.email ?? "",
+              l.company_name ?? "",
+              l.job_title ?? "",
+            ]
+              .join(" ")
+              .toLowerCase();
+            return txt.includes(q);
+          }}
+          renderOption={(l) => (
+            <div>
+              <p className="text-sm font-semibold">
+                {l.last_name.toUpperCase()}{" "}
+                {l.first_name && (
+                  <span className="font-normal">{l.first_name}</span>
+                )}
+              </p>
+              <p className="text-[11px] text-slate-500 flex flex-wrap gap-x-2">
+                {l.company_name && (
+                  <span className="inline-flex items-center gap-0.5">
+                    <Building2 className="h-3 w-3" />
+                    {l.company_name}
+                  </span>
+                )}
+                {l.email && <span>{l.email}</span>}
+              </p>
+            </div>
+          )}
+          placeholder="Tapez pour rechercher (ou laissez vide pour saisir un nouveau prospect)…"
+          selectedLabel={
+            selectedLearner
+              ? `${selectedLearner.last_name.toUpperCase()} ${selectedLearner.first_name ?? ""}${
+                  selectedLearner.company_name
+                    ? ` · ${selectedLearner.company_name}`
+                    : ""
+                }`
+              : null
+          }
+          emptyText="Aucun apprenant trouvé. Vous pouvez en créer un en remplissant les champs ci-dessous."
+          onPick={pickLearner}
+          icon={User}
+        />
+        <p className="text-[11px] text-slate-500">
+          💡 Si vous laissez vide, un apprenant sera créé automatiquement
+          depuis les informations ci-dessous.
+        </p>
+      </div>
+
+      {/* Champs prospect — layout compact 2026-05-14 :
+          Ligne 1 : Civilité (auto) + Prénom + Nom
+          Ligne 2 : Email FULL WIDTH (pour ne plus le tronquer)
+          Ligne 3 : Téléphone fixe + Téléphone mobile (les 2 distincts)
+          Ligne 4 : Fonction + Date naissance + Préférence de contact */}
+
+      {/* === Ligne 1 : Identité === */}
+      <div className="grid gap-4 md:grid-cols-[auto_1fr_1fr]">
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold inline-flex items-center gap-1">
+            Civilité
+          </label>
+          <select
+            name="prospect_civility"
+            value={civility}
+            onChange={(e) => setCivility(e.target.value)}
+            className="flex h-9 rounded-md border border-slate-300 bg-white px-2 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500"
+            title="M. / Mme / Autre — sera repris sur la fiche apprenant"
+          >
+            <option value="">—</option>
+            <option value="M.">M.</option>
+            <option value="Mme">Mme</option>
+            <option value="Autre">Autre</option>
+          </select>
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold inline-flex items-center gap-1">
+            Prénom <span className="text-red-600 font-bold">*</span>
+          </label>
+          <input
+            name="prospect_first_name"
+            required
+            value={firstName}
+            onChange={(e) => setFirstName(e.target.value)}
+            className="flex h-9 w-full rounded-md border border-slate-300 bg-white px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold inline-flex items-center gap-1">
+            Nom <span className="text-red-600 font-bold">*</span>
+          </label>
+          <input
+            name="prospect_last_name"
+            required
+            value={lastName}
+            onChange={(e) =>
+              setLastName(e.target.value.toLocaleUpperCase("fr-FR"))
+            }
+            className="flex h-9 w-full rounded-md border border-slate-300 bg-white px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500 uppercase"
+          />
+        </div>
+      </div>
+
+      {/* === Info coordonnées : snapshot, n'écrase pas la fiche apprenant === */}
+      <p className="text-[11px] text-slate-500 italic bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-md px-3 py-2">
+        💡 <strong>Bon à savoir</strong> : les modifications d&apos;email
+        et de téléphone faites ici ne touchent pas la fiche apprenant.
+        La fiche apprenant n&apos;est complétée que si elle a un champ
+        vide.
+      </p>
+
+      {/* === Ligne 2 : Email seul, pleine largeur === */}
+      <div className="space-y-1.5">
+        <label className="text-xs">Email</label>
+        <input
+          name="prospect_email"
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          className="flex h-9 w-full rounded-md border border-slate-300 bg-white px-3 py-1 text-sm shadow-sm"
+        />
+      </div>
+
+      {/* === Ligne 3 : Téléphone fixe + Téléphone mobile === */}
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="space-y-1.5">
+          <label className="text-xs">Téléphone fixe</label>
+          {/* PhoneInput est uncontrolled (initialise depuis defaultValue
+              une seule fois). La `key` change à chaque changement
+              d'apprenant pour forcer le remount avec la bonne valeur. */}
+          <PhoneInput
+            key={`phone-${learnerId || "new"}`}
+            name="prospect_phone"
+            defaultValue={phone}
+            onValueChange={setPhone}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-xs">Téléphone mobile</label>
+          <PhoneInput
+            key={`mobile-${learnerId || "new"}`}
+            name="prospect_mobile"
+            defaultValue={mobile}
+            onValueChange={setMobile}
+          />
+        </div>
+      </div>
+
+      {/* === Ligne 4 : Fonction + Date de naissance + Préférence === */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <div className="space-y-1.5">
+          <label className="text-xs">Fonction</label>
+          <input
+            name="prospect_job_title"
+            type="text"
+            value={jobTitle}
+            onChange={(e) => setJobTitle(e.target.value)}
+            placeholder="Ex: Conducteur de travaux…"
+            className="flex h-9 w-full rounded-md border border-slate-300 bg-white px-3 py-1 text-sm shadow-sm"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-xs">Date de naissance</label>
+          <input
+            name="prospect_birth_date"
+            type="date"
+            value={birthDate}
+            onChange={(e) => setBirthDate(e.target.value)}
+            className="flex h-9 w-full rounded-md border border-slate-300 bg-white px-3 py-1 text-sm shadow-sm"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-xs">Préférence de contact</label>
+          <select
+            name="contact_preference"
+            defaultValue="email"
+            className="flex h-9 w-full rounded-md border border-slate-300 bg-white px-3 py-1 text-sm shadow-sm"
+          >
+            <option value="email">Email</option>
+            <option value="phone">Téléphone</option>
+            <option value="sms">SMS</option>
+          </select>
+        </div>
+      </div>
+
+      {/* ============ ENTREPRISE ============ */}
+      <div className="rounded-lg bg-blue-50/40 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900 p-4 space-y-3">
+        <label className="text-xs font-semibold inline-flex items-center gap-2">
+          Entreprise référencée
+          {selectedCompany && selectedLearner?.company_id === companyId && (
+            <span className="text-[10px] text-cyan-700 font-bold uppercase tracking-wider">
+              ↳ auto depuis l&apos;apprenant
+            </span>
+          )}
+        </label>
+        <input type="hidden" name="company_id" value={companyId} />
+        <SearchableCombobox<CompanyOption>
+          value={companyId}
+          onChange={setCompanyId}
+          query={companyQuery}
+          setQuery={setCompanyQuery}
+          options={companies}
+          filterFn={(c, q) => c.name.toLowerCase().includes(q)}
+          renderOption={(c) => <span className="text-sm">{c.name}</span>}
+          placeholder="Rechercher une entreprise existante…"
+          selectedLabel={
+            selectedCompany?.name ??
+            (companyFreetext
+              ? `${companyFreetext} (à créer)`
+              : null)
+          }
+          emptyText="Aucune entreprise trouvée. Tapez le nom complet pour la créer."
+          onPick={pickCompany}
+          icon={Building2}
+          onCreateNew={(typed) => {
+            setCompanyId("");
+            setCompanyFreetext(typed);
+            setCompanyQuery("");
+          }}
+          createNewLabel={(typed) =>
+            `Créer « ${typed} » comme nouvelle entreprise`
+          }
+        />
+        {companyFreetext && !companyId && (
+          <div className="rounded-md bg-cyan-50 dark:bg-cyan-950/30 border border-cyan-200 dark:border-cyan-900 p-3 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs text-cyan-800 dark:text-cyan-300 inline-flex items-center gap-1.5">
+                <span className="text-base leading-none">+</span>
+                <span>
+                  <strong>{companyFreetext}</strong> sera créée dans le module
+                  Entreprises
+                </span>
+                {newCompanyLegalStatus && (
+                  <span
+                    className={cn(
+                      "inline-block px-1.5 py-0.5 rounded text-[10px] font-bold",
+                      SIRENE_STATUS_BADGE_CLASSES[newCompanyLegalStatus],
+                    )}
+                  >
+                    {SIRENE_STATUS_LABELS[newCompanyLegalStatus]}
+                  </span>
+                )}
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setCompanyFreetext("");
+                  setNewCompanySiret("");
+                  setNewCompanyAddress("");
+                  setNewCompanyPostalCode("");
+                  setNewCompanyCity("");
+                  setNewCompanySiren("");
+                  setNewCompanyLegalForm("");
+                  setNewCompanyIndustry("");
+                  setNewCompanyNafCode("");
+                  setNewCompanyLegalStatus("");
+                  setNewCompanyPappersUrl("");
+                }}
+                className="text-cyan-600 hover:text-red-600 underline text-[11px]"
+              >
+                Annuler
+              </button>
+            </div>
+
+            {/* Auto-remplissage SIRENE */}
+            <SireneLookup
+              compact
+              initialQuery={companyFreetext}
+              onPick={(c) => {
+                setCompanyFreetext(c.name);
+                setNewCompanySiret(c.siret ?? "");
+                setNewCompanySiren(c.siren);
+                setNewCompanyLegalForm(c.legal_form ?? "");
+                setNewCompanyIndustry(c.industry ?? c.naf_code ?? "");
+                setNewCompanyNafCode(c.naf_code ?? "");
+                setNewCompanyAddress(c.address ?? "");
+                setNewCompanyPostalCode(c.postal_code ?? "");
+                setNewCompanyCity(c.city ?? "");
+                setNewCompanyLegalStatus(c.legal_status);
+                setNewCompanyPappersUrl(c.pappers_url);
+              }}
+            />
+
+            <p className="text-[11px] text-slate-600 italic">
+              Renseignez (ou ajustez) les informations légales :
+            </p>
+            <div className="grid gap-2 md:grid-cols-2">
+              <div className="space-y-1">
+                <label className="text-[11px] font-semibold text-slate-700">
+                  SIRET
+                </label>
+                <input
+                  name="new_company_siret"
+                  value={newCompanySiret}
+                  onChange={(e) => setNewCompanySiret(e.target.value)}
+                  placeholder="14 chiffres"
+                  className="flex h-8 w-full rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[11px] font-semibold text-slate-700">
+                  Adresse
+                </label>
+                <input
+                  name="new_company_address"
+                  value={newCompanyAddress}
+                  onChange={(e) => setNewCompanyAddress(e.target.value)}
+                  placeholder="N°, rue, complément…"
+                  className="flex h-8 w-full rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500"
+                />
+              </div>
+              <div className="md:col-span-2">
+                <PostalCodeCity
+                  postalCodeName="new_company_postal_code"
+                  cityName="new_company_city"
+                  postalCodeValue={newCompanyPostalCode}
+                  cityValue={newCompanyCity}
+                  onPostalCodeChange={setNewCompanyPostalCode}
+                  onCityChange={setNewCompanyCity}
+                  size="sm"
+                  showLabels={false}
+                  postalCodeLabel="Code postal"
+                  cityLabel="Ville"
+                  gridClassName="grid gap-2 grid-cols-[1fr_3fr]"
+                />
+              </div>
+            </div>
+
+            {/* Champs cachés transmis à l'action serveur (issus de SIRENE) */}
+            <input type="hidden" name="new_company_siren" value={newCompanySiren} />
+            <input type="hidden" name="new_company_legal_form" value={newCompanyLegalForm} />
+            <input type="hidden" name="new_company_industry" value={newCompanyIndustry} />
+            <input type="hidden" name="new_company_naf_code" value={newCompanyNafCode} />
+            <input type="hidden" name="new_company_legal_status" value={newCompanyLegalStatus} />
+            <input type="hidden" name="new_company_pappers_url" value={newCompanyPappersUrl} />
+          </div>
+        )}
+        {/* Champs cachés : nom libre toujours envoyé quand on crée à la volée */}
+        <input
+          type="hidden"
+          name="company_name_freetext"
+          value={companyFreetext}
+        />
+      </div>
+
+      {/* === Référents pédagogiques (R6 — Gilles 2026-05-13) ===
+          Slot inséré entre l'Entreprise et la cible (Session/Parcours)
+          parce que les référents dépendent de l'entreprise sélectionnée. */}
+      {referentsSlot}
+
+      {/* ============ SESSION / PARCOURS ============ */}
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold inline-flex items-center gap-1">
+            <Calendar className="h-3 w-3" />
+            Session
+          </label>
+          <input
+            type="hidden"
+            name="target_session_id"
+            value={sessionId}
+          />
+          <SearchableCombobox<SessionOption>
+            value={sessionId}
+            onChange={setSessionId}
+            query={sessionQuery}
+            setQuery={setSessionQuery}
+            options={sessions}
+            filterFn={(s, q) =>
+              `${s.label} ${s.meta ?? ""} ${s.modality ?? ""}`
+                .toLowerCase()
+                .includes(q)
+            }
+            renderOption={(s) => (
+              <div>
+                <p className="text-sm font-semibold">{s.label}</p>
+                {s.meta && (
+                  <p className="text-[11px] text-slate-500">{s.meta}</p>
+                )}
+              </div>
+            )}
+            placeholder="Rechercher par formation, date, lieu…"
+            selectedLabel={
+              selectedSession
+                ? selectedSession.label +
+                  (selectedSession.meta ? ` · ${selectedSession.meta}` : "")
+                : null
+            }
+            emptyText="Aucune session trouvée."
+            onPick={pickSession}
+            icon={Calendar}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold inline-flex items-center gap-1">
+            <Calendar className="h-3 w-3" />
+            Parcours
+          </label>
+          <input
+            type="hidden"
+            name="target_parcours_id"
+            value={parcoursId}
+          />
+          <SearchableCombobox<{ id: string; label: string }>
+            value={parcoursId}
+            onChange={setParcoursId}
+            query={parcoursQuery}
+            setQuery={setParcoursQuery}
+            options={parcoursOptions}
+            filterFn={(p, q) => p.label.toLowerCase().includes(q)}
+            renderOption={(p) => <span className="text-sm">{p.label}</span>}
+            placeholder="Rechercher un parcours…"
+            selectedLabel={selectedParcours?.label ?? null}
+            emptyText="Aucun parcours."
+            onPick={pickParcours}
+            icon={Calendar}
+          />
+        </div>
+      </div>
+
+      {/* Confirmation visuelle quand session + apprenant sont sélectionnés */}
+      {selectedSession && (selectedLearner || (firstName && lastName)) && (
+        <div className="rounded-lg bg-cyan-50 border border-cyan-200 px-4 py-2.5 text-xs text-cyan-800 inline-flex items-center gap-2">
+          <CheckCircle2 className="h-4 w-4" />
+          <span>
+            <strong>
+              {selectedLearner
+                ? `${selectedLearner.last_name.toUpperCase()} ${selectedLearner.first_name ?? ""}`
+                : `${lastName.toUpperCase()} ${firstName}`}
+            </strong>{" "}
+            sera inscrit(e) à la session{" "}
+            <strong>{selectedSession.label}</strong>
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}

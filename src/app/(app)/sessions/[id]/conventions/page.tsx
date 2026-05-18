@@ -1,0 +1,690 @@
+import Link from "next/link";
+import { AlertTriangle, Building2, Check, Info, Printer } from "lucide-react";
+import { notFound, redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+import { PageHeader } from "@/components/page-header";
+import { BackButton } from "@/components/back-button";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { isResendConfigured } from "@/lib/email/resend";
+import { SessionTabs } from "../_session-tabs";
+import { SessionHeaderMeta } from "../_session-header-meta";
+import {
+  CancelConventionButton,
+  EnsureAndSendConventionButton,
+} from "./_send-buttons";
+import { NotifyInscriptionsButton } from "./_inscription-notif-button";
+import { ResendModal } from "./_resend-modal";
+import { ConventionEditButton } from "./_edit-modal";
+import { ReferentsModal } from "./_referents-modal";
+
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export default async function ConventionsPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  if (!UUID_REGEX.test(id)) notFound();
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: session } = await supabase
+    .from("sessions")
+    .select("id, start_date, end_date, formation:formations(id, title)")
+    .eq("id", id)
+    .maybeSingle<{
+      id: string;
+      start_date: string;
+      end_date: string;
+      formation: { id: string; title: string } | null;
+    }>();
+  if (!session) notFound();
+
+  // Inscriptions + entreprises distinctes
+  const { data: enrollments } = await supabase
+    .from("session_enrollments")
+    .select(
+      "id, inscription_email_sent_at, learner:learners(id, civility, first_name, last_name, email, phone, job_title, company_id, company:companies(id, name, industry, postal_code, city))",
+    )
+    .eq("session_id", id);
+
+  type EnrollmentRow = {
+    id: string;
+    inscription_email_sent_at: string | null;
+    learner: {
+      id: string;
+      civility: string | null;
+      first_name: string | null;
+      last_name: string | null;
+      email: string | null;
+      phone: string | null;
+      job_title: string | null;
+      company_id: string | null;
+      company: {
+        id: string;
+        name: string;
+        industry: string | null;
+        postal_code: string | null;
+        city: string | null;
+      } | null;
+    } | null;
+  };
+
+  const rows = (enrollments ?? []) as unknown as EnrollmentRow[];
+
+  // (Items pour la modale "Renvoyer..." construits plus bas avec contacts RH)
+
+  // Groupage par entreprise
+  type LearnerInfo = {
+    id: string;
+    civility: string | null;
+    name: string;
+    email: string | null;
+    phone: string | null;
+    jobTitle: string | null;
+  };
+  type CompanyGroup = {
+    companyId: string;
+    companyName: string;
+    industry: string | null;
+    postalCode: string | null;
+    city: string | null;
+    learners: LearnerInfo[];
+  };
+  const byCompany = new Map<string, CompanyGroup>();
+  const orphans: string[] = []; // apprenants sans entreprise
+
+  for (const r of rows) {
+    const cid = r.learner?.company_id;
+    const cname = r.learner?.company?.name;
+    const lname = [r.learner?.first_name, r.learner?.last_name]
+      .filter(Boolean)
+      .join(" ") || "Apprenant inconnu";
+    if (!cid || !cname || !r.learner) {
+      orphans.push(lname);
+      continue;
+    }
+    if (!byCompany.has(cid)) {
+      byCompany.set(cid, {
+        companyId: cid,
+        companyName: cname,
+        industry: r.learner?.company?.industry ?? null,
+        postalCode: r.learner?.company?.postal_code ?? null,
+        city: r.learner?.company?.city ?? null,
+        learners: [],
+      });
+    }
+    byCompany.get(cid)!.learners.push({
+      id: r.learner.id,
+      civility: r.learner.civility,
+      name: lname,
+      email: r.learner.email,
+      phone: r.learner.phone,
+      jobTitle: r.learner.job_title,
+    });
+  }
+
+  const companyIds = Array.from(byCompany.keys());
+
+  // Conventions existantes
+  const { data: conventions } =
+    companyIds.length > 0
+      ? await supabase
+          .from("session_conventions")
+          .select(
+            "id, company_id, status, contact_name, contact_email, sent_at, signed_at, signed_by_name, amount_ht_unit, amount_ht_total, financing_mode, obsolete_reason",
+          )
+          .eq("session_id", id)
+          .in("company_id", companyIds)
+      : { data: [] };
+
+  const conventionByCompany = new Map<
+    string,
+    {
+      id: string;
+      status: string;
+      contact_name: string | null;
+      contact_email: string | null;
+      sent_at: string | null;
+      signed_at: string | null;
+      signed_by_name: string | null;
+      amount_ht_unit: number | null;
+      amount_ht_total: number | null;
+      financing_mode: string | null;
+      obsolete_reason: string | null;
+    }
+  >();
+  (conventions ?? []).forEach((c) => {
+    conventionByCompany.set(c.company_id as string, {
+      id: c.id as string,
+      status: c.status as string,
+      contact_name: c.contact_name as string | null,
+      contact_email: c.contact_email as string | null,
+      sent_at: c.sent_at as string | null,
+      signed_at: c.signed_at as string | null,
+      signed_by_name: c.signed_by_name as string | null,
+      amount_ht_unit: c.amount_ht_unit as number | null,
+      amount_ht_total: c.amount_ht_total as number | null,
+      financing_mode: c.financing_mode as string | null,
+      obsolete_reason: c.obsolete_reason as string | null,
+    });
+  });
+
+  // Contact principal + tous contacts de chaque entreprise.
+  // - is_primary : pour le destinataire par défaut de la convention
+  // - tous : pour le modal de sélection des référents pédagogiques
+  const { data: contacts } =
+    companyIds.length > 0
+      ? await supabase
+          .from("company_contacts")
+          .select(
+            "id, company_id, first_name, last_name, email, job_title, is_primary",
+          )
+          .in("company_id", companyIds)
+      : { data: [] };
+  const primaryContactByCompany = new Map<
+    string,
+    { name: string; email: string | null }
+  >();
+  // Tous les contacts groupés par société (pour le modal référents).
+  type ContactItem = {
+    id: string;
+    first_name: string | null;
+    last_name: string | null;
+    email: string | null;
+    job_title: string | null;
+    is_primary: boolean;
+  };
+  const contactsByCompany = new Map<string, ContactItem[]>();
+  (contacts ?? []).forEach((c) => {
+    const cid = c.company_id as string;
+    // Map primary contact
+    if (c.is_primary) {
+      const name = [c.first_name, c.last_name].filter(Boolean).join(" ");
+      primaryContactByCompany.set(cid, {
+        name,
+        email: c.email as string | null,
+      });
+    }
+    // Map all contacts
+    const list = contactsByCompany.get(cid) ?? [];
+    list.push({
+      id: c.id as string,
+      first_name: c.first_name as string | null,
+      last_name: c.last_name as string | null,
+      email: c.email as string | null,
+      job_title: (c as { job_title?: string | null }).job_title ?? null,
+      is_primary: !!c.is_primary,
+    });
+    contactsByCompany.set(cid, list);
+  });
+
+  // Référents pédagogiques actuellement sélectionnés pour chaque société
+  // de cette session. Source : inscription_referent_contacts (dédupliqué
+  // au niveau session × société). Cf. lib/inscriptions/referents.ts.
+  const referentsByCompany = new Map<
+    string,
+    Array<{
+      id: string;
+      first_name: string | null;
+      last_name: string | null;
+      email: string | null;
+      job_title: string | null;
+    }>
+  >();
+  if (companyIds.length > 0) {
+    const refResults = await Promise.all(
+      companyIds.map((cid) =>
+        import("@/lib/inscriptions/referents").then((m) =>
+          m
+            .getReferentContactsForSessionCompany(supabase, id, cid)
+            .then((list) => [cid, list] as const),
+        ),
+      ),
+    );
+    for (const [cid, list] of refResults) {
+      referentsByCompany.set(cid, list);
+    }
+  }
+
+  const title = session.formation?.title ?? "Session";
+  const resendOn = isResendConfigured();
+  const companies = Array.from(byCompany.values()).sort((a, b) =>
+    a.companyName.localeCompare(b.companyName, "fr"),
+  );
+
+  const signedCount = Array.from(conventionByCompany.values()).filter(
+    (c) => c.status === "signed",
+  ).length;
+
+  // Items pour la modale "Renvoyer…" — chaque ligne = 1 apprenant + son RH
+  const resendItems = rows.map((r) => {
+    const rh = r.learner?.company_id
+      ? primaryContactByCompany.get(r.learner.company_id)
+      : null;
+    return {
+      enrollmentId: r.id,
+      name:
+        [r.learner?.first_name, r.learner?.last_name].filter(Boolean).join(" ") ||
+        "Apprenant inconnu",
+      apprenantEmail: r.learner?.email ?? null,
+      alreadySent: !!r.inscription_email_sent_at,
+      sentAt: r.inscription_email_sent_at,
+      rhName: rh?.name ?? null,
+      rhEmail: rh?.email ?? null,
+    };
+  });
+
+  return (
+    <>
+      <PageHeader
+        title="Conventions de formation"
+        description={
+          <>
+            <span className="font-semibold text-zinc-700 dark:text-zinc-300 block">
+              {title}
+            </span>
+            <SessionHeaderMeta sessionId={id} />
+          </>
+        }
+        breadcrumbs={[
+          { label: "Tableau de bord", href: "/dashboard" },
+          { label: "Sessions", href: "/sessions" },
+          { label: title, href: `/sessions/${id}` },
+          { label: "Conventions" },
+        ]}
+        actions={<BackButton fallbackHref={`/sessions/${id}`} />}
+      />
+
+      <SessionTabs sessionId={id} counts={{ conventions: signedCount }} />
+
+      <div className="p-8 max-w-6xl space-y-4">
+        {!resendOn && (
+          <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 flex items-start gap-2.5">
+            <AlertTriangle className="h-4 w-4 text-amber-700 shrink-0 mt-0.5" />
+            <p className="text-xs text-amber-900 leading-relaxed">
+              Resend non configuré — les boutons d&apos;envoi seront inactifs.
+            </p>
+          </div>
+        )}
+
+        <div className="rounded-lg bg-cyan-50/50 border border-cyan-200 p-3 flex items-start gap-2.5">
+          <Info className="h-4 w-4 text-cyan-700 shrink-0 mt-0.5" />
+          <p className="text-xs text-cyan-900 leading-relaxed">
+            Une <strong>convention</strong> est générée par entreprise cliente
+            inscrite à cette session. Elle est envoyée par email au contact
+            principal de l&apos;entreprise (RH) avec un lien de signature en
+            ligne.
+          </p>
+        </div>
+
+        {/* Bouton bulk : notifier les inscriptions */}
+        <div className="rounded-xl bg-white border border-zinc-200 p-4 space-y-3">
+          <div>
+            <strong className="text-sm">Email de confirmation d&apos;inscription</strong>
+            <ul className="text-xs text-zinc-600 mt-1 space-y-0.5">
+              <li>
+                <strong>« Notifier les inscriptions par email »</strong> :
+                envoie uniquement aux apprenants{" "}
+                <strong>pas encore notifiés</strong>. Le RH reçoit{" "}
+                <strong>1 email récap par société</strong> avec la liste
+                complète (les nouveaux sont marqués « NOUVEAU »). Idéal après
+                avoir inscrit un nouvel apprenant.
+              </li>
+              <li>
+                <strong>« Renvoyer… »</strong> : ouvre une modale pour{" "}
+                <strong>choisir précisément</strong> qui recevra l&apos;email
+                (utile pour rattrapage ou suite à modification du contenu).
+              </li>
+            </ul>
+          </div>
+          <div className="flex items-center justify-end gap-2">
+            <ResendModal items={resendItems} disabled={!resendOn} />
+            <NotifyInscriptionsButton sessionId={id} disabled={!resendOn} />
+          </div>
+        </div>
+
+        {orphans.length > 0 && (
+          <div className="rounded-lg bg-orange-50 border border-orange-200 p-3 text-xs text-orange-900">
+            ⚠️ Apprenants <strong>sans entreprise</strong> rattachée (donc sans
+            convention possible) : {orphans.join(", ")}. Va sur la fiche
+            apprenant pour rattacher une entreprise.
+          </div>
+        )}
+
+        {companies.length === 0 ? (
+          <div className="rounded-xl bg-white border border-zinc-200 p-12 text-center">
+            <Building2 className="h-12 w-12 mx-auto text-zinc-300 mb-3" />
+            <p className="text-sm font-medium mb-1">
+              Aucune entreprise rattachée
+            </p>
+            <p className="text-xs text-zinc-500">
+              Inscris des apprenants avec une entreprise pour générer des
+              conventions.
+            </p>
+          </div>
+        ) : (
+          <div className="rounded-xl bg-white border border-zinc-200 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-zinc-50 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500 border-b border-zinc-200">
+                <tr>
+                  <th className="px-4 py-3">Entreprise</th>
+                  <th className="px-4 py-3">Apprenants</th>
+                  <th className="px-4 py-3">
+                    <span className="inline-flex items-center gap-1.5">
+                      Référent Pédagogique
+                      <span
+                        title={
+                          "Sélectionnez un ou plusieurs contacts de la société qui doivent recevoir les emails de cette session (convention, convocation, attestation, facture…).\n\n• Si AU MOINS UN référent est sélectionné : il(s) reçoivent les documents, l'apprenant est en copie.\n\n• Si AUCUN référent : l'apprenant reçoit directement l'ensemble des documents."
+                        }
+                        className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-zinc-200 text-zinc-600 text-[10px] font-bold cursor-help normal-case hover:bg-zinc-300"
+                      >
+                        ?
+                      </span>
+                    </span>
+                  </th>
+                  <th className="px-4 py-3">Statut</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-200">
+                {companies.map((c) => {
+                  const conv = conventionByCompany.get(c.companyId);
+                  return (
+                    <tr
+                      key={c.companyId}
+                      className={cn(
+                        "transition-colors hover:bg-zinc-50/60",
+                        conv?.status === "signed" &&
+                          "bg-emerald-50/30 hover:bg-emerald-50",
+                        conv?.status === "sent" &&
+                          "bg-cyan-50/30 hover:bg-cyan-50",
+                      )}
+                    >
+                      <td className="px-4 py-3 align-top">
+                        <div className="font-bold text-zinc-900">
+                          {c.companyName}
+                        </div>
+                        {c.industry && (
+                          <div className="text-xs text-zinc-500 mt-0.5">
+                            {c.industry}
+                          </div>
+                        )}
+                        {(c.postalCode || c.city) && (
+                          <div className="text-xs text-zinc-500">
+                            {[c.postalCode, c.city].filter(Boolean).join(" ")}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-zinc-600 align-top">
+                        <div className="flex items-start gap-2">
+                          <span className="inline-block px-2 py-0.5 rounded bg-zinc-100 text-zinc-700 font-semibold shrink-0 mt-0.5">
+                            {c.learners.length}
+                          </span>
+                          <ul className="space-y-2 leading-tight flex-1 min-w-0">
+                            {c.learners.map((l) => (
+                              <li key={l.id} className="space-y-0.5">
+                                <div className="text-sm font-bold text-zinc-900">
+                                  •{" "}
+                                  {l.civility ? `${l.civility} ` : ""}
+                                  {l.name}
+                                </div>
+                                {l.jobTitle && (
+                                  <div className="text-zinc-600 ml-3">
+                                    {l.jobTitle}
+                                  </div>
+                                )}
+                                {l.email && (
+                                  <div className="text-zinc-500 ml-3 truncate">
+                                    ✉ {l.email}
+                                  </div>
+                                )}
+                                {l.phone && (
+                                  <div className="text-zinc-500 ml-3">
+                                    ☎ {l.phone}
+                                  </div>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-xs align-top">
+                        {(() => {
+                          const referents =
+                            referentsByCompany.get(c.companyId) ?? [];
+                          const companyContactList =
+                            contactsByCompany.get(c.companyId) ?? [];
+                          if (referents.length > 0) {
+                            return (
+                              <div className="space-y-1.5">
+                                <ul className="space-y-1">
+                                  {referents.map((r) => {
+                                    const name =
+                                      [r.first_name, r.last_name]
+                                        .filter(Boolean)
+                                        .join(" ") || "Référent";
+                                    return (
+                                      <li key={r.id}>
+                                        <div className="font-medium text-zinc-800">
+                                          • {name}
+                                        </div>
+                                        {r.job_title && (
+                                          <div className="text-[10.5px] text-zinc-600 ml-2.5">
+                                            {r.job_title}
+                                          </div>
+                                        )}
+                                        {r.email && (
+                                          <div className="text-[10.5px] text-zinc-500 ml-2.5 truncate">
+                                            ✉ {r.email}
+                                          </div>
+                                        )}
+                                      </li>
+                                    );
+                                  })}
+                                </ul>
+                                <ReferentsModal
+                                  sessionId={id}
+                                  companyId={c.companyId}
+                                  companyName={c.companyName}
+                                  contacts={companyContactList}
+                                  initialSelectedIds={referents.map(
+                                    (r) => r.id,
+                                  )}
+                                />
+                              </div>
+                            );
+                          }
+                          // Aucun référent sélectionné
+                          return (
+                            <div className="text-amber-700 space-y-1.5">
+                              <div className="italic">
+                                Aucun référent pédagogique
+                              </div>
+                              <div className="text-[10px] text-amber-600">
+                                ↳ l&apos;apprenant recevra les documents
+                              </div>
+                              {companyContactList.length > 0 ? (
+                                <ReferentsModal
+                                  sessionId={id}
+                                  companyId={c.companyId}
+                                  companyName={c.companyName}
+                                  contacts={companyContactList}
+                                  initialSelectedIds={[]}
+                                />
+                              ) : (
+                                <Link
+                                  href={`/entreprises/${c.companyId}#contacts`}
+                                  className="inline-flex items-center gap-1 text-[11px] font-medium text-cyan-700 hover:text-cyan-900 hover:underline"
+                                >
+                                  + Ajouter un contact dans la société
+                                </Link>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </td>
+                      <td className="px-4 py-3">
+                        {!conv ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-zinc-100 text-zinc-700">
+                            Non créée
+                          </span>
+                        ) : conv.status === "draft" ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
+                            Brouillon
+                          </span>
+                        ) : conv.status === "sent" ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-cyan-100 text-cyan-800">
+                            Envoyée
+                          </span>
+                        ) : conv.status === "signed" ? (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-800"
+                            title={
+                              conv.signed_by_name
+                                ? `Signée par ${conv.signed_by_name}`
+                                : undefined
+                            }
+                          >
+                            <Check className="h-3 w-3" />
+                            Signée
+                          </span>
+                        ) : conv.status === "obsolete" ? (
+                          <div className="flex flex-col gap-1">
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800"
+                              title={conv.obsolete_reason ?? "À refaire"}
+                            >
+                              ⚠ Obsolète
+                            </span>
+                            <span className="text-[10px] text-orange-700 italic max-w-xs">
+                              {conv.obsolete_reason ?? "Les inscriptions ont changé"}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-zinc-500 text-xs italic">
+                            {conv.status}
+                          </span>
+                        )}
+                        {/* Affichage du mode de financement (toutes statuts) */}
+                        {conv?.financing_mode && (
+                          <div className="text-[10px] text-zinc-500 mt-1">
+                            💳 {formatFinancingMode(conv.financing_mode)}
+                          </div>
+                        )}
+                        {conv?.amount_ht_total != null && (
+                          <div className="text-[10px] text-zinc-500">
+                            {Number(conv.amount_ht_total).toLocaleString(
+                              "fr-FR",
+                              { minimumFractionDigits: 2 },
+                            )}{" "}
+                            € HT
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex flex-wrap items-center justify-end gap-1.5">
+                          {conv && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              nativeButton={false}
+                              render={
+                                <Link
+                                  href={`/api/sessions/${id}/conventions/${conv.id}/pdf`}
+                                  target="_blank"
+                                />
+                              }
+                              title="Ouvrir le PDF (rendu IDENTIQUE à celui envoyé par email)"
+                            >
+                              <Printer className="h-3.5 w-3.5" />
+                              Aperçu PDF
+                            </Button>
+                          )}
+                          <EnsureAndSendConventionButton
+                            sessionId={id}
+                            companyId={c.companyId}
+                            conventionId={conv?.id ?? null}
+                            disabled={
+                              !resendOn || conv?.status === "signed"
+                            }
+                            disabledReason={
+                              !resendOn
+                                ? "Resend non configuré"
+                                : conv?.status === "signed"
+                                  ? "Déjà signée"
+                                  : undefined
+                            }
+                            alreadySent={conv?.status === "sent"}
+                          />
+                          {/* Bouton "Modifier" : pour ajuster le prix unitaire,
+                              le mode de financement et le contact RH. */}
+                          {conv && (
+                            <ConventionEditButton
+                              sessionId={id}
+                              initial={{
+                                conventionId: conv.id,
+                                contactName: conv.contact_name,
+                                contactEmail: conv.contact_email,
+                                amountHtUnit: conv.amount_ht_unit,
+                                financingMode: conv.financing_mode,
+                                nbApprenants: c.learners.length,
+                              }}
+                            />
+                          )}
+                          {/* Bouton "Annuler" : disponible sur toute convention
+                              existante (brouillon, envoyée, signée, obsolète).
+                              Permet de recréer une convention propre. */}
+                          {conv && (
+                            <CancelConventionButton
+                              sessionId={id}
+                              conventionId={conv.id}
+                              isSigned={conv.status === "signed"}
+                            />
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <p className="text-xs text-zinc-500 px-1">
+          <Link
+            href={`/sessions/${id}`}
+            className="underline hover:text-zinc-900"
+          >
+            ← Retour à la fiche de session
+          </Link>
+        </p>
+      </div>
+    </>
+  );
+}
+
+/**
+ * Convertit le code interne du mode de financement en libellé lisible.
+ */
+function formatFinancingMode(code: string): string {
+  const map: Record<string, string> = {
+    opco: "OPCO",
+    plan_developpement: "Plan de développement",
+    cpf: "CPF",
+    autofinancement: "Autofinancement",
+    pole_emploi: "Pôle Emploi",
+    fse: "FSE",
+    region: "Région",
+    autre: "Autre",
+  };
+  return map[code] ?? code;
+}
