@@ -951,6 +951,34 @@ export default async function SessionsListPage({
                             >
                               {s.formation?.title ?? "—"}
                             </Link>
+                            {/* Badges INTER/INTRA + Modalite */}
+                            <div className="flex flex-wrap items-center gap-1 mt-1">
+                              <span
+                                className={cn(
+                                  "inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border whitespace-nowrap",
+                                  s.is_inter
+                                    ? "bg-cyan-50 border-cyan-200 text-cyan-700"
+                                    : "bg-amber-50 border-amber-200 text-amber-700",
+                                )}
+                                title={s.is_inter ? "Session ouverte a plusieurs entreprises" : "Session dediee a une seule entreprise"}
+                              >
+                                {s.is_inter ? "INTER" : "INTRA"}
+                              </span>
+                              {s.modality && (
+                                <span
+                                  className={cn(
+                                    "inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border whitespace-nowrap",
+                                    s.modality === "presentiel"
+                                      ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                                      : s.modality === "distanciel"
+                                        ? "bg-blue-50 border-blue-200 text-blue-700"
+                                        : "bg-violet-50 border-violet-200 text-violet-700",
+                                  )}
+                                >
+                                  {MODALITY_LABELS[s.modality]}
+                                </span>
+                              )}
+                            </div>
                             {(() => {
                               const breakdown = stageBreakdown.get(s.id);
                               if (!breakdown || breakdown.size === 0)
