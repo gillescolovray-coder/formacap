@@ -6,13 +6,11 @@ import {
   CheckCircle2,
   Clock,
   Euro,
-  Send,
-  User,
 } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { computeEffectivePartnerPrice } from "@/lib/portal/partner-pricing";
 import { resolvePartnerContext } from "../../_resolve";
-import { submitPartnerEnrollmentForm } from "../../actions";
+import { PartnerInscribeForm } from "./_form-client";
 
 type Params = { token: string; sessionId: string };
 
@@ -147,12 +145,12 @@ export default async function PartnerInscribePage({
 
       <header>
         <h1 className="text-2xl font-bold text-zinc-900">
-          Inscrire un apprenant
+          Inscrire des apprenants
         </h1>
         <p className="text-sm text-zinc-600 mt-1">
-          Renseignez les informations de l&apos;apprenant. L&apos;inscription
-          est <strong>immédiate</strong> et la convocation sera générée
-          ensuite par {ctx.organization.name}.
+          Recherchez l&apos;entreprise des apprenants par SIRET, ajoutez un ou
+          plusieurs apprenants, puis validez. L&apos;inscription est{" "}
+          <strong>immédiate</strong>.
         </p>
       </header>
 
@@ -209,110 +207,20 @@ export default async function PartnerInscribePage({
         </dl>
       </section>
 
-      {/* Formulaire */}
-      <form
-        action={submitPartnerEnrollmentForm}
-        className="rounded-2xl bg-white border border-zinc-200 p-5 space-y-4"
-      >
-        <input type="hidden" name="token" value={token} />
-        <input type="hidden" name="session_id" value={sessionId} />
-
-        <h3 className="font-bold text-zinc-900 inline-flex items-center gap-2">
-          <User className="h-4 w-4 text-cyan-600" />
-          Apprenant à inscrire
-        </h3>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Field
-            name="first_name"
-            label="Prénom"
-            required
-            autoComplete="given-name"
-          />
-          <Field
-            name="last_name"
-            label="Nom"
-            required
-            autoComplete="family-name"
-          />
-          <Field
-            name="email"
-            label="Email"
-            type="email"
-            required
-            autoComplete="email"
-          />
-          <Field name="phone" label="Téléphone" autoComplete="tel" />
-          <div className="sm:col-span-2">
-            <Field name="job_title" label="Fonction" />
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-xs font-bold text-zinc-700 mb-1">
-            Message (optionnel)
-          </label>
-          <textarea
-            name="message"
-            rows={3}
-            className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
-            placeholder="Informations complémentaires (besoin d'adaptation, prise en charge…)"
-          />
-        </div>
-
-        <div className="pt-2 flex items-center justify-between gap-3 flex-wrap border-t border-zinc-100">
-          <p className="text-[11px] text-zinc-500 max-w-sm">
-            En soumettant ce formulaire, vous certifiez que l&apos;apprenant a
-            consenti à l&apos;inscription et au traitement de ses données.
-          </p>
-          <button
-            type="submit"
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-cyan-600 text-white text-sm font-bold hover:bg-cyan-700"
-          >
-            <Send className="h-4 w-4" />
-            Inscrire l&apos;apprenant
-          </button>
-        </div>
-      </form>
+      {/* Formulaire client : SIRET + plusieurs apprenants */}
+      <PartnerInscribeForm
+        token={token}
+        sessionId={sessionId}
+        unitPriceHt={unitPriceHt}
+      />
 
       <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-xs text-emerald-800 inline-flex items-start gap-2">
         <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5 text-emerald-600" />
         <span>
-          L&apos;inscription est validée automatiquement. Vous retrouverez
-          l&apos;apprenant dans <strong>Mes inscriptions</strong> dès
-          l&apos;envoi.
+          Les inscriptions sont validées automatiquement. Vous retrouverez
+          les apprenants dans <strong>Mes inscriptions</strong> dès l&apos;envoi.
         </span>
       </div>
-    </div>
-  );
-}
-
-function Field({
-  name,
-  label,
-  type = "text",
-  required = false,
-  autoComplete,
-}: {
-  name: string;
-  label: string;
-  type?: string;
-  required?: boolean;
-  autoComplete?: string;
-}) {
-  return (
-    <div>
-      <label className="block text-xs font-bold text-zinc-700 mb-1">
-        {label}
-        {required && <span className="text-rose-500 ml-0.5">*</span>}
-      </label>
-      <input
-        type={type}
-        name={name}
-        required={required}
-        autoComplete={autoComplete}
-        className="w-full h-9 rounded-md border border-zinc-300 px-3 text-sm"
-      />
     </div>
   );
 }
