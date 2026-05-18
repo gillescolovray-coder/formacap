@@ -69,7 +69,7 @@ export default async function PartnerCataloguePage({
       )
       .eq("organization_id", ctx.company.organization_id)
       .eq("is_inter", true)
-      .eq("formations.modality", "distanciel")
+      .eq("formation.modality", "distanciel")
       .gte("start_date", today)
       .in("status", ["confirmed", "draft", "planned"])
       .order("start_date", { ascending: true });
