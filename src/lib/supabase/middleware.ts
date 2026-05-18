@@ -8,7 +8,16 @@ const PUBLIC_PATHS = [
   "/c/", // Catalogue de vente publié — accessible sans connexion
   "/api/catalog/", // Téléchargement PDF du catalogue public
   "/signer/", // Signature à distance émargement (apprenants non connectés)
-  "/conventions/sign/", // Signature à distance convention (RH non connecté)
+  "/conventions/", // Signature à distance convention (RH non connecté)
+  // Portails token-based — accessibles via /xxx/<token> sans login Supabase.
+  // Le token dans l'URL fait office d'authentification (verifie cote serveur
+  // a chaque page via createAdminClient + resolve token -> entity).
+  "/partenaire/", // Portail OF / prescripteur
+  "/mon-parcours/", // Portail apprenant (quiz, emargement, certificat...)
+  "/formateur/", // Portail formateur (planning, emargement, positionnement)
+  "/emarger/", // Signature emargement apprenant (lien email)
+  "/eval/", // Lien evaluation a chaud (depuis email)
+  "/evaluation/", // Variante evaluation
 ];
 
 export async function updateSession(request: NextRequest) {
