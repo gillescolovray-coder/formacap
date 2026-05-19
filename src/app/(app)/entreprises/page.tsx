@@ -28,7 +28,10 @@ import {
 
 type SearchParams = {
   q?: string;
-  type?: CompanyType | "";
+  // `of_prescripteur` est une valeur composite UI : la carte « OF /
+  // Prescripteurs » regroupe les deux types via un filtre .in() côté
+  // serveur. Pas un type DB, juste un alias URL.
+  type?: CompanyType | "of_prescripteur" | "";
   active?: string;
   view?: "contacts" | "table" | "tree";
   peopleFilter?: "all" | "apprenants" | "contacts";
