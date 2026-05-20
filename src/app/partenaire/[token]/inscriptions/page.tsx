@@ -42,7 +42,7 @@ export default async function PartnerInscriptionsPage({
       company_name_freetext,
       contact_referent_first_name, contact_referent_last_name,
       contact_referent_email, contact_referent_phone, contact_referent_role,
-      learner:learners(id, first_name, last_name, email, phone),
+      learner:learners(id, first_name, last_name, email, phone, job_title),
       company:companies!company_id(id, name, city),
       session:sessions(id, internal_code, start_date, end_date, modality,
         formation:formations(id, title, duration_hours, duration_days))
@@ -71,6 +71,7 @@ export default async function PartnerInscriptionsPage({
           last_name: string;
           email: string | null;
           phone: string | null;
+          job_title: string | null;
         }
       | Array<{
           id: string;
@@ -78,6 +79,7 @@ export default async function PartnerInscriptionsPage({
           last_name: string;
           email: string | null;
           phone: string | null;
+          job_title: string | null;
         }>
       | null;
     company:
@@ -165,6 +167,9 @@ export default async function PartnerInscriptionsPage({
           : [r.prospect_first_name, r.prospect_last_name]
               .filter(Boolean)
               .join(" ") || "—",
+        learnerFirstName: learner?.first_name ?? r.prospect_first_name ?? null,
+        learnerLastName: learner?.last_name ?? r.prospect_last_name ?? null,
+        learnerJobTitle: learner?.job_title ?? null,
         learnerEmail: learner?.email ?? r.prospect_email ?? null,
         learnerPhone: learner?.phone ?? r.prospect_phone ?? null,
         companyName: company?.name ?? r.company_name_freetext ?? null,
@@ -223,7 +228,7 @@ export default async function PartnerInscriptionsPage({
           </Link>
         </div>
       ) : (
-        <InscriptionsList rows={rows} />
+        <InscriptionsList token={token} rows={rows} />
       )}
     </div>
   );

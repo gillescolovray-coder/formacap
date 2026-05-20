@@ -1,21 +1,29 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
   Building2,
   Calendar,
   Clock,
   Mail,
+  Pencil,
   Phone,
   Search,
+  Trash2,
   UserCheck,
   X,
 } from "lucide-react";
+import { deleteInscription, updateInscription } from "./actions";
 
 export type InscriptionRow = {
   id: string;
   received_at: string;
   learnerName: string;
+  /** Découpé pour permettre l'édition dans le modal */
+  learnerFirstName: string | null;
+  learnerLastName: string | null;
+  learnerJobTitle: string | null;
   learnerEmail: string | null;
   learnerPhone: string | null;
   companyName: string | null;
@@ -35,6 +43,8 @@ export type InscriptionRow = {
   durationHours: number | null;
   durationDays: number | null;
 };
+
+type DateFilter = "all" | "upcoming" | "this_week" | "this_month" | "past";
 
 const MODALITY_LABELS: Record<string, string> = {
   presentiel: "Présentiel",
@@ -61,14 +71,51 @@ function normalize(s: string): string {
     .replace(/[̀-ͯ]/g, "");
 }
 
-export function InscriptionsList({ rows }: { rows: InscriptionRow[] }) {
+export function InscriptionsList({
+  token,
+  rows,
+}: {
+  token: string;
+  rows: InscriptionRow[];
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const editingRow = editingId ? rows.find((r) => r.id === editingId) ?? null : null;
   const [query, setQuery] = useState("");
+  const [dateFilter, setDateFilter] = useState<DateFilter>("all");
   const today = new Date().toISOString().slice(0, 10);
+
+  // Calcul des bornes pour les filtres "Cette semaine" et "Ce mois"
+  const now = new Date();
+  const weekEnd = new Date(now);
+  weekEnd.setDate(now.getDate() + 7);
+  const monthEnd = new Date(now);
+  monthEnd.setMonth(now.getMonth() + 1);
+  const weekEndIso = weekEnd.toISOString().slice(0, 10);
+  const monthEndIso = monthEnd.toISOString().slice(0, 10);
 
   const filtered = useMemo(() => {
     const q = normalize(query.trim());
-    if (!q) return rows;
-    return rows.filter((r) => {
+    const base = rows.filter((r) => {
+      // Filtre date
+      if (dateFilter !== "all" && r.startDate) {
+        if (dateFilter === "upcoming" && r.startDate < today) return false;
+        if (dateFilter === "past" && r.startDate >= today) return false;
+        if (
+          dateFilter === "this_week" &&
+          (r.startDate < today || r.startDate > weekEndIso)
+        )
+          return false;
+        if (
+          dateFilter === "this_month" &&
+          (r.startDate < today || r.startDate > monthEndIso)
+        )
+          return false;
+      }
+      // Filtre texte
+      if (!q) return true;
       const haystack = normalize(
         [
           r.learnerName,
@@ -85,11 +132,46 @@ export function InscriptionsList({ rows }: { rows: InscriptionRow[] }) {
       );
       return haystack.includes(q);
     });
-  }, [rows, query]);
+    // Tri : « A venir » d'abord (start_date asc), puis passees a la fin
+    // (start_date desc). Sessions sans start_date a la toute fin.
+    return base.sort((a, b) => {
+      const aStart = a.startDate ?? "";
+      const bStart = b.startDate ?? "";
+      if (!aStart && !bStart) return 0;
+      if (!aStart) return 1;
+      if (!bStart) return -1;
+      const aFuture = aStart >= today;
+      const bFuture = bStart >= today;
+      if (aFuture && !bFuture) return -1;
+      if (!aFuture && bFuture) return 1;
+      // Memes camps : a venir asc, passees desc
+      return aFuture
+        ? aStart.localeCompare(bStart)
+        : bStart.localeCompare(aStart);
+    });
+  }, [rows, query, dateFilter, today, weekEndIso, monthEndIso]);
+
+  function doDelete(r: InscriptionRow) {
+    if (
+      !confirm(
+        `Supprimer définitivement l'inscription de « ${r.learnerName} » à la formation « ${r.formationTitle} » ?\n\nL'apprenant ne recevra plus de convocation pour cette session. Cette action est irréversible.`,
+      )
+    )
+      return;
+    setActionError(null);
+    startTransition(async () => {
+      const res = await deleteInscription(token, r.id);
+      if (!res.ok) {
+        setActionError(res.error ?? "Erreur");
+        return;
+      }
+      router.refresh();
+    });
+  }
 
   return (
     <div className="space-y-3">
-      {/* Filtre texte */}
+      {/* Filtre texte + filtre date */}
       <div className="rounded-xl bg-white border border-zinc-200 p-3 flex items-center gap-2 flex-wrap">
         <div className="relative flex-1 min-w-[240px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400 pointer-events-none" />
@@ -111,10 +193,28 @@ export function InscriptionsList({ rows }: { rows: InscriptionRow[] }) {
             </button>
           )}
         </div>
+        <select
+          value={dateFilter}
+          onChange={(e) => setDateFilter(e.target.value as DateFilter)}
+          className="h-10 rounded-md border border-zinc-300 px-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-cyan-200 focus:border-cyan-400"
+          title="Filtrer par date de session"
+        >
+          <option value="all">Toutes les dates</option>
+          <option value="upcoming">À venir uniquement</option>
+          <option value="this_week">Dans les 7 jours</option>
+          <option value="this_month">Dans le mois</option>
+          <option value="past">Sessions passées</option>
+        </select>
         <div className="text-xs text-zinc-500 px-1">
           {filtered.length} sur {rows.length}
         </div>
       </div>
+
+      {actionError && (
+        <div className="rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+          {actionError}
+        </div>
+      )}
 
       {filtered.length === 0 ? (
         <div className="rounded-2xl bg-white border border-zinc-200 p-6 text-center text-sm text-zinc-600">
@@ -236,6 +336,27 @@ export function InscriptionsList({ rows }: { rows: InscriptionRow[] }) {
                     </div>
                   )}
                 </div>
+                {/* Actions Modifier / Supprimer en bas de carte */}
+                <div className="flex gap-2 pt-2 border-t border-zinc-100">
+                  <button
+                    type="button"
+                    onClick={() => setEditingId(r.id)}
+                    disabled={pending}
+                    className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-md border border-zinc-300 bg-white text-zinc-700 text-xs font-medium hover:bg-cyan-50 hover:border-cyan-300 hover:text-cyan-700 disabled:opacity-50"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    Modifier
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => doDelete(r)}
+                    disabled={pending}
+                    className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-md border border-zinc-300 bg-white text-zinc-700 text-xs font-medium hover:bg-rose-50 hover:border-rose-300 hover:text-rose-700 disabled:opacity-50"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Supprimer
+                  </button>
+                </div>
               </article>
             );
           })}
@@ -252,6 +373,7 @@ export function InscriptionsList({ rows }: { rows: InscriptionRow[] }) {
                 <Th>Dates</Th>
                 <Th>Statut</Th>
                 <Th>Inscrit le</Th>
+                <Th>Actions</Th>
               </tr>
             </thead>
             <tbody>
@@ -415,6 +537,30 @@ export function InscriptionsList({ rows }: { rows: InscriptionRow[] }) {
                         {new Date(r.received_at).toLocaleDateString("fr-FR")}
                       </span>
                     </td>
+
+                    {/* Actions Modifier / Supprimer */}
+                    <td className="px-3 py-3">
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setEditingId(r.id)}
+                          disabled={pending}
+                          className="inline-flex items-center justify-center h-7 w-7 rounded-md text-zinc-500 hover:text-cyan-700 hover:bg-cyan-50 disabled:opacity-30"
+                          title="Modifier les coordonnées de l'apprenant"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => doDelete(r)}
+                          disabled={pending}
+                          className="inline-flex items-center justify-center h-7 w-7 rounded-md text-zinc-500 hover:text-rose-700 hover:bg-rose-50 disabled:opacity-30"
+                          title="Supprimer l'inscription"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 );
               })}
@@ -423,6 +569,184 @@ export function InscriptionsList({ rows }: { rows: InscriptionRow[] }) {
         </div>
         </>
       )}
+
+      {/* Modal d'édition réutilisé depuis l'onglet À valider */}
+      {editingRow && (
+        <EditInscriptionModal
+          token={token}
+          requestId={editingRow.id}
+          initial={{
+            first_name: editingRow.learnerFirstName,
+            last_name: editingRow.learnerLastName,
+            email: editingRow.learnerEmail,
+            phone: editingRow.learnerPhone,
+            job_title: editingRow.learnerJobTitle,
+          }}
+          onClose={() => setEditingId(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// Modal d'édition (inline) — reprend le pattern de l'onglet À valider
+// ============================================================
+
+function EditInscriptionModal({
+  token,
+  requestId,
+  initial,
+  onClose,
+}: {
+  token: string;
+  requestId: string;
+  initial: {
+    first_name: string | null;
+    last_name: string | null;
+    email: string | null;
+    phone: string | null;
+    job_title: string | null;
+  };
+  onClose: () => void;
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [firstName, setFirstName] = useState(initial.first_name ?? "");
+  const [lastName, setLastName] = useState(initial.last_name ?? "");
+  const [email, setEmail] = useState(initial.email ?? "");
+  const [phone, setPhone] = useState(initial.phone ?? "");
+  const [jobTitle, setJobTitle] = useState(initial.job_title ?? "");
+
+  function submit() {
+    setError(null);
+    if (!firstName.trim() || !lastName.trim()) {
+      setError("Prénom et nom obligatoires.");
+      return;
+    }
+    if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
+      setError("Email invalide.");
+      return;
+    }
+    startTransition(async () => {
+      const res = await updateInscription(token, requestId, {
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
+        email: email.trim(),
+        phone: phone.trim() || null,
+        job_title: jobTitle.trim() || null,
+      });
+      if (!res.ok) {
+        setError(res.error ?? "Erreur");
+        return;
+      }
+      onClose();
+      router.refresh();
+    });
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-3 sm:p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-4 border-b border-zinc-200 sticky top-0 bg-white">
+          <h2 className="font-bold text-zinc-900 text-base">
+            Modifier l&apos;apprenant
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-md text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100"
+            aria-label="Fermer"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-3">
+          <p className="text-[11px] text-zinc-500 italic">
+            Corrigez les informations de l&apos;apprenant. La modification
+            sera synchronisée avec la fiche admin de CAP NUMÉRIQUE.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <ModalField label="Prénom" required value={firstName} onChange={setFirstName} />
+            <ModalField label="Nom" required value={lastName} onChange={setLastName} />
+            <ModalField
+              label="Email"
+              required
+              type="email"
+              value={email}
+              onChange={setEmail}
+              className="sm:col-span-2"
+            />
+            <ModalField label="Téléphone" value={phone} onChange={setPhone} placeholder="06 …" />
+            <ModalField
+              label="Fonction"
+              value={jobTitle}
+              onChange={setJobTitle}
+              placeholder="Ex : Chargé de mission"
+            />
+          </div>
+          {error && (
+            <div className="rounded-md bg-red-50 border border-red-200 p-2 text-xs text-red-700">
+              {error}
+            </div>
+          )}
+        </div>
+
+        <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end p-4 border-t border-zinc-200 sticky bottom-0 bg-white">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={pending}
+            className="inline-flex items-center justify-center px-4 py-2.5 rounded-md border border-zinc-300 bg-white text-zinc-700 text-sm font-medium hover:bg-zinc-50 disabled:opacity-50"
+          >
+            Annuler
+          </button>
+          <button
+            type="button"
+            onClick={submit}
+            disabled={pending}
+            className="inline-flex items-center justify-center px-4 py-2.5 rounded-md bg-cyan-600 text-white text-sm font-bold hover:bg-cyan-700 disabled:opacity-50"
+          >
+            {pending ? "Enregistrement…" : "Enregistrer"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ModalField({
+  label,
+  value,
+  onChange,
+  required,
+  type = "text",
+  placeholder,
+  className,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  required?: boolean;
+  type?: string;
+  placeholder?: string;
+  className?: string;
+}) {
+  return (
+    <div className={className}>
+      <label className="block text-[11px] uppercase tracking-wider font-bold text-zinc-600 mb-1">
+        {label}
+        {required && <span className="text-rose-600 ml-0.5">*</span>}
+      </label>
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="h-9 w-full px-2 rounded-md border border-zinc-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-cyan-200 focus:border-cyan-400"
+      />
     </div>
   );
 }
