@@ -318,6 +318,10 @@ export async function validatePreinscription(
   }
 
   revalidatePath(`/partenaire/${token}/preinscriptions`);
+  // L'inscription devient officielle → elle doit apparaitre dans
+  // l'onglet « Mes inscriptions » (sinon elle reste en cache et le
+  // partenaire ne voit plus rien apres validation).
+  revalidatePath(`/partenaire/${token}/inscriptions`);
   revalidatePath(`/partenaire/${token}`);
   return { ok: true };
 }
