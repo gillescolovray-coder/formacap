@@ -142,18 +142,17 @@ export default async function DashboardPage() {
         first_name, last_name, email, phone, mobile, job_title,
         company:companies(name, address, postal_code, city)
       ),
-      session:sessions(id, start_date, end_date,
+      session:sessions(id, start_date, end_date, is_inter, modality,
         formation:formations(title, duration_hours, duration_days)
       ),
       inscription_request:inscription_requests(
-        via_partner_portal,
+        id, via_partner_portal,
         quote_amount_ht,
         referrer:companies!referrer_company_id(name, type)
       )
     `,
     )
     .neq("status", "cancelled")
-    .order("enrolled_at", { ascending: false })
     .limit(100);
 
   type CompanyShape = {
@@ -181,6 +180,8 @@ export default async function DashboardPage() {
           id: string;
           start_date: string | null;
           end_date: string | null;
+          is_inter: boolean | null;
+          modality: string | null;
           formation:
             | { title: string; duration_hours: number | null; duration_days: number | null }
             | Array<{ title: string; duration_hours: number | null; duration_days: number | null }>
@@ -190,6 +191,8 @@ export default async function DashboardPage() {
           id: string;
           start_date: string | null;
           end_date: string | null;
+          is_inter: boolean | null;
+          modality: string | null;
           formation:
             | { title: string; duration_hours: number | null; duration_days: number | null }
             | Array<{ title: string; duration_hours: number | null; duration_days: number | null }>
@@ -198,6 +201,7 @@ export default async function DashboardPage() {
       | null;
     inscription_request:
       | {
+          id: string;
           via_partner_portal: boolean | null;
           quote_amount_ht: number | string | null;
           referrer:
@@ -206,6 +210,7 @@ export default async function DashboardPage() {
             | null;
         }
       | Array<{
+          id: string;
           via_partner_portal: boolean | null;
           quote_amount_ht: number | string | null;
           referrer:
@@ -256,11 +261,11 @@ export default async function DashboardPage() {
       return {
         enrollmentId: e.id,
         sessionId: session?.id ?? null,
+        inscriptionRequestId: req?.id ?? null,
         learnerFirstName: learner?.first_name ?? null,
         learnerLastName: learner?.last_name ?? null,
         learnerJobTitle: learner?.job_title ?? null,
         learnerEmail: learner?.email ?? null,
-        // Priorité au mobile (plus utile pour SMS / rappel) puis fixe
         learnerPhone: learner?.mobile ?? learner?.phone ?? null,
         companyName: company?.name ?? null,
         companyAddress: company?.address ?? null,
@@ -268,6 +273,8 @@ export default async function DashboardPage() {
         companyCity: company?.city ?? null,
         startDate: session?.start_date ?? null,
         endDate: session?.end_date ?? null,
+        isInter: session?.is_inter ?? null,
+        modality: session?.modality ?? null,
         formationTitle: formation?.title ?? "—",
         durationDays: formation?.duration_days ?? null,
         durationHours: formation?.duration_hours ?? null,
@@ -275,6 +282,22 @@ export default async function DashboardPage() {
         sourceKind,
         partnerName: referrer?.name ?? null,
       };
+    })
+    // Tri : sessions a venir d'abord (start_date asc), puis passees a
+    // la fin (start_date desc). Plus proche = en tete.
+    .sort((a, b) => {
+      const aStart = a.startDate ?? "";
+      const bStart = b.startDate ?? "";
+      if (!aStart && !bStart) return 0;
+      if (!aStart) return 1;
+      if (!bStart) return -1;
+      const aFuture = aStart >= today;
+      const bFuture = bStart >= today;
+      if (aFuture && !bFuture) return -1;
+      if (!aFuture && bFuture) return 1;
+      return aFuture
+        ? aStart.localeCompare(bStart)
+        : bStart.localeCompare(aStart);
     });
 
   return (

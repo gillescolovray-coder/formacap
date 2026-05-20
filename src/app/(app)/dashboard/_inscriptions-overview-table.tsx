@@ -4,6 +4,7 @@ import { Calendar, Handshake, ListChecks, Users } from "lucide-react";
 export type InscriptionOverviewRow = {
   enrollmentId: string;
   sessionId: string | null;
+  inscriptionRequestId: string | null;
   // Apprenant
   learnerFirstName: string | null;
   learnerLastName: string | null;
@@ -18,21 +19,27 @@ export type InscriptionOverviewRow = {
   // Session / formation
   startDate: string | null;
   endDate: string | null;
+  isInter: boolean | null;
+  modality: string | null;
   formationTitle: string;
   durationDays: number | null;
   durationHours: number | null;
-  /** Tarif HT applique pour cette inscription (quote_amount_ht).
-   *  Le TTC est calcule cote affichage = HT * 1.20. */
+  /** Tarif HT applique pour cette inscription (quote_amount_ht). */
   amountHt: number | null;
-  /** Source de l'inscription :
-   *  - direct       : saisie directe par l'admin CAP NUMÉRIQUE
-   *  - partenaire   : via le portail d'un prescripteur (referrer.type = prescripteur)
-   *  - of           : via le portail d'un OF partenaire (referrer.type = of)
-   */
+  /** Source de l'inscription. */
   sourceKind: "direct" | "partenaire" | "of";
   /** Nom du partenaire si sourceKind ≠ "direct" */
   partnerName: string | null;
 };
+
+const MODALITY_LABELS: Record<string, string> = {
+  presentiel: "Présentiel",
+  distanciel: "Distanciel",
+  hybride: "Hybride",
+};
+
+/** Taux de TVA par defaut (modifiable par l'admin si besoin). */
+const DEFAULT_VAT_RATE = 0.2;
 
 const currencyFormatter = new Intl.NumberFormat("fr-FR", {
   style: "currency",
@@ -98,7 +105,9 @@ export function InscriptionsOverviewTable({
               <th className="px-3 py-2.5">Fonction</th>
               <th className="px-3 py-2.5">N° tél</th>
               <th className="px-3 py-2.5">Email</th>
-              <th className="px-3 py-2.5 text-right">Coût HT</th>
+              <th className="px-3 py-2.5 text-right">Budget HT</th>
+              <th className="px-3 py-2.5 text-right">TVA (20%)</th>
+              <th className="px-3 py-2.5 text-right">Budget TTC</th>
               <th className="px-3 py-2.5">Société</th>
               <th className="px-3 py-2.5">Adresse</th>
               <th className="px-3 py-2.5">CP</th>
@@ -106,12 +115,37 @@ export function InscriptionsOverviewTable({
               <th className="px-3 py-2.5">Source</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-            {rows.map((r) => {
+          <tbody>
+            {rows.map((r, idx) => {
+              // Detection du changement de session pour la separation
+              // visuelle : on epaissit la bordure entre deux groupes.
+              const prev = idx > 0 ? rows[idx - 1] : null;
+              const newSession = !prev || prev.sessionId !== r.sessionId;
+              const tva =
+                r.amountHt != null
+                  ? Math.round(r.amountHt * DEFAULT_VAT_RATE * 100) / 100
+                  : null;
+              const ttc =
+                r.amountHt != null && tva != null
+                  ? Math.round((r.amountHt + tva) * 100) / 100
+                  : null;
+              // Le nom de la formation est cliquable :
+              //   - si on a un inscription_request_id → ouvre la fiche
+              //     inscription (vue 360° de cet apprenant sur cette session)
+              //   - sinon → ouvre la fiche session
+              const formationHref = r.inscriptionRequestId
+                ? `/inscriptions/${r.inscriptionRequestId}`
+                : r.sessionId
+                  ? `/sessions/${r.sessionId}`
+                  : null;
               return (
                 <tr
                   key={r.enrollmentId}
-                  className="hover:bg-zinc-50 dark:hover:bg-zinc-900/40"
+                  className={
+                    newSession
+                      ? "border-t-2 border-zinc-300 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-900/40"
+                      : "border-t border-zinc-100 dark:border-zinc-800/40 hover:bg-zinc-50 dark:hover:bg-zinc-900/40"
+                  }
                 >
                   {/* Date session */}
                   <td className="px-3 py-2 whitespace-nowrap">
@@ -120,12 +154,13 @@ export function InscriptionsOverviewTable({
                       {formatDate(r.startDate)}
                     </span>
                   </td>
-                  {/* Formation */}
-                  <td className="px-3 py-2 max-w-[260px]">
-                    {r.sessionId ? (
+                  {/* Formation + INTER/INTRA + Modalite */}
+                  <td className="px-3 py-2 max-w-[280px]">
+                    {formationHref ? (
                       <Link
-                        href={`/sessions/${r.sessionId}`}
+                        href={formationHref}
                         className="font-medium text-zinc-900 dark:text-zinc-100 hover:text-cyan-700 hover:underline"
+                        title="Ouvrir la fiche inscription"
                       >
                         {r.formationTitle}
                       </Link>
@@ -134,6 +169,32 @@ export function InscriptionsOverviewTable({
                         {r.formationTitle}
                       </span>
                     )}
+                    <div className="flex flex-wrap items-center gap-1 mt-0.5">
+                      {r.isInter !== null && (
+                        <span
+                          className={
+                            r.isInter
+                              ? "inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-cyan-50 text-cyan-700 border border-cyan-200"
+                              : "inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200"
+                          }
+                        >
+                          {r.isInter ? "INTER" : "INTRA"}
+                        </span>
+                      )}
+                      {r.modality && (
+                        <span
+                          className={
+                            r.modality === "presentiel"
+                              ? "inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200"
+                              : r.modality === "hybride"
+                                ? "inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-violet-50 text-violet-700 border border-violet-200"
+                                : "inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-cyan-50 text-cyan-700 border border-cyan-200"
+                          }
+                        >
+                          {MODALITY_LABELS[r.modality] ?? r.modality}
+                        </span>
+                      )}
+                    </div>
                   </td>
                   {/* Jours */}
                   <td className="px-3 py-2 text-center text-zinc-700 dark:text-zinc-300 tabular-nums">
@@ -178,11 +239,19 @@ export function InscriptionsOverviewTable({
                       "—"
                     )}
                   </td>
-                  {/* Coût HT (la TVA depend de chaque cas — pas calcule ici) */}
-                  <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap font-bold text-emerald-700 dark:text-emerald-400">
+                  {/* Budget HT */}
+                  <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap font-bold text-zinc-900 dark:text-zinc-100">
                     {r.amountHt != null
                       ? currencyFormatter.format(r.amountHt)
                       : "—"}
+                  </td>
+                  {/* TVA (20% par defaut) */}
+                  <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap text-zinc-600 dark:text-zinc-400">
+                    {tva != null ? currencyFormatter.format(tva) : "—"}
+                  </td>
+                  {/* Budget TTC */}
+                  <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap font-bold text-emerald-700 dark:text-emerald-400">
+                    {ttc != null ? currencyFormatter.format(ttc) : "—"}
                   </td>
                   {/* Société */}
                   <td className="px-3 py-2 text-zinc-700 dark:text-zinc-300">
