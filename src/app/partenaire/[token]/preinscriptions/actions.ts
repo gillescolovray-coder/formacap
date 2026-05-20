@@ -8,6 +8,7 @@ import {
   findStageIdByKey,
 } from "@/lib/inscriptions/sync";
 import { isResendConfigured, sendEmail } from "@/lib/email/resend";
+import { computeEffectivePartnerPrice } from "@/lib/portal/partner-pricing";
 
 /**
  * Valide une pré-inscription publique. Étapes :
@@ -83,6 +84,7 @@ export async function validatePreinscription(
   //    un SIRET. Sans SIRET, on garde juste le texte libre.
   let learnerCompanyId: string | null = null;
   if (cleanSiret && req.company_name_freetext) {
+    // CAS 1 : SIRET fourni → matching strict par SIRET (le plus fiable)
     const { data: existingCompany } = await supabase
       .from("companies")
       .select("id")
@@ -98,6 +100,33 @@ export async function validatePreinscription(
           organization_id: req.organization_id,
           name: req.company_name_freetext,
           siret: cleanSiret,
+          city: companyCity,
+          type: "client",
+          is_active: true,
+        })
+        .select("id")
+        .single<{ id: string }>();
+      if (newCompany) learnerCompanyId = newCompany.id;
+    }
+  } else if (req.company_name_freetext) {
+    // CAS 2 : pas de SIRET MAIS nom d'entreprise fourni → matching par
+    // nom (case-insensitive). Évite que l'apprenant reste « Particulier »
+    // côté admin et permet d'appliquer un tarif partenaire ensuite.
+    const { data: existingByName } = await supabase
+      .from("companies")
+      .select("id")
+      .eq("organization_id", req.organization_id)
+      .ilike("name", req.company_name_freetext.trim())
+      .limit(1)
+      .maybeSingle<{ id: string }>();
+    if (existingByName) {
+      learnerCompanyId = existingByName.id;
+    } else {
+      const { data: newCompany } = await supabase
+        .from("companies")
+        .insert({
+          organization_id: req.organization_id,
+          name: req.company_name_freetext.trim(),
           city: companyCity,
           type: "client",
           is_active: true,
@@ -163,6 +192,55 @@ export async function validatePreinscription(
     return { ok: false, error: "Stage 'confirmed' introuvable." };
   }
 
+  // 3 bis) Calcul du tarif partenaire effectif au moment de la validation
+  // (override formation × partenaire OU tarif jour × durée). Stocké dans
+  // `inscription_requests.quote_amount_ht` pour visibilité côté admin.
+  let computedAmountHt: number | null = null;
+  if (req.target_session_id) {
+    const { data: sess } = await supabase
+      .from("sessions")
+      .select(
+        "formation_id, formation:formations(modality, duration_hours, duration_days)",
+      )
+      .eq("id", req.target_session_id)
+      .maybeSingle();
+    const sessTyped = sess as unknown as {
+      formation_id: string | null;
+      formation:
+        | { modality: string | null; duration_hours: number | null; duration_days: number | null }
+        | Array<{ modality: string | null; duration_hours: number | null; duration_days: number | null }>
+        | null;
+    } | null;
+    const formation = sessTyped?.formation
+      ? Array.isArray(sessTyped.formation)
+        ? sessTyped.formation[0] ?? null
+        : sessTyped.formation
+      : null;
+    if (sessTyped?.formation_id && formation) {
+      const { data: overrideRow } = await supabase
+        .from("partner_pricing")
+        .select("unit_price_ht")
+        .eq("company_id", ctx.company.id)
+        .eq("formation_id", sessTyped.formation_id)
+        .maybeSingle<{ unit_price_ht: string | number }>();
+      const eff = computeEffectivePartnerPrice({
+        partnerType: ctx.company.type,
+        dailyRateDistancielHt: ctx.company.daily_rate_distanciel_ht,
+        dailyRatePresentielHt: ctx.company.daily_rate_presentiel_ht,
+        quizUnitPriceHt: ctx.company.quiz_unit_price_ht,
+        overrideHt: overrideRow ? Number(overrideRow.unit_price_ht) : undefined,
+        durationDays: formation.duration_days,
+        durationHours: formation.duration_hours,
+        modality: (formation.modality ?? null) as
+          | "presentiel"
+          | "distanciel"
+          | "hybride"
+          | null,
+      });
+      computedAmountHt = eff.price ?? null;
+    }
+  }
+
   // 4) Validation officielle — détecte préventivement le cas où le
   //    même apprenant est déjà inscrit (par exemple 2 pré-inscriptions
   //    soumises avec le même email pour des apprenants distincts).
@@ -191,6 +269,11 @@ export async function validatePreinscription(
       stage_id: confirmedStageId,
       learner_id: learnerId,
       company_id: learnerCompanyId,
+      // Stocke le tarif partenaire calculé pour qu'il apparaisse dans
+      // la colonne « Montant HT » côté admin (page Participants).
+      ...(computedAmountHt !== null
+        ? { quote_amount_ht: computedAmountHt }
+        : {}),
       contract_signed_at: new Date().toISOString(),
     })
     .eq("id", req.id);
