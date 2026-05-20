@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import Link from "next/link";
 import {
   Briefcase,
@@ -9,7 +10,6 @@ import {
   Mail,
   MapPin,
   Phone,
-  User,
   Users,
 } from "lucide-react";
 
@@ -76,6 +76,15 @@ export function InscriptionsOverviewTable({
 }: {
   rows: InscriptionOverviewRow[];
 }) {
+  // Index du 1er apprenant d'une session deja PASSEE (start_date < aujourd'hui).
+  // Le tri amont place les a-venir en tete, les passees a la fin.
+  // On insere un bandeau separateur juste avant ce 1er apprenant passe.
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const firstPastIdx = rows.findIndex(
+    (r) => r.startDate !== null && r.startDate < todayIso,
+  );
+  const pastCount = firstPastIdx === -1 ? 0 : rows.length - firstPastIdx;
+
   if (rows.length === 0) {
     return (
       <div className="rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-8 text-center">
@@ -164,13 +173,34 @@ export function InscriptionsOverviewTable({
               const sid = r.sessionId ?? `_no_session_${r.enrollmentId}`;
               const colorIdx = sessionColorIdx.get(sid) ?? 0;
               const bgClass = SESSION_BG_PALETTE[colorIdx % SESSION_BG_PALETTE.length];
+              // Session deja passee : fond gris + opacite reduite pour
+              // bien distinguer de la zone "a venir".
+              const isPast = r.startDate !== null && r.startDate < todayIso;
+              const rowBg = isPast
+                ? "bg-zinc-100/60 dark:bg-zinc-900/40 text-zinc-500 dark:text-zinc-500"
+                : bgClass;
+              const isFirstPast = idx === firstPastIdx;
               return (
+                <Fragment key={r.enrollmentId}>
+                  {/* Bandeau separateur juste avant la 1ere ligne passee */}
+                  {isFirstPast && (
+                    <tr>
+                      <td
+                        colSpan={6}
+                        className="px-3 py-2 bg-zinc-200 dark:bg-zinc-800 text-[11px] uppercase tracking-wider font-bold text-zinc-700 dark:text-zinc-300 border-y-2 border-zinc-400 dark:border-zinc-600"
+                      >
+                        <span className="inline-flex items-center gap-1.5">
+                          <Calendar className="h-3.5 w-3.5" />
+                          Sessions passées ({pastCount})
+                        </span>
+                      </td>
+                    </tr>
+                  )}
                 <tr
-                  key={r.enrollmentId}
                   className={
                     newSession
-                      ? `border-t-2 border-zinc-300 dark:border-zinc-700 hover:brightness-95 ${bgClass}`
-                      : `border-t border-zinc-100 dark:border-zinc-800/40 hover:brightness-95 ${bgClass}`
+                      ? `border-t-2 border-zinc-300 dark:border-zinc-700 hover:brightness-95 ${rowBg}`
+                      : `border-t border-zinc-100 dark:border-zinc-800/40 hover:brightness-95 ${rowBg}`
                   }
                 >
                   {/* Date session */}
@@ -366,6 +396,7 @@ export function InscriptionsOverviewTable({
                     )}
                   </td>
                 </tr>
+                </Fragment>
               );
             })}
           </tbody>
