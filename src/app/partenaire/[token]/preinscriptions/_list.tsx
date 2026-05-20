@@ -131,22 +131,22 @@ export function PreinscriptionsList({
       {items.map((p) => (
         <article
           key={p.id}
-          className="rounded-2xl bg-white border border-amber-200 p-5 space-y-3"
+          className="rounded-2xl bg-white border border-amber-200 p-3 sm:p-5 space-y-3"
         >
-          <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div className="flex items-start justify-between gap-2 flex-wrap">
             <div className="min-w-0 flex-1">
-              <h3 className="font-bold text-zinc-900">
+              <h3 className="font-bold text-zinc-900 text-sm sm:text-base">
                 {p.session?.formation_title ?? "(formation supprimée)"}
               </h3>
               {p.session && (
-                <p className="text-xs text-zinc-600 mt-0.5 inline-flex items-center gap-1">
+                <p className="text-xs text-zinc-600 mt-0.5 flex items-center gap-1 flex-wrap">
                   <Calendar className="h-3.5 w-3.5 text-zinc-400" />
-                  {formatDate(p.session.start_date)}
+                  <span>{formatDate(p.session.start_date)}</span>
                   {p.session.end_date && p.session.end_date !== p.session.start_date
-                    ? ` → ${formatDate(p.session.end_date)}`
+                    ? <span>→ {formatDate(p.session.end_date)}</span>
                     : ""}
                   {p.session.modality && (
-                    <span className="ml-2 px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-700 text-[10px] font-bold uppercase">
+                    <span className="px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-700 text-[10px] font-bold uppercase">
                       {p.session.modality}
                     </span>
                   )}
@@ -177,7 +177,7 @@ export function PreinscriptionsList({
                 </p>
               )}
             </div>
-            <span className="text-[11px] text-zinc-500 italic">
+            <span className="text-[10px] sm:text-[11px] text-zinc-500 italic whitespace-nowrap">
               Reçu le {formatDate(p.received_at, true)}
             </span>
           </div>
@@ -330,12 +330,14 @@ export function PreinscriptionsList({
             </div>
           )}
 
-          <div className="flex gap-2 justify-end pt-2 border-t border-zinc-100">
+          {/* Boutons : pleine largeur sur mobile, alignés à droite sur
+              desktop. Touch-friendly (≥ 44px de hauteur). */}
+          <div className="flex flex-col sm:flex-row gap-2 sm:justify-end pt-2 border-t border-zinc-100">
             <button
               type="button"
               onClick={() => doReject(p.id)}
               disabled={pending}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md border border-zinc-300 bg-white text-zinc-700 text-sm font-medium hover:bg-rose-50 hover:border-rose-300 hover:text-rose-700 disabled:opacity-50"
+              className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-md border border-zinc-300 bg-white text-zinc-700 text-sm font-medium hover:bg-rose-50 hover:border-rose-300 hover:text-rose-700 disabled:opacity-50"
             >
               <XCircle className="h-4 w-4" />
               Refuser
@@ -344,7 +346,7 @@ export function PreinscriptionsList({
               type="button"
               onClick={() => doValidate(p.id)}
               disabled={pending}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700 disabled:opacity-50"
+              className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-md bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700 disabled:opacity-50"
             >
               <CheckCircle2 className="h-4 w-4" />
               Valider l&apos;inscription

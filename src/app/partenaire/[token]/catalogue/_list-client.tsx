@@ -232,10 +232,10 @@ export function CatalogueList({
                   // peu importe le statut. Sinon : vert si confirmée, blanc
                   // sinon.
                   s.is_own
-                    ? "rounded-2xl bg-indigo-50/40 border-2 border-indigo-300 p-5 flex flex-col gap-3 hover:border-indigo-400 hover:shadow-md transition-all"
+                    ? "rounded-2xl bg-indigo-50/40 border-2 border-indigo-300 p-3 sm:p-5 flex flex-col gap-3 hover:border-indigo-400 hover:shadow-md transition-all"
                     : s.status === "confirmed"
-                      ? "rounded-2xl bg-emerald-50/40 border-2 border-emerald-300 p-5 flex flex-col gap-3 hover:border-emerald-400 hover:shadow-md transition-all"
-                      : "rounded-2xl bg-white border border-zinc-200 p-5 flex flex-col gap-3 hover:border-cyan-300 hover:shadow-sm transition-all"
+                      ? "rounded-2xl bg-emerald-50/40 border-2 border-emerald-300 p-3 sm:p-5 flex flex-col gap-3 hover:border-emerald-400 hover:shadow-md transition-all"
+                      : "rounded-2xl bg-white border border-zinc-200 p-3 sm:p-5 flex flex-col gap-3 hover:border-cyan-300 hover:shadow-sm transition-all"
                 }
               >
                 <div className="flex items-start justify-between gap-2">
@@ -430,7 +430,7 @@ export function CatalogueList({
                   </div>
                 </dl>
 
-                <div className="mt-auto pt-3 border-t border-zinc-100 flex items-end justify-between gap-3 flex-wrap">
+                <div className="mt-auto pt-3 border-t border-zinc-100 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
                   {negotiated !== undefined ? (
                     <div>
                       <p className="text-[10px] uppercase tracking-wider text-emerald-700 font-bold">
@@ -468,13 +468,13 @@ export function CatalogueList({
                       </a>
                     </div>
                   )}
-                  <div className="flex gap-2 flex-wrap">
+                  <div className="flex flex-col sm:flex-row gap-2 sm:flex-wrap">
                     {s.formation?.programme_pdf_url && (
                       <a
                         href={s.formation.programme_pdf_url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-zinc-300 bg-white text-zinc-700 text-sm font-medium hover:bg-zinc-50 hover:border-zinc-400"
+                        className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 sm:py-2 rounded-lg border border-zinc-300 bg-white text-zinc-700 text-sm font-medium hover:bg-zinc-50 hover:border-zinc-400"
                         title="Ouvrir le programme detaille (PDF) dans un nouvel onglet"
                       >
                         <FileText className="h-4 w-4" />
@@ -484,7 +484,7 @@ export function CatalogueList({
                     {negotiated !== undefined && (
                       <Link
                         href={`/partenaire/${token}/inscrire/${s.id}`}
-                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-cyan-600 text-white text-sm font-bold hover:bg-cyan-700"
+                        className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 sm:py-2 rounded-lg bg-cyan-600 text-white text-sm font-bold hover:bg-cyan-700"
                       >
                         Inscrire un apprenant
                         <ArrowRight className="h-4 w-4" />

@@ -236,7 +236,7 @@ export function PreinscriptionClient({
   // → inséré DIRECTEMENT sous la carte de session sélectionnée pour ne pas
   // faire scroller en bas de page.
   const inscriptionPanel = selected ? (
-    <section className="rounded-2xl bg-white border-2 border-cyan-300 p-5 space-y-4 mt-2 relative">
+    <section className="rounded-2xl bg-white border-2 border-cyan-300 p-3 sm:p-5 space-y-4 mt-2 relative">
       {/* Bouton de fermeture en haut à droite : reclic sur la carte
           ferme aussi le panneau, mais le ✕ est plus visible. */}
       <button
@@ -485,7 +485,7 @@ export function PreinscriptionClient({
         </div>
       )}
 
-      <div className="flex items-center justify-between gap-3 flex-wrap">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center sm:justify-between gap-3">
         <p className="text-[11px] text-zinc-500 italic">
           {learners.length > 1
             ? `Ces ${learners.length} pré-inscriptions seront transmises à ${partnerName} pour validation.`
@@ -495,7 +495,7 @@ export function PreinscriptionClient({
           type="button"
           onClick={submit}
           disabled={pending}
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-cyan-600 text-white text-sm font-bold hover:bg-cyan-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="inline-flex items-center justify-center gap-2 px-5 py-3 sm:py-2.5 rounded-lg bg-cyan-600 text-white text-sm font-bold hover:bg-cyan-700 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {pending
             ? "Envoi en cours…"

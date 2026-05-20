@@ -100,7 +100,7 @@ ${partnerName}`,
   );
 
   return (
-    <section className="rounded-2xl bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200 p-6">
+    <section className="rounded-2xl bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200 p-4 sm:p-6">
       <div className="flex items-start gap-3 mb-4">
         <Share2 className="h-6 w-6 text-amber-700 shrink-0 mt-1" />
         <div>
@@ -152,12 +152,12 @@ ${partnerName}`,
         </code>
       </div>
 
-      <div className="flex gap-2 flex-wrap">
+      <div className="flex flex-col sm:flex-row gap-2 sm:flex-wrap">
         <button
           type="button"
           onClick={copyLink}
           disabled={!publicUrl}
-          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-amber-600 text-white text-sm font-bold hover:bg-amber-700 disabled:opacity-50"
+          className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-md bg-amber-600 text-white text-sm font-bold hover:bg-amber-700 disabled:opacity-50"
         >
           {copied ? (
             <>
@@ -174,7 +174,7 @@ ${partnerName}`,
         {publicUrl && (
           <a
             href={`mailto:?subject=${mailtoSubject}&body=${mailtoBody}`}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-white border border-amber-300 text-amber-800 text-sm font-bold hover:bg-amber-50"
+            className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-md bg-white border border-amber-300 text-amber-800 text-sm font-bold hover:bg-amber-50"
           >
             <Mail className="h-4 w-4" />
             Envoyer par email

@@ -111,7 +111,7 @@ export default async function PartnerDashboardPage({
 
   return (
     <div className="space-y-6">
-      <section className="rounded-2xl bg-gradient-to-br from-cyan-50 to-indigo-50 border border-cyan-200 p-6 flex items-start gap-5 flex-wrap">
+      <section className="rounded-2xl bg-gradient-to-br from-cyan-50 to-indigo-50 border border-cyan-200 p-4 sm:p-6 flex items-start gap-3 sm:gap-5 flex-wrap">
         {/* Logo du partenaire (à gauche du bandeau de bienvenue) si
             uploadé dans sa fiche entreprise. Renforce l'image de marque
             du partenaire dans son propre espace. */}
@@ -124,10 +124,10 @@ export default async function PartnerDashboardPage({
           />
         )}
         <div className="flex-1 min-w-0">
-        <h1 className="text-2xl font-bold text-zinc-900">
+        <h1 className="text-lg sm:text-2xl font-bold text-zinc-900 leading-tight">
           Bienvenue, {ctx.company.name}
         </h1>
-        <p className="text-sm text-zinc-600 mt-1 max-w-2xl">
+        <p className="text-xs sm:text-sm text-zinc-600 mt-1 max-w-2xl">
           {isOfPartner ? (
             <>
               Cet espace vous permet de consulter le catalogue distanciel INTER
@@ -147,7 +147,7 @@ export default async function PartnerDashboardPage({
         </div>
       </section>
 
-      <section className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <section className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
         <Kpi
           icon={BookOpen}
           label="Sessions au catalogue"
@@ -236,12 +236,12 @@ function Kpi({
     emerald: "bg-emerald-50 border-emerald-200 text-emerald-700",
   }[color];
   return (
-    <div className={`rounded-xl border p-4 ${colorClasses}`}>
-      <Icon className="h-5 w-5 mb-2" />
-      <div className="text-2xl font-bold text-zinc-900 tabular-nums">
+    <div className={`rounded-xl border p-3 sm:p-4 ${colorClasses}`}>
+      <Icon className="h-4 w-4 sm:h-5 sm:w-5 mb-1 sm:mb-2" />
+      <div className="text-xl sm:text-2xl font-bold text-zinc-900 tabular-nums">
         {value}
       </div>
-      <div className="text-[11px] uppercase tracking-wider font-bold">
+      <div className="text-[10px] sm:text-[11px] uppercase tracking-wider font-bold leading-tight">
         {label}
       </div>
     </div>
