@@ -18,6 +18,10 @@ import {
   STATUS_LABELS,
   type FormationStatus,
 } from "@/lib/formations/types";
+import {
+  InscriptionsOverviewTable,
+  type InscriptionOverviewRow,
+} from "./_inscriptions-overview-table";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -124,6 +128,130 @@ export default async function DashboardPage() {
     urssafsAlerts.length +
     qualiopisAlerts.length +
     (locationsToVerify?.length ?? 0);
+
+  // Tableau « Apprenants inscrits par session » (Gilles 2026-05-20)
+  // Source : session_enrollments (= apprenants réellement confirmés).
+  // Limité aux 100 derniers pour ne pas surcharger le dashboard ;
+  // un lien « Voir toutes » mène à /inscriptions pour la vue complète.
+  const { data: enrollmentsRaw } = await supabase
+    .from("session_enrollments")
+    .select(
+      `
+      id, status, enrolled_at,
+      learner:learners(first_name, last_name, company:companies(name)),
+      session:sessions(id, start_date, end_date,
+        formation:formations(title, duration_hours, duration_days)
+      ),
+      inscription_request:inscription_requests(
+        via_partner_portal,
+        referrer:companies!referrer_company_id(name, type)
+      )
+    `,
+    )
+    .neq("status", "cancelled")
+    .order("enrolled_at", { ascending: false })
+    .limit(100);
+
+  type EnrollmentRaw = {
+    id: string;
+    status: string;
+    enrolled_at: string;
+    learner:
+      | {
+          first_name: string;
+          last_name: string;
+          company: { name: string } | Array<{ name: string }> | null;
+        }
+      | Array<{
+          first_name: string;
+          last_name: string;
+          company: { name: string } | Array<{ name: string }> | null;
+        }>
+      | null;
+    session:
+      | {
+          id: string;
+          start_date: string | null;
+          end_date: string | null;
+          formation:
+            | { title: string; duration_hours: number | null; duration_days: number | null }
+            | Array<{ title: string; duration_hours: number | null; duration_days: number | null }>
+            | null;
+        }
+      | Array<{
+          id: string;
+          start_date: string | null;
+          end_date: string | null;
+          formation:
+            | { title: string; duration_hours: number | null; duration_days: number | null }
+            | Array<{ title: string; duration_hours: number | null; duration_days: number | null }>
+            | null;
+        }>
+      | null;
+    inscription_request:
+      | {
+          via_partner_portal: boolean | null;
+          referrer:
+            | { name: string | null; type: string | null }
+            | Array<{ name: string | null; type: string | null }>
+            | null;
+        }
+      | Array<{
+          via_partner_portal: boolean | null;
+          referrer:
+            | { name: string | null; type: string | null }
+            | Array<{ name: string | null; type: string | null }>
+            | null;
+        }>
+      | null;
+  };
+
+  const inscriptionRows: InscriptionOverviewRow[] = (
+    (enrollmentsRaw ?? []) as unknown as EnrollmentRaw[]
+  )
+    .map((e) => {
+      const learner = Array.isArray(e.learner) ? e.learner[0] ?? null : e.learner;
+      const company =
+        learner?.company
+          ? Array.isArray(learner.company)
+            ? learner.company[0] ?? null
+            : learner.company
+          : null;
+      const session = Array.isArray(e.session) ? e.session[0] ?? null : e.session;
+      const formation = session?.formation
+        ? Array.isArray(session.formation)
+          ? session.formation[0] ?? null
+          : session.formation
+        : null;
+      const req = Array.isArray(e.inscription_request)
+        ? e.inscription_request[0] ?? null
+        : e.inscription_request;
+      const referrer = req?.referrer
+        ? Array.isArray(req.referrer)
+          ? req.referrer[0] ?? null
+          : req.referrer
+        : null;
+      const sourceKind: InscriptionOverviewRow["sourceKind"] = referrer?.name
+        ? referrer.type === "of"
+          ? "of"
+          : "partenaire"
+        : "direct";
+      return {
+        enrollmentId: e.id,
+        sessionId: session?.id ?? null,
+        learnerName: learner
+          ? `${learner.first_name} ${learner.last_name}`
+          : "—",
+        companyName: company?.name ?? null,
+        startDate: session?.start_date ?? null,
+        endDate: session?.end_date ?? null,
+        formationTitle: formation?.title ?? "—",
+        durationDays: formation?.duration_days ?? null,
+        durationHours: formation?.duration_hours ?? null,
+        sourceKind,
+        partnerName: referrer?.name ?? null,
+      };
+    });
 
   return (
     <>
@@ -347,7 +475,7 @@ export default async function DashboardPage() {
           </div>
 
           {/* Actions rapides */}
-          <div className="rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6">
+          <div className="rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 lg:col-span-1">
             <h2 className="text-sm font-semibold mb-4">Actions rapides</h2>
             <div className="space-y-2">
               <Button
@@ -378,6 +506,13 @@ export default async function DashboardPage() {
               </Button>
             </div>
           </div>
+        </div>
+
+        {/* Tableau « Apprenants inscrits par session » : vue d'ensemble
+            des 100 dernières inscriptions actives, avec la source
+            (CAP NUMERIQUE direct / OF / Prescripteur partenaire). */}
+        <div className="mt-6">
+          <InscriptionsOverviewTable rows={inscriptionRows} />
         </div>
       </div>
     </>
