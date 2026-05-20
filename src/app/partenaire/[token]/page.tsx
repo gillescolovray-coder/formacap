@@ -9,7 +9,6 @@ import {
 } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolvePartnerContext } from "./_resolve";
-import { InviteBlock } from "./_invite-block";
 
 type Params = { token: string };
 
@@ -174,14 +173,8 @@ export default async function PartnerDashboardPage({
         />
       </section>
 
-      {/* Bloc de diffusion publique : génère un lien de pré-inscription
-          que le partenaire peut envoyer à ses entreprises. */}
-      <InviteBlock
-        token={token}
-        partnerName={ctx.company.name}
-        organizationName={ctx.organization.name}
-        showOwnSessionsFilter={Boolean(showOwnIntraCatalog)}
-      />
+      {/* Le bloc « Inviter mes entreprises » est désormais sur l'onglet
+          Catalogue (plus pertinent quand on choisit ce qu'on diffuse). */}
 
       <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Link

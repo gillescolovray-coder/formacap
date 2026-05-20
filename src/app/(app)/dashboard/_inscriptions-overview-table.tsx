@@ -98,7 +98,7 @@ export function InscriptionsOverviewTable({
               <th className="px-3 py-2.5">Fonction</th>
               <th className="px-3 py-2.5">N° tél</th>
               <th className="px-3 py-2.5">Email</th>
-              <th className="px-3 py-2.5 text-right">Coût TTC</th>
+              <th className="px-3 py-2.5 text-right">Coût HT</th>
               <th className="px-3 py-2.5">Société</th>
               <th className="px-3 py-2.5">Adresse</th>
               <th className="px-3 py-2.5">CP</th>
@@ -108,10 +108,6 @@ export function InscriptionsOverviewTable({
           </thead>
           <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
             {rows.map((r) => {
-              const ttc =
-                r.amountHt != null && Number.isFinite(r.amountHt)
-                  ? Math.round(r.amountHt * 1.2 * 100) / 100
-                  : null;
               return (
                 <tr
                   key={r.enrollmentId}
@@ -182,9 +178,11 @@ export function InscriptionsOverviewTable({
                       "—"
                     )}
                   </td>
-                  {/* Coût TTC */}
+                  {/* Coût HT (la TVA depend de chaque cas — pas calcule ici) */}
                   <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap font-bold text-emerald-700 dark:text-emerald-400">
-                    {ttc !== null ? currencyFormatter.format(ttc) : "—"}
+                    {r.amountHt != null
+                      ? currencyFormatter.format(r.amountHt)
+                      : "—"}
                   </td>
                   {/* Société */}
                   <td className="px-3 py-2 text-zinc-700 dark:text-zinc-300">

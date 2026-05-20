@@ -3,6 +3,7 @@ import { BookOpen, Calendar } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { computeEffectivePartnerPrice } from "@/lib/portal/partner-pricing";
 import { resolvePartnerContext } from "../_resolve";
+import { InviteBlock } from "../_invite-block";
 import { CatalogueList, type CatalogueSession } from "./_list-client";
 
 type Params = { token: string };
@@ -310,6 +311,16 @@ export default async function PartnerCataloguePage({
         </h1>
         <p className="text-sm text-zinc-600 mt-1">{catalogDescription}</p>
       </header>
+
+      {/* Bloc de diffusion publique « Inviter mes entreprises » :
+          place ici (dans le catalogue) car c'est le bon contexte pour
+          choisir ce qu'on diffuse. */}
+      <InviteBlock
+        token={token}
+        partnerName={ctx.company.name}
+        organizationName={ctx.organization.name}
+        showOwnSessionsFilter={showOwn}
+      />
 
       {rows.length === 0 ? (
         <div className="rounded-2xl bg-white border border-zinc-200 p-8 text-center">
