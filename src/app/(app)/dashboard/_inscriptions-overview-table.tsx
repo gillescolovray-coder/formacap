@@ -371,28 +371,30 @@ export function InscriptionsOverviewTable({
                       <span className="text-zinc-400">—</span>
                     )}
                   </td>
-                  {/* Source */}
-                  <td className="px-3 py-2 whitespace-nowrap">
+                  {/* Source : 2 lignes (type + nom partenaire) pour
+                      limiter la largeur quand le nom est long. */}
+                  <td className="px-3 py-2 max-w-[180px]">
                     {r.sourceKind === "direct" ? (
                       <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-zinc-100 text-zinc-700 border border-zinc-200 text-[10px] font-bold uppercase tracking-wider dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700">
                         CAP NUMÉRIQUE
                       </span>
-                    ) : r.sourceKind === "of" ? (
-                      <span
-                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold"
-                        title={`Inscription via le portail OF ${r.partnerName ?? ""}`}
-                      >
-                        <Handshake className="h-3 w-3" />
-                        OF · {r.partnerName ?? "?"}
-                      </span>
                     ) : (
-                      <span
-                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-200 text-[10px] font-bold"
-                        title={`Inscription via le portail prescripteur ${r.partnerName ?? ""}`}
+                      <div
+                        className={
+                          r.sourceKind === "of"
+                            ? "inline-flex flex-col items-start gap-0.5 px-2 py-1 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 max-w-full"
+                            : "inline-flex flex-col items-start gap-0.5 px-2 py-1 rounded-md bg-violet-50 text-violet-700 border border-violet-200 max-w-full"
+                        }
+                        title={`Inscription via le portail ${r.sourceKind === "of" ? "OF" : "prescripteur"} ${r.partnerName ?? ""}`}
                       >
-                        <Handshake className="h-3 w-3" />
-                        Prescripteur · {r.partnerName ?? "?"}
-                      </span>
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider">
+                          <Handshake className="h-3 w-3 shrink-0" />
+                          {r.sourceKind === "of" ? "OF" : "Prescripteur"}
+                        </span>
+                        <span className="text-[11px] font-medium leading-tight break-words">
+                          {r.partnerName ?? "?"}
+                        </span>
+                      </div>
                     )}
                   </td>
                 </tr>
