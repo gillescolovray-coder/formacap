@@ -121,7 +121,128 @@ export function InscriptionsList({ rows }: { rows: InscriptionRow[] }) {
           Aucun résultat pour votre recherche.
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
+        <>
+        {/* === VUE MOBILE : cartes empilées (≤ md) === */}
+        <div className="md:hidden space-y-3">
+          {filtered.map((r) => {
+            const isFinished = r.endDate && r.endDate < today;
+            const isStarted = r.startDate && r.startDate <= today;
+            const statusBadge = isFinished
+              ? { label: "Terminée", cls: "bg-emerald-100 text-emerald-700 border-emerald-200" }
+              : isStarted
+                ? { label: "En cours", cls: "bg-amber-100 text-amber-700 border-amber-200" }
+                : { label: "À venir", cls: "bg-cyan-100 text-cyan-700 border-cyan-200" };
+            const modalityLabel = r.modality
+              ? MODALITY_LABELS[r.modality] ?? r.modality
+              : null;
+            const d = r.durationDays;
+            const h = r.durationHours;
+            const dayLabel =
+              d != null && d > 0
+                ? Number.isInteger(d) ? `${d} j` : `${d.toFixed(1)} j`
+                : null;
+            const hourLabel = h != null && h > 0 ? `${h} h` : null;
+            const durationLabel =
+              dayLabel && hourLabel ? `${dayLabel} / ${hourLabel}` : dayLabel ?? hourLabel ?? null;
+            return (
+              <article
+                key={r.id}
+                className="rounded-xl border border-zinc-200 bg-white p-3 space-y-2"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <h3 className="font-bold text-sm text-zinc-900 leading-snug flex-1 min-w-0">
+                    {r.formationTitle}
+                  </h3>
+                  <span
+                    className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${statusBadge.cls}`}
+                  >
+                    {statusBadge.label}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                  {modalityLabel && (
+                    <span
+                      className={
+                        r.modality === "presentiel"
+                          ? "inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-bold uppercase tracking-wider"
+                          : r.modality === "hybride"
+                            ? "inline-flex items-center px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 font-bold uppercase tracking-wider"
+                            : "inline-flex items-center px-1.5 py-0.5 rounded bg-cyan-100 text-cyan-700 font-bold uppercase tracking-wider"
+                      }
+                    >
+                      {modalityLabel}
+                    </span>
+                  )}
+                  {durationLabel && (
+                    <span className="inline-flex items-center gap-0.5 text-zinc-600">
+                      <Clock className="h-3 w-3 text-zinc-400" />
+                      {durationLabel}
+                    </span>
+                  )}
+                  <span className="inline-flex items-center gap-1 text-zinc-700 font-bold">
+                    <Calendar className="h-3 w-3 text-zinc-400" />
+                    {formatDate(r.startDate)}
+                  </span>
+                </div>
+                <div className="pt-2 border-t border-zinc-100 space-y-1.5 text-xs">
+                  <div>
+                    <span className="text-[10px] uppercase tracking-wider font-bold text-zinc-500">
+                      Apprenant
+                    </span>
+                    <p className="font-bold text-zinc-900">{r.learnerName}</p>
+                    {r.learnerEmail && (
+                      <a
+                        href={`mailto:${r.learnerEmail}`}
+                        className="inline-flex items-center gap-1 text-cyan-700 hover:underline break-all"
+                      >
+                        <Mail className="h-3 w-3" />
+                        {r.learnerEmail}
+                      </a>
+                    )}
+                    {r.learnerPhone && (
+                      <span className="inline-flex items-center gap-1 text-zinc-600 ml-2">
+                        <Phone className="h-3 w-3" />
+                        {r.learnerPhone}
+                      </span>
+                    )}
+                  </div>
+                  {r.companyName && (
+                    <div className="pt-1.5 border-t border-zinc-100">
+                      <span className="text-[10px] uppercase tracking-wider font-bold text-zinc-500 inline-flex items-center gap-1">
+                        <Building2 className="h-3 w-3" />
+                        Entreprise
+                      </span>
+                      <p className="text-zinc-800">{r.companyName}</p>
+                      {r.contact_referent && (
+                        <div className="mt-1 pl-2 border-l-2 border-blue-200">
+                          <span className="text-[10px] uppercase tracking-wider font-bold text-blue-700 inline-flex items-center gap-1">
+                            <UserCheck className="h-3 w-3" />
+                            Référent
+                          </span>
+                          <p className="text-zinc-700">
+                            {r.contact_referent.first_name}{" "}
+                            {r.contact_referent.last_name}
+                          </p>
+                          {r.contact_referent.email && (
+                            <a
+                              href={`mailto:${r.contact_referent.email}`}
+                              className="text-cyan-700 hover:underline break-all text-[11px]"
+                            >
+                              {r.contact_referent.email}
+                            </a>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+
+        {/* === VUE DESKTOP : tableau (≥ md) === */}
+        <div className="hidden md:block overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
           <table className="w-full text-sm">
             <thead className="bg-zinc-50">
               <tr>
@@ -300,6 +421,7 @@ export function InscriptionsList({ rows }: { rows: InscriptionRow[] }) {
             </tbody>
           </table>
         </div>
+        </>
       )}
     </div>
   );

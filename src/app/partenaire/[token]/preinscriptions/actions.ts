@@ -163,7 +163,28 @@ export async function validatePreinscription(
     return { ok: false, error: "Stage 'confirmed' introuvable." };
   }
 
-  // 4) Validation officielle
+  // 4) Validation officielle — détecte préventivement le cas où le
+  //    même apprenant est déjà inscrit (par exemple 2 pré-inscriptions
+  //    soumises avec le même email pour des apprenants distincts).
+  //    Contrainte SQL : uniq_inscription_request_session_learner sur
+  //    (target_session_id, learner_id). On donne un message parlant
+  //    plutôt que de laisser fuiter l'erreur Postgres brute.
+  const { data: existingForLearner } = await supabase
+    .from("inscription_requests")
+    .select("id")
+    .eq("target_session_id", req.target_session_id)
+    .eq("learner_id", learnerId)
+    .neq("id", req.id)
+    .limit(1)
+    .maybeSingle();
+  if (existingForLearner) {
+    return {
+      ok: false,
+      error:
+        "Cet apprenant (même email) est déjà inscrit sur cette session. Si ce sont deux personnes différentes, modifiez l'email côté apprenant avant de valider — sinon, refusez ce doublon.",
+    };
+  }
+
   const { error: updErr } = await supabase
     .from("inscription_requests")
     .update({
@@ -174,7 +195,14 @@ export async function validatePreinscription(
     })
     .eq("id", req.id);
   if (updErr) {
-    return { ok: false, error: `Validation impossible : ${updErr.message}` };
+    // Filet de sécurité : si la contrainte d'unicité saute malgré le
+    // pré-check (race condition), on traduit le message.
+    const friendly = updErr.message.includes(
+      "uniq_inscription_request_session_learner",
+    )
+      ? "Cet apprenant est déjà inscrit sur cette session (doublon détecté). Refusez ce doublon ou modifiez l'email de l'apprenant."
+      : `Validation impossible : ${updErr.message}`;
+    return { ok: false, error: friendly };
   }
 
   await createMirroredEnrollmentForRequest(supabase, {
