@@ -5,6 +5,12 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { resolvePartnerContext } from "../_resolve";
 import { InscriptionsList, type InscriptionRow } from "./_list";
 
+// Force un rendu dynamique a chaque visite — sinon le cache Next.js
+// peut servir une version obsolete apres validation d'une pre-inscription
+// (le revalidatePath ne suffit pas toujours selon le contexte navigateur).
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 type Params = { token: string };
 
 export default async function PartnerInscriptionsPage({
