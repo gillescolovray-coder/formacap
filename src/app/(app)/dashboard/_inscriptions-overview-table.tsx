@@ -1,5 +1,17 @@
 import Link from "next/link";
-import { Calendar, Handshake, ListChecks, Users } from "lucide-react";
+import {
+  Briefcase,
+  Building2,
+  Calendar,
+  Clock,
+  Handshake,
+  ListChecks,
+  Mail,
+  MapPin,
+  Phone,
+  User,
+  Users,
+} from "lucide-react";
 
 export type InscriptionOverviewRow = {
   enrollmentId: string;
@@ -75,6 +87,27 @@ export function InscriptionsOverviewTable({
     );
   }
 
+  // Index unique par session pour la coloration alternee (groupement
+  // visuel : tous les apprenants d'une meme session partagent la meme
+  // teinte de fond).
+  const sessionColorIdx = new Map<string, number>();
+  {
+    let counter = 0;
+    for (const row of rows) {
+      const sid = row.sessionId ?? `_no_session_${row.enrollmentId}`;
+      if (!sessionColorIdx.has(sid)) {
+        sessionColorIdx.set(sid, counter++);
+      }
+    }
+  }
+  // Palette de 4 nuances tres claires, en rotation modulo 4
+  const SESSION_BG_PALETTE = [
+    "bg-white dark:bg-zinc-900",
+    "bg-cyan-50/40 dark:bg-cyan-950/20",
+    "bg-emerald-50/40 dark:bg-emerald-950/20",
+    "bg-amber-50/40 dark:bg-amber-950/20",
+  ];
+
   return (
     <div className="rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 overflow-hidden">
       <div className="flex items-center justify-between gap-2 p-4 border-b border-zinc-200 dark:border-zinc-800">
@@ -98,20 +131,9 @@ export function InscriptionsOverviewTable({
             <tr>
               <th className="px-3 py-2.5">Date session</th>
               <th className="px-3 py-2.5">Formation</th>
-              <th className="px-3 py-2.5 text-center">Jours</th>
-              <th className="px-3 py-2.5 text-center">Heures</th>
-              <th className="px-3 py-2.5">Nom</th>
-              <th className="px-3 py-2.5">Prénom</th>
-              <th className="px-3 py-2.5">Fonction</th>
-              <th className="px-3 py-2.5">N° tél</th>
-              <th className="px-3 py-2.5">Email</th>
-              <th className="px-3 py-2.5 text-right">Budget HT</th>
-              <th className="px-3 py-2.5 text-right">TVA (20%)</th>
-              <th className="px-3 py-2.5 text-right">Budget TTC</th>
-              <th className="px-3 py-2.5">Société</th>
-              <th className="px-3 py-2.5">Adresse</th>
-              <th className="px-3 py-2.5">CP</th>
-              <th className="px-3 py-2.5">Ville</th>
+              <th className="px-3 py-2.5">Apprenant</th>
+              <th className="px-3 py-2.5 text-right">Budget</th>
+              <th className="px-3 py-2.5">Entreprise</th>
               <th className="px-3 py-2.5">Source</th>
             </tr>
           </thead>
@@ -138,13 +160,17 @@ export function InscriptionsOverviewTable({
                 : r.sessionId
                   ? `/sessions/${r.sessionId}`
                   : null;
+              // Couleur de fond selon l'index de session (rotation 4 couleurs)
+              const sid = r.sessionId ?? `_no_session_${r.enrollmentId}`;
+              const colorIdx = sessionColorIdx.get(sid) ?? 0;
+              const bgClass = SESSION_BG_PALETTE[colorIdx % SESSION_BG_PALETTE.length];
               return (
                 <tr
                   key={r.enrollmentId}
                   className={
                     newSession
-                      ? "border-t-2 border-zinc-300 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-900/40"
-                      : "border-t border-zinc-100 dark:border-zinc-800/40 hover:bg-zinc-50 dark:hover:bg-zinc-900/40"
+                      ? `border-t-2 border-zinc-300 dark:border-zinc-700 hover:brightness-95 ${bgClass}`
+                      : `border-t border-zinc-100 dark:border-zinc-800/40 hover:brightness-95 ${bgClass}`
                   }
                 >
                   {/* Date session */}
@@ -154,8 +180,8 @@ export function InscriptionsOverviewTable({
                       {formatDate(r.startDate)}
                     </span>
                   </td>
-                  {/* Formation + INTER/INTRA + Modalite */}
-                  <td className="px-3 py-2 max-w-[280px]">
+                  {/* Formation + INTER/INTRA + Modalite + duree j/h */}
+                  <td className="px-3 py-2 max-w-[320px]">
                     {formationHref ? (
                       <Link
                         href={formationHref}
@@ -194,80 +220,126 @@ export function InscriptionsOverviewTable({
                           {MODALITY_LABELS[r.modality] ?? r.modality}
                         </span>
                       )}
+                      {r.durationDays != null && r.durationDays > 0 && (
+                        <span
+                          className="inline-flex items-center gap-0.5 text-[10px] text-zinc-600 dark:text-zinc-400"
+                          title="Nombre de jours"
+                        >
+                          <Calendar className="h-3 w-3 text-zinc-400" />
+                          {Number.isInteger(r.durationDays)
+                            ? `${r.durationDays} j`
+                            : `${r.durationDays.toFixed(1)} j`}
+                        </span>
+                      )}
+                      {r.durationHours != null && r.durationHours > 0 && (
+                        <span
+                          className="inline-flex items-center gap-0.5 text-[10px] text-zinc-600 dark:text-zinc-400"
+                          title="Nombre d'heures"
+                        >
+                          <Clock className="h-3 w-3 text-zinc-400" />
+                          {r.durationHours} h
+                        </span>
+                      )}
                     </div>
                   </td>
-                  {/* Jours */}
-                  <td className="px-3 py-2 text-center text-zinc-700 dark:text-zinc-300 tabular-nums">
-                    {r.durationDays != null && r.durationDays > 0
-                      ? Number.isInteger(r.durationDays)
-                        ? r.durationDays
-                        : r.durationDays.toFixed(1)
-                      : "—"}
-                  </td>
-                  {/* Heures */}
-                  <td className="px-3 py-2 text-center text-zinc-700 dark:text-zinc-300 tabular-nums">
-                    {r.durationHours != null && r.durationHours > 0
-                      ? r.durationHours
-                      : "—"}
-                  </td>
-                  {/* Nom apprenant */}
-                  <td className="px-3 py-2 font-medium text-zinc-800 dark:text-zinc-200">
-                    {r.learnerLastName ?? "—"}
-                  </td>
-                  {/* Prénom apprenant */}
-                  <td className="px-3 py-2 text-zinc-700 dark:text-zinc-300">
-                    {r.learnerFirstName ?? "—"}
-                  </td>
-                  {/* Fonction */}
-                  <td className="px-3 py-2 text-zinc-600 dark:text-zinc-400">
-                    {r.learnerJobTitle ?? "—"}
-                  </td>
-                  {/* N° tél */}
-                  <td className="px-3 py-2 text-zinc-600 dark:text-zinc-400 whitespace-nowrap">
-                    {r.learnerPhone ?? "—"}
-                  </td>
-                  {/* Email */}
-                  <td className="px-3 py-2 text-zinc-600 dark:text-zinc-400">
-                    {r.learnerEmail ? (
+
+                  {/* Apprenant : nom + prenom + fonction + tel + email */}
+                  <td className="px-3 py-2 max-w-[260px]">
+                    <div className="font-medium text-zinc-900 dark:text-zinc-100">
+                      {[r.learnerLastName, r.learnerFirstName]
+                        .filter(Boolean)
+                        .join(" ") || "—"}
+                    </div>
+                    {r.learnerJobTitle && (
+                      <div className="text-[11px] text-zinc-600 dark:text-zinc-400 inline-flex items-center gap-1 mt-0.5">
+                        <Briefcase className="h-3 w-3 text-zinc-400" />
+                        {r.learnerJobTitle}
+                      </div>
+                    )}
+                    {r.learnerPhone && (
+                      <div className="text-[11px] text-zinc-600 dark:text-zinc-400 inline-flex items-center gap-1">
+                        <Phone className="h-3 w-3 text-zinc-400" />
+                        {r.learnerPhone}
+                      </div>
+                    )}
+                    {r.learnerEmail && (
                       <a
                         href={`mailto:${r.learnerEmail}`}
-                        className="hover:text-cyan-700 hover:underline"
+                        className="block text-[11px] text-cyan-700 hover:underline truncate"
                       >
+                        <Mail className="h-3 w-3 inline mr-1 text-zinc-400" />
                         {r.learnerEmail}
                       </a>
-                    ) : (
-                      "—"
                     )}
                   </td>
-                  {/* Budget HT */}
-                  <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap font-bold text-zinc-900 dark:text-zinc-100">
-                    {r.amountHt != null
-                      ? currencyFormatter.format(r.amountHt)
-                      : "—"}
+
+                  {/* Budget HT / TVA / TTC sur 3 lignes */}
+                  <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">
+                    {r.amountHt != null ? (
+                      <div className="space-y-0.5">
+                        <div className="text-xs">
+                          <span className="text-[10px] uppercase tracking-wider text-zinc-500 mr-1">
+                            HT
+                          </span>
+                          <span className="font-bold text-zinc-900 dark:text-zinc-100">
+                            {currencyFormatter.format(r.amountHt)}
+                          </span>
+                        </div>
+                        <div className="text-xs">
+                          <span className="text-[10px] uppercase tracking-wider text-zinc-500 mr-1">
+                            TVA 20%
+                          </span>
+                          <span className="text-zinc-600 dark:text-zinc-400">
+                            {tva != null
+                              ? currencyFormatter.format(tva)
+                              : "—"}
+                          </span>
+                        </div>
+                        <div className="text-xs">
+                          <span className="text-[10px] uppercase tracking-wider text-emerald-700 mr-1">
+                            TTC
+                          </span>
+                          <span className="font-bold text-emerald-700 dark:text-emerald-400">
+                            {ttc != null
+                              ? currencyFormatter.format(ttc)
+                              : "—"}
+                          </span>
+                        </div>
+                      </div>
+                    ) : (
+                      <span className="text-zinc-400">—</span>
+                    )}
                   </td>
-                  {/* TVA (20% par defaut) */}
-                  <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap text-zinc-600 dark:text-zinc-400">
-                    {tva != null ? currencyFormatter.format(tva) : "—"}
-                  </td>
-                  {/* Budget TTC */}
-                  <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap font-bold text-emerald-700 dark:text-emerald-400">
-                    {ttc != null ? currencyFormatter.format(ttc) : "—"}
-                  </td>
-                  {/* Société */}
-                  <td className="px-3 py-2 text-zinc-700 dark:text-zinc-300">
-                    {r.companyName ?? "—"}
-                  </td>
-                  {/* Adresse */}
-                  <td className="px-3 py-2 text-zinc-600 dark:text-zinc-400">
-                    {r.companyAddress ?? "—"}
-                  </td>
-                  {/* CP */}
-                  <td className="px-3 py-2 text-zinc-600 dark:text-zinc-400 tabular-nums whitespace-nowrap">
-                    {r.companyPostalCode ?? "—"}
-                  </td>
-                  {/* Ville */}
-                  <td className="px-3 py-2 text-zinc-600 dark:text-zinc-400">
-                    {r.companyCity ?? "—"}
+
+                  {/* Entreprise : nom + adresse + CP + Ville dans la meme cellule */}
+                  <td className="px-3 py-2 max-w-[240px]">
+                    {r.companyName ? (
+                      <>
+                        <div className="font-medium text-zinc-900 dark:text-zinc-100 inline-flex items-start gap-1">
+                          <Building2 className="h-3.5 w-3.5 text-zinc-400 shrink-0 mt-0.5" />
+                          <span>{r.companyName}</span>
+                        </div>
+                        {(r.companyAddress ||
+                          r.companyPostalCode ||
+                          r.companyCity) && (
+                          <div className="text-[11px] text-zinc-500 dark:text-zinc-500 mt-0.5 pl-4.5">
+                            {r.companyAddress && (
+                              <div className="inline-flex items-start gap-1">
+                                <MapPin className="h-3 w-3 text-zinc-400 shrink-0 mt-0.5" />
+                                <span>{r.companyAddress}</span>
+                              </div>
+                            )}
+                            <div className="pl-4">
+                              {[r.companyPostalCode, r.companyCity]
+                                .filter(Boolean)
+                                .join(" ")}
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-zinc-400">—</span>
+                    )}
                   </td>
                   {/* Source */}
                   <td className="px-3 py-2 whitespace-nowrap">
