@@ -33,7 +33,7 @@ export default async function PartnerInscriptionsPage({
   //   • entreprise rattachée (companies via company_id) + texte libre
   //   • contact référent pédagogique (migration 0093)
   //   • modalité et durée de la formation
-  const { data: requests } = await supabase
+  const { data: requests, error: queryError } = await supabase
     .from("inscription_requests")
     .select(
       `
@@ -50,6 +50,12 @@ export default async function PartnerInscriptionsPage({
     )
     .eq("referrer_company_id", ctx.company.id)
     .order("received_at", { ascending: false });
+
+  // Debug temporaire pour comprendre pourquoi la liste reste vide :
+  // affiche le compteur brut + l'eventuelle erreur Supabase
+  console.log(
+    `[partenaire/inscriptions] company.id=${ctx.company.id} rows=${requests?.length ?? "null"} error=${queryError?.message ?? "none"}`,
+  );
 
   type Raw = {
     id: string;
@@ -208,6 +214,16 @@ export default async function PartnerInscriptionsPage({
           <span>Inscription enregistrée et confirmée.</span>
         </div>
       )}
+
+      {/* DEBUG TEMPORAIRE pour comprendre pourquoi la liste reste vide */}
+      <details className="rounded-md bg-zinc-50 border border-zinc-200 p-2 text-[11px] text-zinc-600 font-mono">
+        <summary className="cursor-pointer">Debug technique</summary>
+        <div className="mt-2 space-y-1">
+          <p>company.id : {ctx.company.id}</p>
+          <p>rows trouvees : {requests?.length ?? "null (erreur query)"}</p>
+          <p>error : {queryError?.message ?? "—"}</p>
+        </div>
+      </details>
 
       {rows.length === 0 ? (
         <div className="rounded-2xl bg-white border border-zinc-200 p-8 text-center">
