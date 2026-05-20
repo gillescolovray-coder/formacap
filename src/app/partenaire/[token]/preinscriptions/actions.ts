@@ -354,6 +354,102 @@ export async function validatePreinscription(
   return { ok: true };
 }
 
+/**
+ * Met à jour les champs modifiables d'une pré-inscription en attente
+ * de validation. Permet au partenaire de corriger un email mal saisi
+ * (cas frequent : double email avec un autre apprenant) sans avoir à
+ * refuser la demande et redemander la saisie.
+ *
+ * Seuls les champs « apprenant » sont éditables ici. Entreprise, session
+ * et financement restent gelés (si erreur sur ces points → refuser).
+ */
+export async function updatePreinscription(
+  token: string,
+  requestId: string,
+  patch: {
+    first_name: string;
+    last_name: string;
+    email: string;
+    phone: string | null;
+    job_title: string | null;
+  },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const ctx = await resolvePartnerContext(token);
+  if (!ctx) return { ok: false, error: "Token invalide." };
+
+  // Validation minimale
+  if (!patch.first_name?.trim() || !patch.last_name?.trim()) {
+    return { ok: false, error: "Prénom et nom obligatoires." };
+  }
+  if (!/^\S+@\S+\.\S+$/.test(patch.email?.trim() ?? "")) {
+    return { ok: false, error: "Email invalide." };
+  }
+
+  const supabase = createAdminClient();
+
+  // Vérifie ownership + récupère target_session_id pour le check doublon
+  const { data: req } = await supabase
+    .from("inscription_requests")
+    .select("id, target_session_id, prospect_email")
+    .eq("id", requestId)
+    .eq("referrer_company_id", ctx.company.id)
+    .eq("organization_id", ctx.company.organization_id)
+    .maybeSingle<{
+      id: string;
+      target_session_id: string | null;
+      prospect_email: string | null;
+    }>();
+  if (!req) return { ok: false, error: "Pré-inscription introuvable." };
+
+  // Vérifie qu'on ne crée pas de doublon en changeant l'email
+  const newEmail = patch.email.trim().toLowerCase();
+  const oldEmail = (req.prospect_email ?? "").trim().toLowerCase();
+  if (newEmail !== oldEmail && req.target_session_id) {
+    const { data: dup } = await supabase
+      .from("inscription_requests")
+      .select("id")
+      .eq("target_session_id", req.target_session_id)
+      .ilike("prospect_email", patch.email.trim())
+      .neq("id", req.id)
+      .limit(1)
+      .maybeSingle();
+    if (dup) {
+      return {
+        ok: false,
+        error: `L'email « ${patch.email} » est déjà inscrit sur cette session. Choisissez un autre email.`,
+      };
+    }
+  }
+
+  // Update
+  const { error: updErr } = await supabase
+    .from("inscription_requests")
+    .update({
+      prospect_first_name: patch.first_name.trim(),
+      prospect_last_name: patch.last_name.trim(),
+      prospect_email: patch.email.trim(),
+      prospect_phone: patch.phone,
+    })
+    .eq("id", req.id);
+  if (updErr) {
+    return { ok: false, error: `Mise à jour impossible : ${updErr.message}` };
+  }
+
+  // Trace timeline (en mettant job_title dans le payload car pas de colonne dédiée)
+  await supabase.from("inscription_events").insert({
+    request_id: req.id,
+    event_type: "edited",
+    payload: {
+      edited_by_partner: ctx.company.id,
+      partner_company_name: ctx.company.name,
+      job_title: patch.job_title,
+    },
+  });
+
+  revalidatePath(`/partenaire/${token}/preinscriptions`);
+  return { ok: true };
+}
+
 /** Refuse une pré-inscription : passe le stage à "refused". */
 export async function rejectPreinscription(
   token: string,

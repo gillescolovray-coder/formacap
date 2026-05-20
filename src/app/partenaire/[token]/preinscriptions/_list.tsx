@@ -10,12 +10,14 @@ import {
   Euro,
   Mail,
   MessageSquare,
+  Pencil,
   Phone,
   User,
   UserCheck,
   XCircle,
 } from "lucide-react";
 import { validatePreinscription, rejectPreinscription } from "./actions";
+import { EditPreinscriptionModal } from "./_edit-modal";
 
 export type PendingPreinscription = {
   id: string;
@@ -99,6 +101,12 @@ export function PreinscriptionsList({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [errors, setErrors] = useState<Record<string, string>>({});
+  // ID de la pré-inscription en cours d'édition (null = aucun modal ouvert)
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const editingItem =
+    editingId !== null
+      ? items.find((p) => p.id === editingId) ?? null
+      : null;
 
   function doValidate(id: string) {
     if (!confirm("Valider cette pré-inscription ? L'apprenant sera inscrit officiellement.")) return;
@@ -335,6 +343,16 @@ export function PreinscriptionsList({
           <div className="flex flex-col sm:flex-row gap-2 sm:justify-end pt-2 border-t border-zinc-100">
             <button
               type="button"
+              onClick={() => setEditingId(p.id)}
+              disabled={pending}
+              className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-md border border-zinc-300 bg-white text-zinc-700 text-sm font-medium hover:bg-cyan-50 hover:border-cyan-300 hover:text-cyan-700 disabled:opacity-50"
+              title="Modifier les infos de l'apprenant (utile en cas d'email en double)"
+            >
+              <Pencil className="h-4 w-4" />
+              Modifier
+            </button>
+            <button
+              type="button"
               onClick={() => doReject(p.id)}
               disabled={pending}
               className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-md border border-zinc-300 bg-white text-zinc-700 text-sm font-medium hover:bg-rose-50 hover:border-rose-300 hover:text-rose-700 disabled:opacity-50"
@@ -354,6 +372,22 @@ export function PreinscriptionsList({
           </div>
         </article>
       ))}
+
+      {/* Modal d'edition - affiche si une pre-inscription est selectionnee */}
+      {editingItem && (
+        <EditPreinscriptionModal
+          token={token}
+          requestId={editingItem.id}
+          initial={{
+            first_name: editingItem.learner.first_name,
+            last_name: editingItem.learner.last_name,
+            email: editingItem.learner.email,
+            phone: editingItem.learner.phone,
+            job_title: editingItem.learner.job_title,
+          }}
+          onClose={() => setEditingId(null)}
+        />
+      )}
     </div>
   );
 }

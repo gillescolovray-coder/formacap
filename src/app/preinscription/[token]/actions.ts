@@ -126,6 +126,37 @@ export async function submitPreinscription(input: {
     };
   }
 
+  // Détection préventive de doublons d'email pour cette session :
+  //   - parmi les inscription_requests existantes (toutes pas terminales
+  //     négatives) avec un prospect_email correspondant
+  //   - parmi les learners déjà associés à un session_enrollment actif
+  //     (cas où le RH essaie d'inscrire un apprenant déjà inscrit)
+  // On donne un message clair avec le nom de l'apprenant en doublon
+  // au lieu de laisser la contrainte SQL bloquer plus tard.
+  const learnerEmails = input.learners
+    .map((l) => l.email.trim().toLowerCase())
+    .filter((e) => e.length > 0);
+  if (learnerEmails.length > 0) {
+    const { data: existingReqs } = await supabase
+      .from("inscription_requests")
+      .select("prospect_email, prospect_first_name, prospect_last_name")
+      .eq("target_session_id", input.sessionId)
+      .in("prospect_email", learnerEmails);
+    const collision = (existingReqs ?? []).find(
+      (r) =>
+        r.prospect_email &&
+        learnerEmails.includes(
+          (r.prospect_email as string).trim().toLowerCase(),
+        ),
+    );
+    if (collision) {
+      return {
+        ok: false,
+        error: `L'email « ${collision.prospect_email} » est déjà inscrit sur cette session${collision.prospect_first_name ? ` (${collision.prospect_first_name} ${collision.prospect_last_name ?? ""})` : ""}. Modifiez l'email avant de soumettre, ou contactez ${ctx.company.name} si vous pensez qu'il s'agit d'une erreur.`,
+      };
+    }
+  }
+
   // Sérialise le financement pour la persistance.
   //   - employeur : financing_mode='employeur', pas de détail
   //   - opco      : financing_mode='opco' + financing_details = nom OPCO

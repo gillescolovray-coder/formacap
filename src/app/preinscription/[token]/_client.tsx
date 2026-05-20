@@ -170,6 +170,23 @@ export function PreinscriptionClient({
         return;
       }
     }
+    // Détection de doublons d'email AU SEIN du lot — deux apprenants ne
+    // peuvent pas avoir la même adresse (qui sert d'identifiant unique).
+    const normalizedEmails = learners.map((l) =>
+      l.email.trim().toLowerCase(),
+    );
+    const seen = new Set<string>();
+    for (let i = 0; i < normalizedEmails.length; i++) {
+      const e = normalizedEmails[i];
+      if (seen.has(e)) {
+        const dup = learners[i];
+        setError(
+          `L'email « ${dup.email} » (${dup.firstName} ${dup.lastName}) est en double avec un autre apprenant. Chaque apprenant doit avoir un email unique.`,
+        );
+        return;
+      }
+      seen.add(e);
+    }
     if (financing !== "employeur" && !opcoName.trim()) {
       setError("Indiquez le nom de l'OPCO de financement.");
       return;
