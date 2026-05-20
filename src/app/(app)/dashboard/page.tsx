@@ -138,12 +138,16 @@ export default async function DashboardPage() {
     .select(
       `
       id, status, enrolled_at,
-      learner:learners(first_name, last_name, company:companies(name)),
+      learner:learners(
+        first_name, last_name, email, phone, mobile, job_title,
+        company:companies(name, address, postal_code, city)
+      ),
       session:sessions(id, start_date, end_date,
         formation:formations(title, duration_hours, duration_days)
       ),
       inscription_request:inscription_requests(
         via_partner_portal,
+        quote_amount_ht,
         referrer:companies!referrer_company_id(name, type)
       )
     `,
@@ -152,22 +156,26 @@ export default async function DashboardPage() {
     .order("enrolled_at", { ascending: false })
     .limit(100);
 
+  type CompanyShape = {
+    name: string;
+    address: string | null;
+    postal_code: string | null;
+    city: string | null;
+  };
+  type LearnerShape = {
+    first_name: string;
+    last_name: string;
+    email: string | null;
+    phone: string | null;
+    mobile: string | null;
+    job_title: string | null;
+    company: CompanyShape | Array<CompanyShape> | null;
+  };
   type EnrollmentRaw = {
     id: string;
     status: string;
     enrolled_at: string;
-    learner:
-      | {
-          first_name: string;
-          last_name: string;
-          company: { name: string } | Array<{ name: string }> | null;
-        }
-      | Array<{
-          first_name: string;
-          last_name: string;
-          company: { name: string } | Array<{ name: string }> | null;
-        }>
-      | null;
+    learner: LearnerShape | Array<LearnerShape> | null;
     session:
       | {
           id: string;
@@ -191,6 +199,7 @@ export default async function DashboardPage() {
     inscription_request:
       | {
           via_partner_portal: boolean | null;
+          quote_amount_ht: number | string | null;
           referrer:
             | { name: string | null; type: string | null }
             | Array<{ name: string | null; type: string | null }>
@@ -198,6 +207,7 @@ export default async function DashboardPage() {
         }
       | Array<{
           via_partner_portal: boolean | null;
+          quote_amount_ht: number | string | null;
           referrer:
             | { name: string | null; type: string | null }
             | Array<{ name: string | null; type: string | null }>
@@ -236,18 +246,32 @@ export default async function DashboardPage() {
           ? "of"
           : "partenaire"
         : "direct";
+      const amountRaw = req?.quote_amount_ht;
+      const amountHt =
+        amountRaw === null || amountRaw === undefined
+          ? null
+          : typeof amountRaw === "number"
+            ? amountRaw
+            : Number(amountRaw);
       return {
         enrollmentId: e.id,
         sessionId: session?.id ?? null,
-        learnerName: learner
-          ? `${learner.first_name} ${learner.last_name}`
-          : "—",
+        learnerFirstName: learner?.first_name ?? null,
+        learnerLastName: learner?.last_name ?? null,
+        learnerJobTitle: learner?.job_title ?? null,
+        learnerEmail: learner?.email ?? null,
+        // Priorité au mobile (plus utile pour SMS / rappel) puis fixe
+        learnerPhone: learner?.mobile ?? learner?.phone ?? null,
         companyName: company?.name ?? null,
+        companyAddress: company?.address ?? null,
+        companyPostalCode: company?.postal_code ?? null,
+        companyCity: company?.city ?? null,
         startDate: session?.start_date ?? null,
         endDate: session?.end_date ?? null,
         formationTitle: formation?.title ?? "—",
         durationDays: formation?.duration_days ?? null,
         durationHours: formation?.duration_hours ?? null,
+        amountHt: amountHt != null && Number.isFinite(amountHt) ? amountHt : null,
         sourceKind,
         partnerName: referrer?.name ?? null,
       };
