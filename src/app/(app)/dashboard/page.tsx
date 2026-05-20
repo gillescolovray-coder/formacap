@@ -22,6 +22,7 @@ import {
   InscriptionsOverviewTable,
   type InscriptionOverviewRow,
 } from "./_inscriptions-overview-table";
+import { MonthlyStats, type MonthlyStats as MonthlyStatsType } from "./_monthly-stats";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -300,6 +301,112 @@ export default async function DashboardPage() {
         : bStart.localeCompare(aStart);
     });
 
+  // === Stats mensuelles : nb participants / heures / entreprises / HT / TTC
+  // par mois de l'annee en cours. Query separee SANS limite, sur toutes
+  // les sessions de l'annee.
+  const currentYear = new Date().getFullYear();
+  const yearStart = `${currentYear}-01-01`;
+  const yearEnd = `${currentYear + 1}-01-01`;
+  const { data: yearEnrollments } = await supabase
+    .from("session_enrollments")
+    .select(
+      `
+      id, learner_id,
+      learner:learners(company_id),
+      session:sessions!inner(start_date,
+        formation:formations(duration_hours)
+      ),
+      inscription_request:inscription_requests(quote_amount_ht)
+    `,
+    )
+    .neq("status", "cancelled")
+    .gte("session.start_date", yearStart)
+    .lt("session.start_date", yearEnd);
+
+  const MONTH_LABELS = [
+    "Jan", "Fév", "Mar", "Avr", "Mai", "Juin",
+    "Juil", "Août", "Sep", "Oct", "Nov", "Déc",
+  ];
+  const monthlyAcc: Record<
+    number,
+    {
+      participants: Set<string>;
+      companies: Set<string>;
+      hours: number;
+      amountHt: number;
+    }
+  > = {};
+  for (let m = 0; m < 12; m++) {
+    monthlyAcc[m] = {
+      participants: new Set(),
+      companies: new Set(),
+      hours: 0,
+      amountHt: 0,
+    };
+  }
+
+  type YearEnr = {
+    id: string;
+    learner_id: string | null;
+    learner: { company_id: string | null } | Array<{ company_id: string | null }> | null;
+    session:
+      | {
+          start_date: string | null;
+          formation:
+            | { duration_hours: number | null }
+            | Array<{ duration_hours: number | null }>
+            | null;
+        }
+      | Array<{
+          start_date: string | null;
+          formation:
+            | { duration_hours: number | null }
+            | Array<{ duration_hours: number | null }>
+            | null;
+        }>
+      | null;
+    inscription_request:
+      | { quote_amount_ht: number | string | null }
+      | Array<{ quote_amount_ht: number | string | null }>
+      | null;
+  };
+
+  ((yearEnrollments ?? []) as unknown as YearEnr[]).forEach((e) => {
+    const sess = Array.isArray(e.session) ? e.session[0] : e.session;
+    if (!sess?.start_date) return;
+    const monthIdx = new Date(sess.start_date + "T00:00:00").getMonth();
+    const bucket = monthlyAcc[monthIdx];
+    if (!bucket) return;
+    bucket.participants.add(e.id);
+    const learner = Array.isArray(e.learner) ? e.learner[0] : e.learner;
+    if (learner?.company_id) bucket.companies.add(learner.company_id);
+    const form = sess.formation
+      ? Array.isArray(sess.formation)
+        ? sess.formation[0]
+        : sess.formation
+      : null;
+    if (form?.duration_hours) bucket.hours += Number(form.duration_hours);
+    const req = Array.isArray(e.inscription_request)
+      ? e.inscription_request[0]
+      : e.inscription_request;
+    const amt = req?.quote_amount_ht;
+    if (amt !== null && amt !== undefined) {
+      const n = Number(amt);
+      if (Number.isFinite(n)) bucket.amountHt += n;
+    }
+  });
+
+  const VAT_RATE = 0.2;
+  const monthlyStats: MonthlyStatsType[] = MONTH_LABELS.map((label, i) => ({
+    month: `${currentYear}-${String(i + 1).padStart(2, "0")}`,
+    monthLabel: label,
+    participantsCount: monthlyAcc[i].participants.size,
+    hoursCount: monthlyAcc[i].hours,
+    companiesCount: monthlyAcc[i].companies.size,
+    amountHt: Math.round(monthlyAcc[i].amountHt * 100) / 100,
+    amountTtc: Math.round(monthlyAcc[i].amountHt * (1 + VAT_RATE) * 100) / 100,
+  }));
+
   return (
     <>
       <PageHeader
@@ -553,6 +660,12 @@ export default async function DashboardPage() {
               </Button>
             </div>
           </div>
+        </div>
+
+        {/* Statistiques mensuelles : 5 KPI annuels + graphique en barres
+            + tableau récap mois par mois (annee en cours). */}
+        <div className="mt-6">
+          <MonthlyStats year={currentYear} monthly={monthlyStats} />
         </div>
 
         {/* Tableau « Apprenants inscrits par session » : vue d'ensemble
