@@ -92,7 +92,7 @@ export default async function ParticipantsPage({
     supabase
       .from("session_enrollments")
       .select(
-        "*, learner:learners(id, first_name, last_name, email, phone, mobile, job_title, company:companies(id, name)), inscription_request:inscription_requests(id, financing_mode, financing_details, quote_amount_ht, opco_fundings:inscription_opco_fundings(agreement_id, amount_ht, agreement:opco_funding_agreements(opco_name, dossier_number)))",
+        "*, learner:learners(id, first_name, last_name, email, phone, mobile, job_title, company:companies(id, name)), inscription_request:inscription_requests(id, financing_mode, financing_details, quote_amount_ht, via_partner_portal, referrer:companies!referrer_company_id(id, name, type), opco_fundings:inscription_opco_fundings(agreement_id, amount_ht, agreement:opco_funding_agreements(opco_name, dossier_number)))",
       )
       .eq("session_id", id)
       .order("enrolled_at", { ascending: true }),

@@ -6,6 +6,7 @@ import {
   AlertCircle,
   Briefcase,
   Building2,
+  Handshake,
   Mail,
   Phone,
   Trash2,
@@ -396,8 +397,8 @@ export function EnrollmentsSection({
                       {fullName}
                     </Link>
                   </p>
-                  {/* Ligne 2 — Société (ou Particulier) · Fonction */}
-                  <p className="text-xs text-slate-500 truncate flex items-center gap-2 mt-0.5">
+                  {/* Ligne 2 — Société (ou Particulier) · Fonction · Partenaire */}
+                  <p className="text-xs text-slate-500 truncate flex items-center gap-2 mt-0.5 flex-wrap">
                     {(learner as { company?: { name?: string } | null } | null)
                       ?.company?.name ? (
                       <span className="inline-flex items-center gap-0.5">
@@ -424,6 +425,40 @@ export function EnrollmentsSection({
                         }
                       </span>
                     )}
+                    {(() => {
+                      // Badge « via [Partenaire] » si l'inscription provient
+                      // d'un portail partenaire (referrer_company_id rempli).
+                      const ir = (
+                        e as unknown as {
+                          inscription_request?: {
+                            via_partner_portal?: boolean | null;
+                            referrer?:
+                              | { id: string; name: string; type: string | null }
+                              | Array<{ id: string; name: string; type: string | null }>
+                              | null;
+                          } | null;
+                        }
+                      ).inscription_request;
+                      const referrerRaw = ir?.referrer;
+                      const referrer = Array.isArray(referrerRaw)
+                        ? referrerRaw[0] ?? null
+                        : referrerRaw ?? null;
+                      if (!referrer?.name) return null;
+                      const isOf = referrer.type === "of";
+                      return (
+                        <span
+                          className={
+                            isOf
+                              ? "inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold"
+                              : "inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-200 text-[10px] font-bold"
+                          }
+                          title={`Inscription via le portail ${isOf ? "OF" : "prescripteur"} ${referrer.name}`}
+                        >
+                          <Handshake className="h-3 w-3" />
+                          via {referrer.name}
+                        </span>
+                      );
+                    })()}
                   </p>
                   {/* Ligne 3 — Email · Téléphone (priorité au mobile, fallback fixe) */}
                   {(learner?.email ||
