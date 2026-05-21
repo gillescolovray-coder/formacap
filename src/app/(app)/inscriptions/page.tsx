@@ -13,6 +13,7 @@ import {
   Users,
 } from "lucide-react";
 import { InscrireLink } from "./_inscrire-link";
+import { SessionActionsButtons } from "./_session-actions-buttons";
 import { LocationPopover } from "./_location-popover";
 import { OpenSessionLink } from "./_open-session-link";
 import {
@@ -809,7 +810,11 @@ function SessionCard({
                   </HeaderItem>
                 )}
                 {/* Actions à droite de la ligne 1 (poussées par ml-auto) */}
-                <div className="ml-auto flex items-center gap-2 shrink-0">
+                <div className="ml-auto flex items-center gap-2 shrink-0 flex-wrap">
+                  <SessionActionsButtons
+                    sessionId={session.id}
+                    currentStatus={session.status}
+                  />
                   <OpenSessionLink sessionId={session.id} />
                   <InscrireLink sessionId={session.id} />
                 </div>
