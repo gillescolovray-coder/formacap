@@ -697,18 +697,24 @@ function SessionCard({
     if (r.stage_id) counts.set(r.stage_id, (counts.get(r.stage_id) ?? 0) + 1);
   }
 
-  // Sessions du jour (en cours aujourd'hui) : dépliées par défaut.
-  // Une session est "du jour" si la date d'aujourd'hui est comprise entre
-  // start_date et end_date (inclus). Comparaison sur YYYY-MM-DD.
+  // Regle d'ouverture (Gilles 2026-05-21) : on garde ouvertes uniquement
+  // les sessions qui ont au moins une inscription, et on ferme par
+  // defaut celles qui sont vides (gain de place visuel + on n'affiche
+  // que ce qui demande une attention).
+  // Cas particulier : les sessions en cours aujourd'hui restent
+  // ouvertes aussi (utile pour suivre l'emargement, meme si l'admin
+  // n'a pas encore confirme d'inscription).
   const todayIso = new Date().toISOString().slice(0, 10);
   const isToday =
     session !== null &&
     session.start_date.slice(0, 10) <= todayIso &&
     todayIso <= session.end_date.slice(0, 10);
+  const hasInscriptions = requests.length > 0;
+  const shouldBeOpen = hasInscriptions || isToday;
 
   return (
     <details
-      open={isToday}
+      open={shouldBeOpen}
       className="group rounded-xl bg-white border border-slate-200 overflow-hidden"
     >
       <summary
