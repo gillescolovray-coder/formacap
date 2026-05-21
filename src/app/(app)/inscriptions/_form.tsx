@@ -4,20 +4,22 @@ import {
   Euro,
   Send,
   User,
+  Users,
 } from "lucide-react";
 import { CollapsibleSection } from "@/components/collapsible-section";
 import { AutoSyncBadge } from "@/components/auto-sync-badge";
-import { HelpHint } from "@/components/help-hint";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { TargetPickers } from "./_target-pickers";
+import { AdditionalLearners } from "./_additional-learners";
 import { InscriptionChannelField } from "./_channel-field";
+import { FinancingSection } from "./_financing-section";
 import {
-  FINANCING_MODE_LABELS,
   INSCRIPTION_SOURCE_LABELS,
   type InscriptionRequest,
 } from "@/lib/inscriptions/types";
+import type { Opco } from "@/lib/opcos/types";
 
 type SessionOption = { id: string; label: string };
 type ParcoursOption = { id: string; label: string };
@@ -42,6 +44,9 @@ type Props = {
   parcours: ParcoursOption[];
   companies: CompanyOption[];
   learners: LearnerOption[];
+  /** Référentiel des OPCO (Gilles 2026-05-21 — Phase 2 OPCO). Affiché
+   *  comme dropdown quand mode_financement = "opco". */
+  opcos: Opco[];
   /** Présélectionne la session cible (utile depuis la liste des sessions). */
   defaultSessionId?: string | null;
   defaultParcoursId?: string | null;
@@ -66,6 +71,7 @@ export function InscriptionForm({
   parcours,
   companies,
   learners,
+  opcos,
   defaultSessionId,
   defaultParcoursId,
   defaultFormationId,
@@ -88,7 +94,7 @@ export function InscriptionForm({
     />
   ) : null;
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 inscription-fields">
       {/* Source de la demande — placée EN PREMIER : l'utilisateur définit
           d'abord d'où vient la demande (CAP NUMERIQUE direct / prescripteur
           / OF), ce qui conditionne ensuite le mode de financement et la
@@ -141,18 +147,15 @@ export function InscriptionForm({
               />
             </div>
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="request_message">
-              Message reçu de la personne
-            </Label>
-            <Textarea
-              id="request_message"
-              name="request_message"
-              form="form-inscription"
-              rows={3}
-              defaultValue={request?.request_message ?? ""}
-            />
-          </div>
+          {/* Champ caché : on préserve la valeur legacy `request_message`
+              si elle existe (anciennes inscriptions saisies avant la
+              suppression du textarea). Évite d'écraser l'historique. */}
+          <input
+            type="hidden"
+            name="request_message"
+            form="form-inscription"
+            value={request?.request_message ?? ""}
+          />
         </div>
       </CollapsibleSection>
 
@@ -239,7 +242,22 @@ export function InscriptionForm({
         />
       </CollapsibleSection>
 
-      {/* Financement */}
+      {/* Apprenants supplémentaires — multi-inscription (Gilles 2026-05-21).
+          Permet d'inscrire plusieurs apprenants à la même session en une
+          seule saisie. Tous héritent de l'entreprise et du financement
+          ci-dessus. */}
+      <CollapsibleSection
+        icon={Users}
+        title="Inscrire d'autres apprenants à cette session"
+        description="Ajoutez d'un coup plusieurs apprenants — mêmes entreprise, session et financement."
+        accent="blue"
+        id="apprenants-supplementaires"
+      >
+        <AdditionalLearners learners={learners} />
+      </CollapsibleSection>
+
+      {/* Financement — section refondue en composant client pour gérer
+          dynamiquement l'affichage du dropdown OPCO (Gilles 2026-05-21). */}
       <CollapsibleSection
         icon={Euro}
         title="Financement"
@@ -247,82 +265,17 @@ export function InscriptionForm({
         accent="amber"
         id="financement"
       >
-        <div className="grid gap-4 md:grid-cols-3">
-          <div className="space-y-1.5">
-            <Label
-              htmlFor="financing_mode"
-              className="inline-flex items-center gap-1"
-            >
-              Mode de financement
-              <HelpHint
-                tone="auto"
-                text="Choisissez librement le mode — indépendant de la source d'inscription"
-                details={
-                  <ul className="space-y-1 list-disc list-inside">
-                    <li>
-                      Par défaut <strong>Autofinancement</strong> pour une
-                      nouvelle inscription.
-                    </li>
-                    <li>
-                      Si vous sélectionnez <strong>OPCO</strong> à la
-                      création : après enregistrement, l&apos;application
-                      vous ouvre directement la modale d&apos;upload PDF
-                      (extraction OCR automatique des champs).
-                    </li>
-                    <li>
-                      Sur une fiche existante, le panneau « Accords de
-                      financement OPCO » apparaît dès que vous choisissez
-                      OPCO (pas besoin d&apos;enregistrer).
-                    </li>
-                  </ul>
-                }
-              />
-            </Label>
-            <select
-              id="financing_mode"
-              name="financing_mode"
-              defaultValue={request?.financing_mode ?? "autofinancement"}
-              className="flex h-9 w-full rounded-md border border-slate-300 bg-transparent px-3 py-1 text-sm shadow-sm"
-            >
-              {Object.entries(FINANCING_MODE_LABELS).map(([k, l]) => (
-                <option key={k} value={k}>
-                  {l}
-                </option>
-              ))}
-            </select>
-            {/* Info à la CRÉATION uniquement : explique que le bloc OPCO
-                n'est pas dispo ici (besoin d'une inscription_id) et que
-                l'app gère le redirect après enregistrement. En ÉDITION
-                le panneau OPCO apparaît directement à l'écran. */}
-            {!request && (
-              <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 leading-tight">
-                💡 Si vous choisissez <strong>OPCO</strong> :
-                après enregistrement, vous serez redirigé sur la fiche
-                avec la modale d&apos;upload PDF déjà ouverte
-                (extraction OCR automatique).
-              </p>
-            )}
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="financing_details">Détails (OPCO, code AIF…)</Label>
-            <Input
-              id="financing_details"
-              name="financing_details"
-              defaultValue={request?.financing_details ?? ""}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="quote_amount_ht">Montant prévu (€ HT)</Label>
-            <Input
-              id="quote_amount_ht"
-              name="quote_amount_ht"
-              type="number"
-              step="0.01"
-              min={0}
-              defaultValue={request?.quote_amount_ht ?? ""}
-            />
-          </div>
-        </div>
+        <FinancingSection
+          defaultFinancingMode={request?.financing_mode ?? null}
+          defaultFinancingDetails={request?.financing_details ?? null}
+          defaultQuoteAmount={request?.quote_amount_ht ?? null}
+          defaultOpcoId={
+            (request as { opco_id?: string | null } | undefined)?.opco_id ??
+            null
+          }
+          opcos={opcos}
+          isCreate={!request}
+        />
         {/* Slot : panneau Accord OPCO rendu directement à l'intérieur
             du bloc Financement pour que toute la logique de financement
             soit groupée visuellement. */}
@@ -370,6 +323,7 @@ export function InscriptionForm({
               form="form-inscription"
               rows={3}
               defaultValue={request?.special_needs_details ?? ""}
+              placeholder=" "
             />
             <p className="text-[11px] text-slate-500">
               💡 Si coché, le référent handicap sera notifié dans la timeline.
@@ -394,6 +348,7 @@ export function InscriptionForm({
             form="form-inscription"
             rows={4}
             defaultValue={request?.notes_internal ?? ""}
+            placeholder=" "
           />
         </div>
       </CollapsibleSection>

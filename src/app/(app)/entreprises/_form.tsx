@@ -43,25 +43,50 @@ type CompanyFormProps = {
    *  intégrer le picker « Société mère / filiale » en édition. Ignoré en
    *  mode création (la société n'existe pas encore en BDD). */
   hierarchySlot?: React.ReactNode;
+  /** Préfixe appliqué à TOUS les `name`, `id`, `htmlFor` des champs du
+   *  formulaire. Utilisé pour embarquer ce formulaire dans un autre
+   *  écran (ex: création d'entreprise depuis l'inscription, Gilles
+   *  2026-05-21). Par défaut "" → comportement standard du module
+   *  Entreprises. */
+  fieldPrefix?: string;
+  /** Valeurs initiales optionnelles (mode création) — utile pour
+   *  pré-remplir le champ Raison sociale quand on arrive depuis le
+   *  picker entreprise de l'inscription. Ignorées si `company` est
+   *  fourni (mode édition). */
+  initialValues?: Partial<Company>;
 };
 
 export function CompanyForm({
   company,
   withContactsBuilder = false,
   hierarchySlot,
+  fieldPrefix = "",
+  initialValues,
 }: CompanyFormProps) {
   const status = (company?.legal_status ?? null) as SireneLegalStatus | null;
+  // Helper : préfixe le nom d'un champ (id / name / htmlFor).
+  const fn = (n: string) => `${fieldPrefix}${n}`;
+  // Helper : récupère la valeur par défaut (company > initialValues > "")
+  function dv<K extends keyof Company>(field: K): string {
+    if (company && company[field] != null) return String(company[field]);
+    if (initialValues && initialValues[field] != null)
+      return String(initialValues[field]);
+    return "";
+  }
   // Type de relation commerciale en state — la zone NDA n'est visible que
   // si le type courant est « of » (Organisme de formation).
   const [companyType, setCompanyType] = useState<string>(
-    company?.type ?? "prospect",
+    company?.type ?? initialValues?.type ?? "prospect",
   );
   return (
     <div className="space-y-4">
       {/* Auto-remplissage INSEE Sirene (mode création uniquement) */}
       {!company && (
         <>
-          <SireneLookup initialQuery="" />
+          <SireneLookup
+            initialQuery={initialValues?.name ?? ""}
+            idPrefix={fieldPrefix}
+          />
           <div className="flex items-center gap-2 -mt-1">
             <AutoSyncBadge
               title="Auto-remplissage INSEE Sirene"
@@ -134,12 +159,12 @@ export function CompanyForm({
             </p>
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-1.5">
-                <Label htmlFor="type" required>
+                <Label htmlFor={fn("type")} required>
                   Type
                 </Label>
                 <select
-                  id="type"
-                  name="type"
+                  id={fn("type")}
+                  name={fn("type")}
                   value={companyType}
                   onChange={(e) => setCompanyType(e.target.value)}
                   className="flex h-9 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-zinc-900 px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500"
@@ -152,11 +177,11 @@ export function CompanyForm({
                 </select>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="lead_source">Origine du contact</Label>
+                <Label htmlFor={fn("lead_source")}>Origine du contact</Label>
                 <Input
-                  id="lead_source"
-                  name="lead_source"
-                  defaultValue={company?.lead_source ?? ""}
+                  id={fn("lead_source")}
+                  name={fn("lead_source")}
+                  defaultValue={dv("lead_source")}
                   placeholder="Site web, Recommandation…"
                   className="bg-white dark:bg-zinc-900"
                 />
@@ -164,10 +189,14 @@ export function CompanyForm({
             </div>
             <label className="inline-flex items-center gap-2 text-sm cursor-pointer">
               <input
-                id="is_active"
-                name="is_active"
+                id={fn("is_active")}
+                name={fn("is_active")}
                 type="checkbox"
-                defaultChecked={company ? company.is_active : true}
+                defaultChecked={
+                  company
+                    ? company.is_active
+                    : initialValues?.is_active ?? true
+                }
                 className="h-4 w-4 rounded border-zinc-300"
               />
               <span className="text-zinc-700 dark:text-zinc-300">
@@ -179,7 +208,7 @@ export function CompanyForm({
           {/* Hero : Raison sociale en grand, mise en avant */}
           <div className="md:col-span-2 rounded-xl border-2 border-cyan-400 dark:border-cyan-600 bg-cyan-50 dark:bg-cyan-950/30 p-3.5 space-y-2 shadow-sm shadow-cyan-200/50 dark:shadow-cyan-950/30">
             <Label
-              htmlFor="name"
+              htmlFor={fn("name")}
               className="flex items-center gap-2 text-sm font-bold text-cyan-800 dark:text-cyan-200"
             >
               <Type className="h-4 w-4" />
@@ -190,10 +219,10 @@ export function CompanyForm({
               </span>
             </Label>
             <Input
-              id="name"
-              name="name"
+              id={fn("name")}
+              name={fn("name")}
               required
-              defaultValue={company?.name ?? ""}
+              defaultValue={dv("name")}
               placeholder="Ex: Acme SAS"
               className="bg-white dark:bg-zinc-900 font-semibold border-cyan-300 dark:border-cyan-800 focus-visible:ring-cyan-500"
             />
@@ -202,16 +231,16 @@ export function CompanyForm({
           {/* Forme juridique */}
           <div className="rounded-xl border border-teal-200 dark:border-teal-900/50 bg-teal-50/50 dark:bg-teal-950/20 p-3.5 space-y-2">
             <Label
-              htmlFor="legal_form"
+              htmlFor={fn("legal_form")}
               className="flex items-center gap-2 text-sm font-semibold text-teal-700 dark:text-teal-300"
             >
               <Building2 className="h-4 w-4" />
               Forme juridique
             </Label>
             <Input
-              id="legal_form"
-              name="legal_form"
-              defaultValue={company?.legal_form ?? ""}
+              id={fn("legal_form")}
+              name={fn("legal_form")}
+              defaultValue={dv("legal_form")}
               placeholder="SAS, SARL, SA…"
               className="bg-white dark:bg-zinc-900"
             />
@@ -220,16 +249,16 @@ export function CompanyForm({
           {/* SIREN */}
           <div className="rounded-xl border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/50 dark:bg-emerald-950/20 p-3.5 space-y-2">
             <Label
-              htmlFor="siren"
+              htmlFor={fn("siren")}
               className="flex items-center gap-2 text-sm font-semibold text-emerald-700 dark:text-emerald-300"
             >
               <Hash className="h-4 w-4" />
               SIREN
             </Label>
             <Input
-              id="siren"
-              name="siren"
-              defaultValue={company?.siren ?? ""}
+              id={fn("siren")}
+              name={fn("siren")}
+              defaultValue={dv("siren")}
               placeholder="9 chiffres"
               className="bg-white dark:bg-zinc-900 font-mono"
             />
@@ -238,16 +267,16 @@ export function CompanyForm({
           {/* SIRET */}
           <div className="rounded-xl border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/50 dark:bg-emerald-950/20 p-3.5 space-y-2">
             <Label
-              htmlFor="siret"
+              htmlFor={fn("siret")}
               className="flex items-center gap-2 text-sm font-semibold text-emerald-700 dark:text-emerald-300"
             >
               <Hash className="h-4 w-4" />
               SIRET
             </Label>
             <Input
-              id="siret"
-              name="siret"
-              defaultValue={company?.siret ?? ""}
+              id={fn("siret")}
+              name={fn("siret")}
+              defaultValue={dv("siret")}
               placeholder="14 chiffres"
               className="bg-white dark:bg-zinc-900 font-mono"
             />
@@ -256,16 +285,16 @@ export function CompanyForm({
           {/* Secteur d'activité */}
           <div className="rounded-xl border border-blue-200 dark:border-blue-900/50 bg-blue-50/50 dark:bg-blue-950/20 p-3.5 space-y-2">
             <Label
-              htmlFor="industry"
+              htmlFor={fn("industry")}
               className="flex items-center gap-2 text-sm font-semibold text-blue-700 dark:text-blue-300"
             >
               <Tag className="h-4 w-4" />
               Secteur d&apos;activité
             </Label>
             <Input
-              id="industry"
-              name="industry"
-              defaultValue={company?.industry ?? ""}
+              id={fn("industry")}
+              name={fn("industry")}
+              defaultValue={dv("industry")}
               placeholder="BTP, Commerce…"
               className="bg-white dark:bg-zinc-900"
             />
@@ -274,16 +303,16 @@ export function CompanyForm({
           {/* Code NAF/APE */}
           <div className="rounded-xl border border-blue-200 dark:border-blue-900/50 bg-blue-50/50 dark:bg-blue-950/20 p-3.5 space-y-2">
             <Label
-              htmlFor="naf_code"
+              htmlFor={fn("naf_code")}
               className="flex items-center gap-2 text-sm font-semibold text-blue-700 dark:text-blue-300"
             >
               <Hash className="h-4 w-4" />
               Code NAF / APE
             </Label>
             <Input
-              id="naf_code"
-              name="naf_code"
-              defaultValue={company?.naf_code ?? ""}
+              id={fn("naf_code")}
+              name={fn("naf_code")}
+              defaultValue={dv("naf_code")}
               placeholder="6201Z"
               className="bg-white dark:bg-zinc-900 font-mono"
             />
@@ -294,7 +323,7 @@ export function CompanyForm({
               et au registre du commerce. */}
           <div className="rounded-xl border border-cyan-200 dark:border-cyan-900/50 bg-cyan-50/50 dark:bg-cyan-950/20 p-3.5 space-y-2">
             <Label
-              htmlFor="pappers_url"
+              htmlFor={fn("pappers_url")}
               className="flex items-center gap-2 text-sm font-semibold text-cyan-700 dark:text-cyan-300"
             >
               <ExternalLink className="h-4 w-4" />
@@ -305,10 +334,10 @@ export function CompanyForm({
             </Label>
             <div className="flex items-center gap-2">
               <Input
-                id="pappers_url"
-                name="pappers_url"
+                id={fn("pappers_url")}
+                name={fn("pappers_url")}
                 type="url"
-                defaultValue={company?.pappers_url ?? ""}
+                defaultValue={dv("pappers_url")}
                 placeholder="https://www.pappers.fr/entreprise/…"
                 className="bg-white dark:bg-zinc-900"
               />
@@ -329,7 +358,7 @@ export function CompanyForm({
           {/* État officiel SIRENE */}
           <div className="md:col-span-2 rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50/50 dark:bg-amber-950/20 p-3.5 space-y-2">
             <Label
-              htmlFor="legal_status"
+              htmlFor={fn("legal_status")}
               className="flex items-center gap-2 text-sm font-semibold text-amber-700 dark:text-amber-300"
             >
               <Tag className="h-4 w-4" />
@@ -337,9 +366,9 @@ export function CompanyForm({
             </Label>
             <div className="flex items-center gap-2">
               <select
-                id="legal_status"
-                name="legal_status"
-                defaultValue={company?.legal_status ?? ""}
+                id={fn("legal_status")}
+                name={fn("legal_status")}
+                defaultValue={dv("legal_status")}
                 className="flex h-9 flex-1 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-zinc-900 px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-500"
               >
                 <option value="">— Inconnu —</option>
@@ -367,16 +396,16 @@ export function CompanyForm({
           {companyType === "of" ? (
             <div className="rounded-xl border border-violet-200 dark:border-violet-900/50 bg-violet-50/50 dark:bg-violet-950/20 p-3.5 space-y-2">
               <Label
-                htmlFor="nda"
+                htmlFor={fn("nda")}
                 className="flex items-center gap-2 text-sm font-semibold text-violet-700 dark:text-violet-300"
               >
                 <IdCard className="h-4 w-4" />
                 N° Déclaration d&apos;Activité
               </Label>
               <Input
-                id="nda"
-                name="nda"
-                defaultValue={company?.nda ?? ""}
+                id={fn("nda")}
+                name={fn("nda")}
+                defaultValue={dv("nda")}
                 placeholder="Ex: 84 69 12345 69"
                 className="bg-white dark:bg-zinc-900 font-mono"
               />
@@ -385,11 +414,7 @@ export function CompanyForm({
             // Le NDA reste persisté en BDD si la société est repassée
             // sur un autre type (on ne perd pas la donnée). On la
             // soumet via un input hidden.
-            <input
-              type="hidden"
-              name="nda"
-              value={company?.nda ?? ""}
-            />
+            <input type="hidden" name={fn("nda")} value={dv("nda")} />
           )}
 
           {/* Slot « Société mère / filiale » — inséré ici en mode édition.
@@ -417,28 +442,28 @@ export function CompanyForm({
       >
         <div className="space-y-5">
           <div className="space-y-1.5">
-            <Label htmlFor="address">Adresse</Label>
+            <Label htmlFor={fn("address")}>Adresse</Label>
             <Input
-              id="address"
-              name="address"
-              defaultValue={company?.address ?? ""}
+              id={fn("address")}
+              name={fn("address")}
+              defaultValue={dv("address")}
               placeholder="Numéro, rue, complément…"
             />
           </div>
           <div className="grid gap-4 md:grid-cols-[2fr_1fr]">
             <PostalCodeCity
-              postalCodeName="postal_code"
-              cityName="city"
-              defaultPostalCode={company?.postal_code ?? ""}
-              defaultCity={company?.city ?? ""}
+              postalCodeName={fn("postal_code")}
+              cityName={fn("city")}
+              defaultPostalCode={dv("postal_code")}
+              defaultCity={dv("city")}
               gridClassName="grid gap-4 grid-cols-[1fr_3fr]"
             />
             <div className="space-y-1.5">
-              <Label htmlFor="country">Pays</Label>
+              <Label htmlFor={fn("country")}>Pays</Label>
               <Input
-                id="country"
-                name="country"
-                defaultValue={company?.country ?? "France"}
+                id={fn("country")}
+                name={fn("country")}
+                defaultValue={dv("country") || "France"}
               />
             </div>
           </div>
@@ -459,31 +484,31 @@ export function CompanyForm({
         <div className="space-y-5">
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-1.5">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor={fn("email")}>Email</Label>
               <Input
-                id="email"
-                name="email"
+                id={fn("email")}
+                name={fn("email")}
                 type="email"
-                defaultValue={company?.email ?? ""}
+                defaultValue={dv("email")}
                 placeholder="contact@acme.fr"
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="phone">Téléphone</Label>
+              <Label htmlFor={fn("phone")}>Téléphone</Label>
               <PhoneInput
-                id="phone"
-                name="phone"
-                defaultValue={company?.phone ?? ""}
+                id={fn("phone")}
+                name={fn("phone")}
+                defaultValue={dv("phone")}
               />
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="website">Site web</Label>
+            <Label htmlFor={fn("website")}>Site web</Label>
             <Input
-              id="website"
-              name="website"
+              id={fn("website")}
+              name={fn("website")}
               type="url"
-              defaultValue={company?.website ?? ""}
+              defaultValue={dv("website")}
               placeholder="https://…"
             />
           </div>
@@ -508,11 +533,7 @@ export function CompanyForm({
           au-dessus du formulaire (bloc « Notes internes »). On conserve
           un input caché pour préserver la valeur legacy `notes` et ne pas
           l'écraser au save (les anciennes données restent intactes). */}
-      <input
-        type="hidden"
-        name="notes"
-        value={company?.notes ?? ""}
-      />
+      <input type="hidden" name={fn("notes")} value={dv("notes")} />
     </div>
   );
 }

@@ -89,6 +89,7 @@ export default async function InscriptionDetailPage({
     { data: linkedFundings },
     { data: allAgreements },
     { data: otherInscriptionsRaw },
+    { data: opcos },
   ] = await Promise.all([
     supabase
       .from("inscription_requests")
@@ -154,6 +155,13 @@ export default async function InscriptionDetailPage({
       )
       .neq("id", id)
       .limit(200),
+    // Référentiel OPCO (Gilles 2026-05-21) — utilisé par le dropdown
+    // de financement quand mode = "opco". Triés alphabétiquement.
+    supabase
+      .from("opcos")
+      .select("*")
+      .eq("is_active", true)
+      .order("name", { ascending: true }),
   ]);
 
   if (error) throw error;
@@ -269,9 +277,14 @@ export default async function InscriptionDetailPage({
     : computedName;
 
   const queryRecord = query as Record<string, string | undefined>;
+  const additionalCount = queryRecord.additional
+    ? Number.parseInt(queryRecord.additional, 10)
+    : 0;
   const notifs = [
     query.created && "Demande créée avec succès.",
     query.updated && "Modifications enregistrées.",
+    additionalCount > 0 &&
+      `${additionalCount} apprenant${additionalCount > 1 ? "s" : ""} supplémentaire${additionalCount > 1 ? "s" : ""} également inscrit${additionalCount > 1 ? "s" : ""}.`,
     query.stageChanged && "Étape mise à jour.",
     query.noteAdded && "Note ajoutée.",
     query.converted && "Demande convertie en inscription. Apprenant créé.",
@@ -374,74 +387,15 @@ export default async function InscriptionDetailPage({
           </div>
         )}
 
-        {/* Workflow : changement d'étape */}
-        <div className="rounded-xl bg-white border border-slate-200 p-5 space-y-3">
-          <div className="flex items-center gap-2">
-            <Activity className="h-4 w-4 text-cyan-600" />
-            <p className="text-sm font-bold uppercase tracking-wider text-slate-500">
-              Avancer dans le workflow
-            </p>
-            <span
-              className="inline-flex items-center text-cyan-600 cursor-help"
-              title={
-                "Le workflow décrit l'avancement de la demande d'inscription : " +
-                "qualification, devis envoyé, convention signée, convocation, etc.\n\n" +
-                "Cliquez sur une étape pour faire avancer la demande. L'étape en cours est " +
-                "encadrée. Chaque changement est journalisé dans l'historique ci-dessous, " +
-                "et les dates clés (devis, convention…) peuvent être renseignées dans le " +
-                "formulaire.\n\n" +
-                "Astuce : vous pouvez aussi changer l'étape directement depuis le tableau " +
-                "des inscriptions, sans ouvrir cette fiche. Les deux vues sont synchronisées."
-              }
-            >
-              <HelpCircle className="h-4 w-4" />
-            </span>
-          </div>
-          <p className="text-xs text-slate-500">
-            Cliquez sur une étape pour faire avancer la demande. Les
-            modifications sont immédiates et synchronisées avec le tableau des
-            inscriptions.
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {stagesArr.map((s) => {
-              const isCurrent = s.id === request.stage_id;
-              return (
-                <form key={s.id} action={transition}>
-                  <input type="hidden" name="stage_id" value={s.id} />
-                  <button
-                    type="submit"
-                    disabled={isCurrent}
-                    className={cn(
-                      "px-3 py-1.5 rounded-full text-xs font-bold border transition-all",
-                      isCurrent
-                        ? "ring-2 ring-offset-1 ring-slate-900 cursor-default"
-                        : "hover:shadow-sm hover:scale-105",
-                    )}
-                    style={{
-                      backgroundColor: `${s.color}15`,
-                      borderColor: s.color ?? "#94a3b8",
-                      color: s.color ?? "#475569",
-                    }}
-                  >
-                    {s.name}
-                  </button>
-                </form>
-              );
-            })}
-          </div>
-          {currentStage?.is_won && request.target_session_id && (
-            <form action={convert} className="pt-2 border-t border-slate-100">
-              <Button type="submit" size="sm" variant="outline">
-                <UserCheck className="h-4 w-4" />
-                Convertir en inscription session
-              </Button>
-            </form>
-          )}
-        </div>
+        {/* Bloc « Avancer dans le workflow » supprimé (Gilles 2026-05-21).
+            Le changement d'étape se fait désormais uniquement via le
+            StageQuickChanger du tableau des inscriptions (vue
+            /inscriptions ou /sessions/[id]/participants). */}
 
         <SectionsControls
           storageKey={`inscription-sections:${id}`}
-          defaultOpenIds={["identite", "cible"]}
+          defaultOpenIds={["source", "demandeur"]}
+          forceDefaultOpen={query.fresh === "1"}
         >
           {/* Barre enregistrement haut */}
           <div className="flex items-center justify-end gap-3 rounded-xl bg-cyan-50 border border-cyan-200 px-4 py-3">
@@ -557,6 +511,7 @@ export default async function InscriptionDetailPage({
                   company_name: company?.name ?? null,
                 };
               })}
+              opcos={opcos ?? []}
               financementExtra={
                 // On rend TOUJOURS le composant côté serveur : il décide
                 // lui-même de sa visibilité en observant le <select> en

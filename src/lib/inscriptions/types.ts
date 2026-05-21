@@ -92,6 +92,9 @@ export type InscriptionRequest = {
   financing_mode: FinancingMode | null;
   financing_details: string | null;
   quote_amount_ht: number | null;
+  /** OPCO choisi dans le référentiel (table `opcos`).
+   *  Renseigné uniquement si financing_mode = "opco" (Gilles 2026-05-21). */
+  opco_id: string | null;
 
   has_special_needs: boolean;
   special_needs_details: string | null;

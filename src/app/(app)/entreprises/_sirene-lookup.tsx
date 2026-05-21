@@ -39,10 +39,17 @@ export function SireneLookup({
   initialQuery = "",
   onPick,
   compact = false,
+  idPrefix = "",
 }: {
   initialQuery?: string;
   onPick?: (company: SireneCompany) => void;
   compact?: boolean;
+  /** Préfixe utilisé pour retrouver les inputs du formulaire parent en mode
+   *  non-contrôlé. Permet d'embarquer le formulaire entreprise (qui préfixe
+   *  ses `id` avec ex. "new_company_") à l'intérieur d'un autre écran sans
+   *  collision de noms. (Gilles 2026-05-21 — fiche entreprise complète
+   *  embarquée dans l'inscription.) */
+  idPrefix?: string;
 }) {
   const [query, setQuery] = useState(initialQuery);
   const [results, setResults] = useState<SireneCompany[] | null>(null);
@@ -137,17 +144,17 @@ export function SireneLookup({
       el.dispatchEvent(new Event("change", { bubbles: true }));
     };
 
-    setValue("name", c.name);
-    setValue("legal_form", c.legal_form);
-    setValue("siret", c.siret);
-    setValue("siren", c.siren);
-    setValue("industry", c.industry ?? c.naf_code);
-    setValue("naf_code", c.naf_code);
-    setValue("address", c.address);
-    setValue("postal_code", c.postal_code);
-    setValue("city", c.city);
-    setValue("legal_status", c.legal_status);
-    setValue("pappers_url", c.pappers_url);
+    setValue(`${idPrefix}name`, c.name);
+    setValue(`${idPrefix}legal_form`, c.legal_form);
+    setValue(`${idPrefix}siret`, c.siret);
+    setValue(`${idPrefix}siren`, c.siren);
+    setValue(`${idPrefix}industry`, c.industry ?? c.naf_code);
+    setValue(`${idPrefix}naf_code`, c.naf_code);
+    setValue(`${idPrefix}address`, c.address);
+    setValue(`${idPrefix}postal_code`, c.postal_code);
+    setValue(`${idPrefix}city`, c.city);
+    setValue(`${idPrefix}legal_status`, c.legal_status);
+    setValue(`${idPrefix}pappers_url`, c.pappers_url);
   }
 
   return (

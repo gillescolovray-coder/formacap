@@ -26,6 +26,7 @@ import { SessionInscriptionsTable } from "./_session-table";
 import { TrainerPopover } from "./_trainer-popover";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { cleanupUserEmptyDrafts } from "@/lib/inscriptions/cleanup";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -61,6 +62,29 @@ export default async function InscriptionsListPage({
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
+
+  // Nettoyage anti-pollution : brouillons vides abandonnés (bug 2026-05-21).
+  try {
+    const { data: orgMember } = await supabase
+      .from("organization_members")
+      .select("organization_id")
+      .eq("profile_id", user.id)
+      .eq("is_active", true)
+      .limit(1)
+      .maybeSingle();
+    if (orgMember?.organization_id) {
+      await cleanupUserEmptyDrafts(
+        supabase,
+        orgMember.organization_id as string,
+        user.id,
+      );
+    }
+  } catch (e) {
+    console.warn(
+      "[inscriptions/page] cleanupUserEmptyDrafts failed",
+      (e as Error).message,
+    );
+  }
 
   const [
     { data: stages },

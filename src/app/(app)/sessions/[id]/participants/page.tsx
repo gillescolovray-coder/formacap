@@ -2,20 +2,18 @@ import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/page-header";
 import { BackButton } from "@/components/back-button";
-import { EnrollmentsSection } from "../_enrollments";
 import { SessionTabs } from "../_session-tabs";
 import { SessionHeaderMeta } from "../_session-header-meta";
-import type { Enrollment, TrainingSession } from "@/lib/sessions/types";
-import type { Learner } from "@/lib/learners/types";
-import {
-  computeConventionAmount,
-  type SessionPricingConfig,
-} from "@/lib/pricing/compute";
+import { ParticipantsInscriptionsBlock } from "../_participants-inscriptions-block";
+import type {
+  InscriptionRequest,
+  InscriptionStage,
+} from "@/lib/inscriptions/types";
 import { healEnrollmentsForSession } from "@/lib/inscriptions/sync";
+import { cleanupUserEmptyDrafts } from "@/lib/inscriptions/cleanup";
 
-// Force le rechargement à chaque accès pour que la liste des apprenants
-// disponibles soit toujours à jour (sinon, un apprenant qu'on vient de
-// créer dans le module Apprenants n'apparaît pas dans le picker).
+// Force le rechargement à chaque accès pour que la liste des inscriptions
+// soit toujours à jour (auto-healing + filtres dynamiques).
 export const dynamic = "force-dynamic";
 
 const UUID_REGEX =
@@ -38,10 +36,8 @@ export default async function ParticipantsPage({
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  // Self-healing : repare automatiquement les inscription_requests
-  // confirmees qui n'ont pas d'enrollment correspondant (cas constate
-  // 2026-05-21 sur la validation des pre-inscriptions partenaires).
-  // Silencieux : ne bloque pas le chargement de la page.
+  // Self-healing : répare automatiquement les inscription_requests
+  // confirmées qui n'ont pas d'enrollment correspondant.
   try {
     await healEnrollmentsForSession(supabase, id);
   } catch (e) {
@@ -51,179 +47,221 @@ export default async function ParticipantsPage({
     );
   }
 
+  // Nettoyage anti-pollution : supprime les brouillons VIDES créés par
+  // l'utilisateur courant et abandonnés (sans aucune saisie). Évite que
+  // des lignes "—/Particulier/305 €" apparaissent dans le tableau quand
+  // l'utilisateur clique "Inscrire" puis quitte sans rien saisir.
+  // (Bug Gilles 2026-05-21)
+  try {
+    const { data: orgMember } = await supabase
+      .from("organization_members")
+      .select("organization_id")
+      .eq("profile_id", user.id)
+      .eq("is_active", true)
+      .limit(1)
+      .maybeSingle();
+    if (orgMember?.organization_id) {
+      await cleanupUserEmptyDrafts(
+        supabase,
+        orgMember.organization_id as string,
+        user.id,
+      );
+    }
+  } catch (e) {
+    console.warn(
+      "[participants/page] cleanupUserEmptyDrafts failed",
+      (e as Error).message,
+    );
+  }
+
+  // Session courante (métadonnées pour le calcul tarifaire)
   const { data: session } = await supabase
     .from("sessions")
     .select(
-      "id, max_participants, pricing_mode, price_per_day_ht, price_forfait_ht, price_extra_per_day_ht, pricing_threshold, formation:formations(id, title)",
+      "id, max_participants, status, pricing_mode, price_per_day_ht, price_forfait_ht, price_extra_per_day_ht, pricing_threshold, formation:formations(id, title, public_price_excl_tax)",
     )
     .eq("id", id)
-    .maybeSingle<
-      Pick<
-        TrainingSession,
-        | "id"
-        | "max_participants"
-        | "pricing_mode"
-        | "price_per_day_ht"
-        | "price_forfait_ht"
-        | "price_extra_per_day_ht"
-        | "pricing_threshold"
-      > & {
-        formation: { id: string; title: string } | null;
-      }
-    >();
+    .maybeSingle<{
+      id: string;
+      max_participants: number | null;
+      status: string | null;
+      pricing_mode: "per_learner" | "forfait" | null;
+      price_per_day_ht: number | null;
+      price_forfait_ht: number | null;
+      price_extra_per_day_ht: number | null;
+      pricing_threshold: number | null;
+      formation: {
+        id: string;
+        title: string;
+        public_price_excl_tax: number | null;
+      } | null;
+    }>();
   if (!session) notFound();
 
-  // Récupération de l'organization_id via la session pour la requête OPCO
-  const { data: sessionOrg } = await supabase
-    .from("sessions")
-    .select("organization_id")
-    .eq("id", id)
-    .maybeSingle();
-  const orgId = (sessionOrg?.organization_id as string | null) ?? null;
-
+  // Chargements parallèles — mêmes embeddings que /inscriptions pour
+  // que SessionInscriptionsTable affiche toutes les colonnes correctement.
   const [
-    { data: companies },
-    { data: learners },
-    { data: enrollments },
-    { data: inscriptionRequests },
-    { data: inscriptionStages },
-    { data: opcoAgreements },
-    { data: conventions },
+    { data: stages },
+    { data: requests, error: requestsError },
+    { data: companiesData },
     { count: sessionDaysCount },
   ] = await Promise.all([
     supabase
-      .from("companies")
-      .select("id, name, type")
+      .from("inscription_stages")
+      .select("*")
       .eq("is_active", true)
-      .order("name", { ascending: true }),
-    supabase
-      .from("learners")
-      .select(
-        "id, first_name, last_name, email, job_title, company:companies(id, name)",
-      )
-      .eq("is_active", true)
-      .order("last_name", { ascending: true }),
-    supabase
-      .from("session_enrollments")
-      .select(
-        "*, learner:learners(id, first_name, last_name, email, phone, mobile, job_title, company:companies(id, name)), inscription_request:inscription_requests(id, financing_mode, financing_details, quote_amount_ht, via_partner_portal, referrer:companies!referrer_company_id(id, name, type), opco_fundings:inscription_opco_fundings(agreement_id, amount_ht, agreement:opco_funding_agreements(opco_name, dossier_number)))",
-      )
-      .eq("session_id", id)
-      .order("enrolled_at", { ascending: true }),
+      .order("position", { ascending: true }),
     supabase
       .from("inscription_requests")
       .select(
-        "id, learner_id, prospect_first_name, prospect_last_name, prospect_email, prospect_phone, has_special_needs, financing_mode, quote_amount_ht, stage_id, received_at, company_name_freetext, learner:learners(first_name, last_name, email, phone, job_title, company:companies(name))",
+        "*, company:companies!inscription_requests_company_id_fkey(id, name, postal_code, city), learner:learners(first_name, last_name, email, phone, job_title, postal_code, city, company:companies(id, name, postal_code, city))",
       )
       .eq("target_session_id", id)
-      .order("received_at", { ascending: true }),
+      .order("received_at", { ascending: false }),
+    supabase.from("companies").select("id, name"),
     supabase
-      .from("inscription_stages")
-      .select("id, name, color, is_won")
-      .eq("is_active", true)
-      .order("position", { ascending: true }),
-    // Accords OPCO disponibles pour le picker financement (mode = opco)
-    orgId
-      ? supabase
-          .from("opco_funding_agreements")
-          .select("id, opco_name, dossier_number")
-          .eq("organization_id", orgId)
-          .order("opco_name", { ascending: true })
-      : Promise.resolve({ data: [] }),
-    // Conventions de session pour le calcul du prix unitaire HT par
-    // apprenant (le prix est porté par la convention société, pas par
-    // l'enrollment individuel — cf. règle métier R2).
-    supabase
-      .from("session_conventions")
-      .select("company_id, amount_ht_unit")
+      .from("session_days")
+      .select("id", { count: "exact", head: true })
       .eq("session_id", id),
-    // Jours de session pour la cascade tarification R7 (count vs.
-    // amplitude start_date → end_date qui peut inclure des jours non
-    // programmés).
-    supabase.from("session_days").select("id", { count: "exact", head: true }).eq("session_id", id),
   ]);
-  const nbJours = sessionDaysCount ?? 0;
-
-  // ============================================================
-  // Calcul du prix unitaire HT par société (R7 — Gilles 2026-05-14)
-  //
-  // Priorité :
-  //   1. Convention société (amount_ht_unit) — figé après création
-  //   2. Cascade R7 (pricing_mode + price_*) avec split forfait par société
-  //   3. (rien) — la cellule affichera "—"
-  //
-  // On bâtit la map company_id → prix unitaire HT par apprenant.
-  // ============================================================
-  const unitPriceByCompanyId: Record<string, number> = {};
-
-  // 1) Conventions existantes (priorité absolue : montant figé)
-  for (const c of (conventions ?? []) as Array<{
-    company_id: string | null;
-    amount_ht_unit: number | null;
-  }>) {
-    if (c.company_id && c.amount_ht_unit !== null) {
-      unitPriceByCompanyId[c.company_id] = Number(c.amount_ht_unit);
-    }
+  if (requestsError) {
+    console.error(
+      "[participants/page] Erreur chargement demandes:",
+      requestsError,
+    );
   }
 
-  // 2) Fallback R7 : pour les sociétés sans convention encore créée,
-  //    on dérive le prix unitaire depuis la cascade tarification.
-  if (session.pricing_mode && nbJours > 0) {
-    // Compter les apprenants par société sur cette session
-    const learnerCountByCompany = new Map<string, number>();
-    let totalLearners = 0;
-    for (const e of (enrollments ?? []) as Array<{
-      learner: { company: { id: string } | null } | null;
-    }>) {
-      const cid = e.learner?.company?.id ?? null;
-      if (cid) {
-        learnerCountByCompany.set(
-          cid,
-          (learnerCountByCompany.get(cid) ?? 0) + 1,
-        );
-      }
-      totalLearners += 1;
-    }
-    const cfg: SessionPricingConfig = {
-      mode: session.pricing_mode,
-      pricePerDayHt: session.price_per_day_ht,
-      priceForfaitHt: session.price_forfait_ht,
-      priceExtraPerDayHt: session.price_extra_per_day_ht,
-      threshold: session.pricing_threshold,
-    };
-    for (const [companyId, nbCompany] of learnerCountByCompany) {
-      if (unitPriceByCompanyId[companyId] !== undefined) continue; // déjà figé via convention
-      const { unitHt } = computeConventionAmount(
-        cfg,
-        nbCompany,
-        totalLearners,
-        nbJours,
-      );
-      if (unitHt > 0) unitPriceByCompanyId[companyId] = unitHt;
-    }
-  }
-
-  // Compteur dédupliqué : avec la sync bidirectionnelle (migration 0057),
-  // chaque session_enrollment a sa inscription_request miroir liée. On
-  // doit donc compter UNIQUEMENT les personnes uniques pour la session,
-  // pas la somme brute des deux tables (qui doublonnerait).
-  //
-  // Règle : on compte chaque enrollment + chaque request qui n'a PAS
-  // d'enrollment correspondant (cas des prospects anonymes ou des
-  // demandes ciblant la session mais sans learner_id encore identifié).
-  const enrolledLearnerIds = new Set(
-    (enrollments ?? [])
-      .map((e) => (e as { learner_id: string | null }).learner_id)
-      .filter((id): id is string => Boolean(id)),
+  const stagesArr = (stages ?? []) as InscriptionStage[];
+  const baseRequests = (requests ?? []) as InscriptionRequest[];
+  const companyNameById = new Map<string, string>(
+    (companiesData ?? []).map((c) => [c.id as string, c.name as string]),
   );
-  const trulyPendingRequests = (inscriptionRequests ?? []).filter((r) => {
-    const lid = (r as { learner_id: string | null }).learner_id;
-    // Si l'apprenant est déjà inscrit, c'est un doublon visuel — on l'écarte.
-    return !lid || !enrolledLearnerIds.has(lid);
-  });
-  const totalParticipants =
-    (enrollments?.length ?? 0) + trulyPendingRequests.length;
+
+  // Financements OPCO en parallèle (relation chargée séparément pour
+  // éviter de faire échouer la requête principale en cas de souci RLS).
+  const inscriptionIds = baseRequests.map((r) => r.id);
+  let fundingsByInscription = new Map<
+    string,
+    Array<{
+      agreement: {
+        id: string;
+        opco_name: string;
+        dossier_number: string | null;
+      } | null;
+    }>
+  >();
+  if (inscriptionIds.length > 0) {
+    const { data: fundings } = await supabase
+      .from("inscription_opco_fundings")
+      .select(
+        "inscription_id, amount_ht, agreement:opco_funding_agreements(id, opco_name, dossier_number)",
+      )
+      .in("inscription_id", inscriptionIds);
+    fundingsByInscription = new Map();
+    for (const f of (fundings ?? []) as unknown as Array<{
+      inscription_id: string;
+      agreement: {
+        id: string;
+        opco_name: string;
+        dossier_number: string | null;
+      } | null;
+    }>) {
+      const list = fundingsByInscription.get(f.inscription_id) ?? [];
+      list.push({ agreement: f.agreement });
+      fundingsByInscription.set(f.inscription_id, list);
+    }
+  }
+
+  // Historique des changements d'étape (pour le tooltip dans le tableau)
+  type StageEvent = {
+    request_id: string;
+    from_stage_id: string | null;
+    to_stage_id: string | null;
+    created_at: string;
+    payload: Record<string, unknown> | null;
+    actor_id: string | null;
+    actor_name: string | null;
+  };
+  const stageEventsByInscription = new Map<string, StageEvent[]>();
+  if (inscriptionIds.length > 0) {
+    const { data: events } = await supabase
+      .from("inscription_events")
+      .select(
+        "request_id, from_stage_id, to_stage_id, created_at, payload, actor_id",
+      )
+      .eq("event_type", "stage_changed")
+      .in("request_id", inscriptionIds)
+      .order("created_at", { ascending: false });
+
+    const actorIds = Array.from(
+      new Set(
+        (events ?? [])
+          .map((e) => e.actor_id as string | null)
+          .filter((x): x is string => Boolean(x)),
+      ),
+    );
+    const actorNameById = new Map<string, string>();
+    if (actorIds.length > 0) {
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("id, first_name, last_name, email")
+        .in("id", actorIds);
+      for (const p of (profiles ?? []) as Array<{
+        id: string;
+        first_name: string | null;
+        last_name: string | null;
+        email: string | null;
+      }>) {
+        const name =
+          [p.first_name, p.last_name].filter(Boolean).join(" ").trim() ||
+          p.email ||
+          null;
+        if (name) actorNameById.set(p.id, name);
+      }
+    }
+
+    for (const raw of (events ?? []) as Array<{
+      request_id: string;
+      from_stage_id: string | null;
+      to_stage_id: string | null;
+      created_at: string;
+      payload: Record<string, unknown> | null;
+      actor_id: string | null;
+    }>) {
+      const e: StageEvent = {
+        ...raw,
+        actor_name: raw.actor_id
+          ? (actorNameById.get(raw.actor_id) ?? null)
+          : null,
+      };
+      const list = stageEventsByInscription.get(e.request_id) ?? [];
+      list.push(e);
+      stageEventsByInscription.set(e.request_id, list);
+    }
+  }
+
+  // Tri alphabétique (Nom puis Prénom) — cohérent avec /inscriptions
+  const allRequests = baseRequests
+    .map(
+      (r) =>
+        ({
+          ...r,
+          opco_fundings: fundingsByInscription.get(r.id) ?? [],
+        }) as InscriptionRequest,
+    )
+    .sort((a, b) => {
+      const an = `${a.prospect_last_name ?? ""} ${a.prospect_first_name ?? ""}`
+        .trim()
+        .toLowerCase();
+      const bn = `${b.prospect_last_name ?? ""} ${b.prospect_first_name ?? ""}`
+        .trim()
+        .toLowerCase();
+      return an.localeCompare(bn, "fr");
+    });
+
+  const nbJours = sessionDaysCount ?? 0;
   const title = session.formation?.title ?? "Session";
+  const totalParticipants = allRequests.length;
 
   return (
     <>
@@ -257,60 +295,14 @@ export default async function ParticipantsPage({
             {query.error}
           </div>
         )}
-        <EnrollmentsSection
-          sessionId={id}
-          enrollments={(enrollments ?? []) as unknown as Enrollment[]}
-          availableLearners={
-            (learners ?? []) as unknown as Pick<
-              Learner,
-              | "id"
-              | "first_name"
-              | "last_name"
-              | "email"
-              | "job_title"
-              | "company"
-            >[]
-          }
-          companies={(companies ?? []).map((c) => ({
-            id: c.id as string,
-            name: c.name as string,
-            type: (c.type as string | null) ?? null,
-          }))}
-          opcoAgreements={(opcoAgreements ?? []).map((a) => ({
-            id: a.id as string,
-            opco_name: a.opco_name as string,
-            dossier_number: (a.dossier_number as string | null) ?? null,
-          }))}
-          unitPriceByCompanyId={unitPriceByCompanyId}
-          maxParticipants={session.max_participants}
-          inscriptionRequests={(inscriptionRequests ?? []) as unknown as Array<{
-            id: string;
-            learner_id: string | null;
-            prospect_first_name: string | null;
-            prospect_last_name: string | null;
-            prospect_email: string | null;
-            prospect_phone: string | null;
-            has_special_needs: boolean;
-            financing_mode: string | null;
-            quote_amount_ht: number | null;
-            stage_id: string | null;
-            received_at: string;
-            company_name_freetext: string | null;
-            learner: {
-              first_name: string | null;
-              last_name: string | null;
-              email: string | null;
-              phone: string | null;
-              job_title: string | null;
-              company: { name: string } | null;
-            } | null;
-          }>}
-          inscriptionStages={(inscriptionStages ?? []) as Array<{
-            id: string;
-            name: string;
-            color: string | null;
-            is_won: boolean;
-          }>}
+
+        <ParticipantsInscriptionsBlock
+          session={session}
+          requests={allRequests}
+          stagesArr={stagesArr}
+          companyNameById={companyNameById}
+          stageEventsByInscription={stageEventsByInscription}
+          nbJours={nbJours}
         />
       </div>
     </>

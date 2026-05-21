@@ -12,6 +12,7 @@ import {
   createMirroredEnrollmentForRequest,
   syncStageChangeToEnrollment,
 } from "@/lib/inscriptions/sync";
+import { cleanupUserEmptyDrafts } from "@/lib/inscriptions/cleanup";
 
 async function getOrgId() {
   const supabase = await createClient();
@@ -64,7 +65,14 @@ async function resolveCompanyId(
   currentFreetext: string | null,
 ): Promise<string | null> {
   if (currentCompanyId) return currentCompanyId;
-  if (!currentFreetext) return null;
+
+  // Étape C (Gilles 2026-05-21) : depuis l'embarquement du CompanyForm
+  // complet sous le picker entreprise, le nom officiel se trouve dans
+  // `new_company_name`. On retombe sur `company_name_freetext` si ce
+  // champ est absent (cas legacy ou submission externe).
+  const newCompanyName = parseText(formData.get("new_company_name"));
+  const resolvedName = newCompanyName ?? currentFreetext;
+  if (!resolvedName) return null;
 
   const supabase = await createClient();
 
@@ -73,12 +81,12 @@ async function resolveCompanyId(
     .from("companies")
     .select("id")
     .eq("organization_id", organizationId)
-    .ilike("name", currentFreetext)
+    .ilike("name", resolvedName)
     .limit(1)
     .maybeSingle();
   if (existing?.id) return existing.id as string;
 
-  // 2) Création avec les éventuelles données SIRENE / saisies manuellement
+  // 2) Création avec toutes les données du CompanyForm embarqué.
   const rawStatus = parseText(formData.get("new_company_legal_status"));
   const legal_status =
     rawStatus === "A" || rawStatus === "C" || rawStatus === "D"
@@ -90,13 +98,25 @@ async function resolveCompanyId(
     pappers_url = `https://www.pappers.fr/entreprise/${siren}`;
   }
 
+  const companyType =
+    parseText(formData.get("new_company_type")) ?? "prospect";
+  // Checkbox HTML : on lit la présence de la valeur (browser n'envoie le
+  // champ que si coché). On défaut à true côté création.
+  const isActiveRaw = formData.get("new_company_is_active");
+  const is_active = isActiveRaw !== null ? parseBool(isActiveRaw) : true;
+  // Country : par défaut "France" si non saisi (CompanyForm pré-remplit
+  // mais on garde la sécurité côté serveur).
+  const country = parseText(formData.get("new_company_country")) ?? "France";
+
   const { data: created } = await supabase
     .from("companies")
     .insert({
       organization_id: organizationId,
-      name: currentFreetext,
-      type: "prospect",
+      name: resolvedName,
+      type: companyType,
       created_by: userId,
+      is_active,
+      lead_source: parseText(formData.get("new_company_lead_source")),
       siret: parseText(formData.get("new_company_siret")),
       siren,
       legal_form: parseText(formData.get("new_company_legal_form")),
@@ -104,9 +124,15 @@ async function resolveCompanyId(
       naf_code: parseText(formData.get("new_company_naf_code")),
       legal_status,
       pappers_url,
+      nda: parseText(formData.get("new_company_nda")),
       address: parseText(formData.get("new_company_address")),
       postal_code: parseText(formData.get("new_company_postal_code")),
       city: parseText(formData.get("new_company_city")),
+      country,
+      email: parseText(formData.get("new_company_email")),
+      phone: parseText(formData.get("new_company_phone")),
+      website: parseText(formData.get("new_company_website")),
+      notes: parseText(formData.get("new_company_notes")),
     })
     .select("id")
     .single();
@@ -170,6 +196,9 @@ function buildPayload(formData: FormData) {
     })(),
     financing_details: parseText(formData.get("financing_details")),
     quote_amount_ht: parseFloat0(formData.get("quote_amount_ht")),
+    // OPCO choisi dans le référentiel (Gilles 2026-05-21 — Phase 2 OPCO).
+    // Persisté uniquement si mode = "opco" ; sinon l'input caché envoie "".
+    opco_id: parseText(formData.get("opco_id")),
 
     has_special_needs: parseBool(formData.get("has_special_needs")),
     special_needs_details: parseText(formData.get("special_needs_details")),
@@ -205,9 +234,9 @@ function buildPayload(formData: FormData) {
  * PDF + OCR, etc.). Évite ainsi d'avoir deux méthodes de saisie
  * différentes entre la création et l'édition (décision Gilles 2026-05-13).
  *
- * Si l'utilisateur annule, la fiche est supprimée via `deleteInscription`.
- * Si l'utilisateur quitte sans sauvegarder, le brouillon reste en BDD
- * — à nettoyer manuellement ou via un cron (sujet pour plus tard).
+ * AVANT la création, on nettoie les brouillons vides précédents de
+ * l'utilisateur (anti-pollution BDD si l'utilisateur quitte sans
+ * sauvegarder). Voir `cleanupUserEmptyDrafts`.
  */
 export async function createDraftInscription(
   preset?: {
@@ -218,6 +247,10 @@ export async function createDraftInscription(
 ): Promise<string> {
   const { organizationId, userId } = await getOrgId();
   const supabase = await createClient();
+
+  // Nettoyage anti-pollution : on supprime les brouillons vides
+  // précédents de l'utilisateur avant d'en créer un nouveau.
+  await cleanupUserEmptyDrafts(supabase, organizationId, userId);
 
   // Stage initial du workflow ("Nouvelle demande" par défaut).
   const { data: initial } = await supabase
@@ -504,6 +537,187 @@ export async function createInscription(formData: FormData) {
   redirect(`/inscriptions/${data.id}?created=1`);
 }
 
+/**
+ * Lit le bloc « Apprenants supplémentaires » du FormData (Gilles 2026-05-21)
+ * et crée une inscription_request distincte pour chacun.
+ *
+ * Convention FormData (cf. _additional-learners.tsx) :
+ *   - additional_learners_count : N
+ *   - additional_learner_<i>_(learner_id|civility|first_name|last_name|
+ *                            email|phone|mobile|job_title)
+ *
+ * Pour chaque ligne :
+ *   1) Si learner_id fourni → utilise l'apprenant existant.
+ *   2) Sinon : recherche par email puis création si nécessaire.
+ *   3) Skip si déjà inscrit à la même session (anti-doublon).
+ *   4) Crée une inscription_request avec les mêmes target/financement/source.
+ *   5) Crée l'enrollment miroir si target_session_id.
+ *
+ * Retourne le nombre d'inscriptions créées (peut être < N en cas de skip).
+ */
+async function processAdditionalLearners(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  formData: FormData,
+  parent: {
+    organizationId: string;
+    userId: string;
+    targetSessionId: string | null;
+    targetParcoursId: string | null;
+    targetFormationId: string | null;
+    companyId: string | null;
+    financingMode: FinancingMode | null;
+    financingDetails: string | null;
+    quoteAmountHt: number | null;
+    /** OPCO choisi pour l'inscription principale — propagé aux miroirs. */
+    opcoId: string | null;
+    source: InscriptionSource;
+    sourceDetails: string | null;
+    inscriptionChannel: "direct" | "prescripteur" | "of";
+    inscriptionChannelCompanyId: string | null;
+    stageId: string | null;
+    hasSpecialNeeds: boolean;
+    specialNeedsDetails: string | null;
+  },
+): Promise<number> {
+  const countRaw = parseText(formData.get("additional_learners_count"));
+  const count = countRaw ? Number.parseInt(countRaw, 10) : 0;
+  if (!Number.isFinite(count) || count <= 0) return 0;
+
+  // Récupère la clé du stage initial (pour le miroir enrollment).
+  let stageKey: string | null = null;
+  if (parent.stageId) {
+    const { data: stage } = await supabase
+      .from("inscription_stages")
+      .select("key")
+      .eq("id", parent.stageId)
+      .maybeSingle();
+    stageKey = (stage?.key as string | null) ?? null;
+  }
+
+  let created = 0;
+  for (let i = 0; i < count; i++) {
+    const learnerId = parseText(
+      formData.get(`additional_learner_${i}_learner_id`),
+    );
+    const civilityRaw = parseText(
+      formData.get(`additional_learner_${i}_civility`),
+    );
+    const civility =
+      civilityRaw === "M." ||
+      civilityRaw === "Mme" ||
+      civilityRaw === "Autre"
+        ? civilityRaw
+        : null;
+    const firstName = parseText(
+      formData.get(`additional_learner_${i}_first_name`),
+    );
+    const lastName = parseText(
+      formData.get(`additional_learner_${i}_last_name`),
+    );
+    const email = parseText(formData.get(`additional_learner_${i}_email`));
+    const phone = parseText(formData.get(`additional_learner_${i}_phone`));
+    const mobile = parseText(formData.get(`additional_learner_${i}_mobile`));
+    const jobTitle = parseText(
+      formData.get(`additional_learner_${i}_job_title`),
+    );
+
+    // Ligne vide : on saute (ni apprenant existant, ni nom complet).
+    if (!learnerId && (!firstName || !lastName)) continue;
+
+    // Résolution du learner_id : existant, par email, ou création.
+    let resolvedLearnerId: string | null = learnerId;
+    if (!resolvedLearnerId && email) {
+      const { data: byEmail } = await supabase
+        .from("learners")
+        .select("id")
+        .eq("organization_id", parent.organizationId)
+        .ilike("email", email)
+        .limit(1)
+        .maybeSingle();
+      resolvedLearnerId = (byEmail?.id as string | null) ?? null;
+    }
+    if (!resolvedLearnerId) {
+      const { data: newLearner } = await supabase
+        .from("learners")
+        .insert({
+          organization_id: parent.organizationId,
+          first_name: firstName,
+          last_name: lastName,
+          email,
+          phone,
+          mobile,
+          job_title: jobTitle,
+          civility,
+          company_id: parent.companyId,
+          is_active: true,
+        })
+        .select("id")
+        .single();
+      resolvedLearnerId = (newLearner?.id as string | null) ?? null;
+    }
+    if (!resolvedLearnerId) continue;
+
+    // Anti-doublon : déjà inscrit à cette session ?
+    if (parent.targetSessionId) {
+      const { data: existing } = await supabase
+        .from("inscription_requests")
+        .select("id")
+        .eq("organization_id", parent.organizationId)
+        .eq("learner_id", resolvedLearnerId)
+        .eq("target_session_id", parent.targetSessionId)
+        .limit(1)
+        .maybeSingle();
+      if (existing) continue;
+    }
+
+    // Création de l'inscription_request miroir (même contexte que le parent)
+    const { data: newRequest } = await supabase
+      .from("inscription_requests")
+      .insert({
+        organization_id: parent.organizationId,
+        source: parent.source,
+        source_details: parent.sourceDetails,
+        learner_id: resolvedLearnerId,
+        prospect_first_name: firstName,
+        prospect_last_name: lastName,
+        prospect_email: email,
+        prospect_phone: phone,
+        prospect_mobile: mobile,
+        company_id: parent.companyId,
+        target_session_id: parent.targetSessionId,
+        target_parcours_id: parent.targetParcoursId,
+        target_formation_id: parent.targetFormationId,
+        financing_mode: parent.financingMode,
+        financing_details: parent.financingDetails,
+        quote_amount_ht: parent.quoteAmountHt,
+        opco_id: parent.opcoId,
+        has_special_needs: parent.hasSpecialNeeds,
+        special_needs_details: parent.specialNeedsDetails,
+        stage_id: parent.stageId,
+        inscription_channel: parent.inscriptionChannel,
+        inscription_channel_company_id: parent.inscriptionChannelCompanyId,
+        created_by: parent.userId,
+        contact_preference: "email",
+      })
+      .select("id")
+      .single();
+
+    if (newRequest?.id) {
+      created++;
+      // Miroir enrollment si on a une session cible.
+      if (parent.targetSessionId) {
+        await createMirroredEnrollmentForRequest(supabase, {
+          id: newRequest.id as string,
+          target_session_id: parent.targetSessionId,
+          learner_id: resolvedLearnerId,
+          stage_key: stageKey,
+        });
+      }
+    }
+  }
+  return created;
+}
+
 export async function updateInscription(id: string, formData: FormData) {
   const { organizationId, userId } = await getOrgId();
   const payload = buildPayload(formData);
@@ -604,6 +818,40 @@ export async function updateInscription(id: string, formData: FormData) {
   if (error) {
     redirect(`/inscriptions/${id}?error=${encodeURIComponent(error.message)}`);
   }
+
+  // Apprenants supplémentaires : on crée une inscription miroir pour
+  // chacun (Gilles 2026-05-21 — multi-inscription en une saisie).
+  // Récupère le stage_id de l'inscription parent pour propagation.
+  const { data: parentRow } = await supabase
+    .from("inscription_requests")
+    .select("stage_id")
+    .eq("id", id)
+    .maybeSingle();
+  const additionalCreated = await processAdditionalLearners(
+    supabase,
+    formData,
+    {
+      organizationId,
+      userId,
+      targetSessionId: payload.target_session_id,
+      targetParcoursId: payload.target_parcours_id,
+      targetFormationId: payload.target_formation_id,
+      companyId: payload.company_id,
+      financingMode: payload.financing_mode,
+      financingDetails: payload.financing_details,
+      quoteAmountHt: payload.quote_amount_ht,
+      opcoId:
+        (payload as { opco_id?: string | null }).opco_id ?? null,
+      source: payload.source,
+      sourceDetails: payload.source_details,
+      inscriptionChannel: payload.inscription_channel,
+      inscriptionChannelCompanyId: payload.inscription_channel_company_id,
+      stageId: (parentRow?.stage_id as string | null) ?? null,
+      hasSpecialNeeds: payload.has_special_needs,
+      specialNeedsDetails: payload.special_needs_details,
+    },
+  );
+
   revalidatePath("/inscriptions");
   revalidatePath(`/inscriptions/${id}`);
   revalidatePath("/apprenants");
@@ -619,9 +867,15 @@ export async function updateInscription(id: string, formData: FormData) {
   const sessionId = parseText(formData.get("session_id"));
   if (returnTo === "participants" && sessionId) {
     revalidatePath(`/sessions/${sessionId}/participants`);
-    redirect(`/sessions/${sessionId}/participants?enrolled=1`);
+    const suffix =
+      additionalCreated > 0 ? `&additional=${additionalCreated}` : "";
+    redirect(
+      `/sessions/${sessionId}/participants?enrolled=1${suffix}`,
+    );
   }
-  redirect(`/inscriptions/${id}?updated=1`);
+  const suffix =
+    additionalCreated > 0 ? `&additional=${additionalCreated}` : "";
+  redirect(`/inscriptions/${id}?updated=1${suffix}`);
 }
 
 export async function changeStage(

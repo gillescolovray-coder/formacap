@@ -13,12 +13,17 @@ type Props = {
   storageKey: string;
   /** Sections ouvertes par défaut (utilisé si rien en localStorage). */
   defaultOpenIds?: string[];
+  /** Si true, on ignore le localStorage et on force `defaultOpenIds`.
+   *  Utilisé pour une nouvelle fiche (ex: ?fresh=1) afin que les blocs
+   *  essentiels soient systématiquement dépliés à l'arrivée. */
+  forceDefaultOpen?: boolean;
   children: React.ReactNode;
 };
 
 export function SectionsControls({
   storageKey,
   defaultOpenIds,
+  forceDefaultOpen = false,
   children,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -49,15 +54,26 @@ export function SectionsControls({
 
   useEffect(() => {
     const details = getDetails();
-    // Restauration depuis localStorage
+    // Restauration depuis localStorage — sauf si forceDefaultOpen est true
+    // (cas d'une nouvelle inscription : on impose les blocs essentiels).
     let openIds: string[] | null = null;
-    try {
-      const raw = localStorage.getItem(storageKey);
-      if (raw) openIds = JSON.parse(raw);
-    } catch {
-      openIds = null;
+    if (forceDefaultOpen) {
+      openIds = defaultOpenIds ?? [];
+      // On nettoie aussi le localStorage pour repartir sur une base saine.
+      try {
+        localStorage.removeItem(storageKey);
+      } catch {
+        // ignore
+      }
+    } else {
+      try {
+        const raw = localStorage.getItem(storageKey);
+        if (raw) openIds = JSON.parse(raw);
+      } catch {
+        openIds = null;
+      }
+      if (openIds === null) openIds = defaultOpenIds ?? [];
     }
-    if (openIds === null) openIds = defaultOpenIds ?? [];
     applyOpen(openIds);
 
     // Sauvegarde à chaque toggle

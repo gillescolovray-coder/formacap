@@ -128,3 +128,49 @@
     @apply font-sans;
   }
 }
+
+/* ============================================================
+ * Lisibilité — Indication visuelle des champs remplis
+ * (Gilles 2026-05-21)
+ *
+ * Sur le formulaire d'inscription, les champs qui contiennent
+ * une valeur prennent un léger fond vert pâle pour qu'on voie
+ * d'un coup d'œil ce qui est saisi et ce qui reste à compléter.
+ *
+ * Mécanique :
+ *   - inputs / textareas → :not(:placeholder-shown) repère un
+ *     champ rempli si l'input a un placeholder. C'est pour ça
+ *     qu'on ajoute placeholder=" " (espace) sur les inputs
+ *     date/number qui n'en ont pas, dans les composants React.
+ *   - selects → on positionne data-filled="true" en React quand
+ *     la valeur n'est pas vide.
+ * ============================================================ */
+/* On exclut volontairement :
+ *  - [type="date"] : Chrome ignore le placeholder pour les inputs date,
+ *    donc :placeholder-shown ne marche pas. On passe par data-filled.
+ *  - [type="checkbox"], [type="radio"], [type="hidden"] : non concernés. */
+.inscription-fields input:not(:placeholder-shown):not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="date"]),
+.inscription-fields textarea:not(:placeholder-shown),
+.inscription-fields input[data-filled="true"],
+.inscription-fields select[data-filled="true"] {
+  background-color: rgb(240 253 244); /* green-50 */
+  border-color: rgb(187 247 208); /* green-200 */
+}
+.dark .inscription-fields input:not(:placeholder-shown):not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="date"]),
+.dark .inscription-fields textarea:not(:placeholder-shown),
+.dark .inscription-fields input[data-filled="true"],
+.dark .inscription-fields select[data-filled="true"] {
+  background-color: rgb(5 46 22 / 0.4); /* green-950/40 */
+  border-color: rgb(34 139 34 / 0.5);
+}
+
+/* Pour les comboboxes custom (apprenant, entreprise, session, parcours),
+ * on stylise le wrapper directement via data-filled="true". */
+.inscription-fields [data-combobox-filled="true"] {
+  background-color: rgb(240 253 244);
+  border-color: rgb(187 247 208);
+}
+.dark .inscription-fields [data-combobox-filled="true"] {
+  background-color: rgb(5 46 22 / 0.4);
+  border-color: rgb(34 139 34 / 0.5);
+}

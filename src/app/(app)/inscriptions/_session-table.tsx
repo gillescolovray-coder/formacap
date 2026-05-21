@@ -158,12 +158,10 @@ export function SessionInscriptionsTable({
       <table className="w-full text-xs table-fixed">
         <thead className="bg-slate-50 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-500">
           <tr>
-            {v.demandeur && <th className="px-2 py-2 w-[13%]">Demandeur</th>}
+            {v.demandeur && <th className="px-2 py-2 w-[15%]">Demandeur</th>}
             {v.entreprise && (
-              <th className="px-2 py-2 w-[13%]">Entreprise</th>
+              <th className="px-2 py-2 w-[20%]">Entreprise</th>
             )}
-            {v.code_postal && <th className="px-2 py-2 w-[5%]">CP</th>}
-            {v.ville && <th className="px-2 py-2 w-[9%]">Ville</th>}
             {v.source && <th className="px-2 py-2 w-[6%]">Source</th>}
             {v.canal_inscription && (
               <th className="px-2 py-2 w-[11%] leading-tight">
@@ -269,16 +267,18 @@ export function SessionInscriptionsTable({
             return (
               <tr key={r.id} className="hover:bg-cyan-50/30">
                 {v.demandeur && (
-                  <td className="px-2 py-2 font-medium align-top">
+                  <td className="px-2 py-2 align-top">
                     <Link
                       href={`/inscriptions/${r.id}`}
                       className="hover:underline inline-flex items-center gap-1 leading-tight"
                     >
-                      <User className="h-3 w-3 text-slate-400 shrink-0" />
-                      <span className="break-words">{fullName}</span>
+                      <User className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                      <span className="break-words font-bold text-sm text-slate-900">
+                        {fullName}
+                      </span>
                       {r.has_special_needs && (
                         <Accessibility
-                          className="h-3 w-3 text-cyan-600 shrink-0"
+                          className="h-3.5 w-3.5 text-cyan-600 shrink-0"
                           aria-label="Besoin spécifique"
                         />
                       )}
@@ -291,7 +291,7 @@ export function SessionInscriptionsTable({
                         : (r.prospect_phone ?? null);
                       if (!phone) return null;
                       return (
-                        <p className="text-[10px] text-slate-500 font-mono mt-0.5 break-all">
+                        <p className="text-sm text-slate-800 font-mono font-semibold mt-1 break-all">
                           {phone}
                         </p>
                       );
@@ -303,7 +303,7 @@ export function SessionInscriptionsTable({
                         : (r.prospect_email ?? null);
                       if (!email) return null;
                       return (
-                        <p className="text-[10px] text-slate-500 break-all leading-tight">
+                        <p className="text-sm text-slate-800 font-medium break-all leading-tight mt-0.5">
                           {email}
                         </p>
                       );
@@ -311,63 +311,53 @@ export function SessionInscriptionsTable({
                   </td>
                 )}
                 {v.entreprise && (
-                  <td className="px-2 py-2 text-[11px] align-top">
+                  <td className="px-2 py-2 text-xs align-top">
                     {companyName ? (
                       companyId ? (
                         <Link
                           href={`/entreprises/${companyId}`}
-                          className="inline-flex items-start gap-1 text-cyan-700 hover:text-cyan-900 hover:underline font-medium leading-tight break-words"
+                          className="inline-flex items-start gap-1 text-cyan-700 hover:text-cyan-900 hover:underline font-semibold leading-tight break-words"
                           title="Ouvrir la fiche entreprise"
                         >
-                          <Building2 className="h-3 w-3 shrink-0 mt-0.5" />
+                          <Building2 className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                           <span className="break-words">{companyName}</span>
                         </Link>
                       ) : (
                         <Link
                           href={`/entreprises?q=${encodeURIComponent(companyName)}`}
-                          className="inline-flex items-start gap-1 text-amber-700 hover:text-amber-900 hover:underline font-medium leading-tight break-words"
+                          className="inline-flex items-start gap-1 text-amber-700 hover:text-amber-900 hover:underline font-semibold leading-tight break-words"
                           title="Aucun lien direct — chercher cette entreprise dans la liste"
                         >
-                          <Building2 className="h-3 w-3 shrink-0 mt-0.5" />
+                          <Building2 className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                           <span className="break-words">{companyName}</span>
                         </Link>
                       )
                     ) : (
                       <span className="text-slate-400">Particulier</span>
                     )}
-                  </td>
-                )}
-                {v.code_postal && (
-                  <td className="px-2 py-2 text-xs text-slate-600 tabular-nums">
-                    {postalCode ? (
-                      postalCode
-                    ) : companyId ? (
-                      <Link
-                        href={`/entreprises/${companyId}`}
-                        className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 hover:bg-amber-100 rounded px-1.5 py-0.5 font-bold"
-                        title="Aucune adresse renseignée — cliquer pour compléter la fiche entreprise"
-                      >
-                        Compléter
-                      </Link>
-                    ) : (
-                      <span className="text-slate-300">—</span>
+                    {/* CP + Ville stackés sous le nom (Gilles 2026-05-21 :
+                        regroupement visuel pour réduire la largeur). */}
+                    {(postalCode || city) && (
+                      <div className="text-[11px] text-slate-600 mt-0.5 ml-4 leading-tight">
+                        {postalCode && (
+                          <span className="font-mono tabular-nums">
+                            {postalCode}
+                          </span>
+                        )}
+                        {postalCode && city && <span className="mx-1">·</span>}
+                        {city && <span>{city}</span>}
+                      </div>
                     )}
-                  </td>
-                )}
-                {v.ville && (
-                  <td className="px-2 py-2 text-xs text-slate-600">
-                    {city ? (
-                      city
-                    ) : companyId ? (
-                      <Link
-                        href={`/entreprises/${companyId}`}
-                        className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 hover:bg-amber-100 rounded px-1.5 py-0.5 font-bold"
-                        title="Aucune ville renseignée — cliquer pour compléter la fiche entreprise"
-                      >
-                        Compléter
-                      </Link>
-                    ) : (
-                      <span className="text-slate-300">—</span>
+                    {!postalCode && !city && companyId && (
+                      <div className="mt-1 ml-4">
+                        <Link
+                          href={`/entreprises/${companyId}`}
+                          className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 hover:bg-amber-100 rounded px-1.5 py-0.5 font-bold"
+                          title="Aucune adresse renseignée — cliquer pour compléter la fiche entreprise"
+                        >
+                          Compléter adresse
+                        </Link>
+                      </div>
                     )}
                   </td>
                 )}
@@ -599,8 +589,6 @@ export function SessionInscriptionsTable({
                 colSpan={
                   (v.demandeur ? 1 : 0) +
                   (v.entreprise ? 1 : 0) +
-                  (v.code_postal ? 1 : 0) +
-                  (v.ville ? 1 : 0) +
                   (v.source ? 1 : 0) +
                   (v.canal_inscription ? 1 : 0) +
                   (v.financement ? 1 : 0)

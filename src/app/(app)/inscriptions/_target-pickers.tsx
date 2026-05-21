@@ -10,13 +10,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PhoneInput } from "@/components/ui/phone-input";
-import { SireneLookup } from "../entreprises/_sirene-lookup";
-import { PostalCodeCity } from "@/components/postal-code-city";
-import {
-  SIRENE_STATUS_BADGE_CLASSES,
-  SIRENE_STATUS_LABELS,
-  type SireneLegalStatus,
-} from "@/lib/sirene/types";
+import { CompanyForm } from "../entreprises/_form";
 
 type LearnerOption = {
   id: string;
@@ -129,6 +123,7 @@ function SearchableCombobox<T>({
   return (
     <div ref={ref} className="relative">
       <div
+        data-combobox-filled={value && !open ? "true" : "false"}
         className={cn(
           "flex items-start gap-2 min-h-9 w-full rounded-md border bg-white dark:bg-slate-900 px-3 py-1.5 cursor-text",
           open
@@ -140,7 +135,7 @@ function SearchableCombobox<T>({
         <Icon className="h-4 w-4 text-slate-400 shrink-0 mt-0.5" />
         {!open && value ? (
           <span
-            className="text-sm flex-1 font-medium leading-snug break-words min-w-0"
+            className="text-sm flex-1 font-bold leading-snug break-words min-w-0 text-slate-900 dark:text-slate-100"
             title={selectedLabel ?? undefined}
           >
             {selectedLabel}
@@ -242,20 +237,11 @@ export function TargetPickers({
   const [companyFreetext, setCompanyFreetext] = useState(
     defaults.companyFreetext ?? "",
   );
-  // Champs supplémentaires pour la création d'une nouvelle entreprise
-  const [newCompanySiret, setNewCompanySiret] = useState("");
-  const [newCompanyAddress, setNewCompanyAddress] = useState("");
-  const [newCompanyPostalCode, setNewCompanyPostalCode] = useState("");
-  const [newCompanyCity, setNewCompanyCity] = useState("");
-  // Données enrichies via SIRENE (transmises en hidden à l'action)
-  const [newCompanySiren, setNewCompanySiren] = useState("");
-  const [newCompanyLegalForm, setNewCompanyLegalForm] = useState("");
-  const [newCompanyIndustry, setNewCompanyIndustry] = useState("");
-  const [newCompanyNafCode, setNewCompanyNafCode] = useState("");
-  const [newCompanyLegalStatus, setNewCompanyLegalStatus] = useState<
-    SireneLegalStatus | ""
-  >("");
-  const [newCompanyPappersUrl, setNewCompanyPappersUrl] = useState("");
+  // Note (Gilles 2026-05-21) : depuis l'Étape C, la création d'une
+  // nouvelle entreprise utilise <CompanyForm fieldPrefix="new_company_" />
+  // (même formulaire que le module Entreprises). Les anciens states locaux
+  // newCompanySiret/Address/etc. ont été supprimés — CompanyForm gère ses
+  // propres champs uncontrolled (defaultValue + DOM via SIRENE).
 
   const [sessionId, setSessionId] = useState(defaults.sessionId ?? "");
   const [sessionQuery, setSessionQuery] = useState("");
@@ -316,8 +302,11 @@ export function TargetPickers({
     if (!mobile) setMobile(l.mobile ?? "");
     if (!jobTitle) setJobTitle(l.job_title ?? "");
     if (!civility) setCivility(l.civility ?? "");
-    // Auto-rattachement à l'entreprise de l'apprenant
-    if (l.company_id) {
+    // Auto-rattachement à l'entreprise de l'apprenant — SAUF si
+    // l'utilisateur a déjà sélectionné une entreprise (Étape B
+    // Gilles 2026-05-21 : entreprise saisie en premier, on ne
+    // l'écrase pas en choisissant un apprenant ensuite).
+    if (l.company_id && !companyId && !companyFreetext) {
       setCompanyId(l.company_id);
       setCompanyFreetext("");
     }
@@ -341,6 +330,86 @@ export function TargetPickers({
 
   return (
     <div className="space-y-6">
+      {/* ============ ENTREPRISE (Étape B — Gilles 2026-05-21) ============
+          Saisie EN PREMIER : l'entreprise conditionne l'apprenant (qui en
+          fait partie) et les référents pédagogiques. */}
+      <div className="rounded-lg bg-blue-50/40 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900 p-4 space-y-3">
+        <label className="text-xs font-semibold inline-flex items-center gap-2">
+          <Building2 className="h-3.5 w-3.5" />
+          Entreprise référencée
+          {selectedCompany && selectedLearner?.company_id === companyId && (
+            <span className="text-[10px] text-cyan-700 font-bold uppercase tracking-wider">
+              ↳ auto depuis l&apos;apprenant
+            </span>
+          )}
+        </label>
+        <input type="hidden" name="company_id" value={companyId} />
+        <SearchableCombobox<CompanyOption>
+          value={companyId}
+          onChange={setCompanyId}
+          query={companyQuery}
+          setQuery={setCompanyQuery}
+          options={companies}
+          filterFn={(c, q) => c.name.toLowerCase().includes(q)}
+          renderOption={(c) => <span className="text-sm">{c.name}</span>}
+          placeholder="Rechercher une entreprise existante…"
+          selectedLabel={
+            selectedCompany?.name ??
+            (companyFreetext ? `${companyFreetext} (à créer)` : null)
+          }
+          emptyText="Aucune entreprise trouvée. Tapez le nom complet pour la créer."
+          onPick={pickCompany}
+          icon={Building2}
+          onCreateNew={(typed) => {
+            setCompanyId("");
+            setCompanyFreetext(typed);
+            setCompanyQuery("");
+          }}
+          createNewLabel={(typed) =>
+            `Créer « ${typed} » comme nouvelle entreprise`
+          }
+        />
+        {companyFreetext && !companyId && (
+          <div className="rounded-md bg-cyan-50/60 dark:bg-cyan-950/30 border border-cyan-200 dark:border-cyan-900 p-4 space-y-3">
+            {/* Bandeau + bouton Annuler */}
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <p className="text-xs text-cyan-800 dark:text-cyan-300 inline-flex items-center gap-1.5">
+                <span className="text-base leading-none">+</span>
+                <span>
+                  <strong>{companyFreetext}</strong> sera créée dans le module
+                  Entreprises
+                </span>
+              </p>
+              <button
+                type="button"
+                onClick={() => setCompanyFreetext("")}
+                className="text-cyan-600 hover:text-red-600 underline text-[11px]"
+              >
+                Annuler
+              </button>
+            </div>
+
+            {/* Fiche entreprise COMPLÈTE embarquée — même formulaire que
+                le module ENTREPRISES & CONTACTS (Gilles 2026-05-21).
+                Tous les champs sont préfixés `new_company_` pour ne pas
+                entrer en collision avec les autres champs de l'inscription.
+                resolveCompanyId côté serveur lit ces champs préfixés. */}
+            <CompanyForm
+              fieldPrefix="new_company_"
+              initialValues={{ name: companyFreetext }}
+            />
+          </div>
+        )}
+        {/* Champ caché : nom libre toujours envoyé en fallback si
+            CompanyForm n'a pas été monté (cas legacy). resolveCompanyId
+            lit prioritairement new_company_name. */}
+        <input
+          type="hidden"
+          name="company_name_freetext"
+          value={companyFreetext}
+        />
+      </div>
+
       {/* ============ APPRENANT ============ */}
       <div className="rounded-lg bg-cyan-50/40 dark:bg-cyan-950/20 border border-cyan-200 dark:border-cyan-900 p-4 space-y-3">
         <label className="text-xs font-semibold inline-flex items-center gap-2">
@@ -423,6 +492,7 @@ export function TargetPickers({
             name="prospect_civility"
             value={civility}
             onChange={(e) => setCivility(e.target.value)}
+            data-filled={civility ? "true" : "false"}
             className="flex h-9 rounded-md border border-slate-300 bg-white px-2 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500"
             title="M. / Mme / Autre — sera repris sur la fiche apprenant"
           >
@@ -441,6 +511,7 @@ export function TargetPickers({
             required
             value={firstName}
             onChange={(e) => setFirstName(e.target.value)}
+            placeholder=" "
             className="flex h-9 w-full rounded-md border border-slate-300 bg-white px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500"
           />
         </div>
@@ -455,6 +526,7 @@ export function TargetPickers({
             onChange={(e) =>
               setLastName(e.target.value.toLocaleUpperCase("fr-FR"))
             }
+            placeholder=" "
             className="flex h-9 w-full rounded-md border border-slate-300 bg-white px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500 uppercase"
           />
         </div>
@@ -475,6 +547,7 @@ export function TargetPickers({
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
+          placeholder=" "
           className="flex h-9 w-full rounded-md border border-slate-300 bg-white px-3 py-1 text-sm shadow-sm"
         />
       </div>
@@ -524,6 +597,7 @@ export function TargetPickers({
             type="date"
             value={birthDate}
             onChange={(e) => setBirthDate(e.target.value)}
+            data-filled={birthDate ? "true" : "false"}
             className="flex h-9 w-full rounded-md border border-slate-300 bg-white px-3 py-1 text-sm shadow-sm"
           />
         </div>
@@ -541,169 +615,10 @@ export function TargetPickers({
         </div>
       </div>
 
-      {/* ============ ENTREPRISE ============ */}
-      <div className="rounded-lg bg-blue-50/40 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900 p-4 space-y-3">
-        <label className="text-xs font-semibold inline-flex items-center gap-2">
-          Entreprise référencée
-          {selectedCompany && selectedLearner?.company_id === companyId && (
-            <span className="text-[10px] text-cyan-700 font-bold uppercase tracking-wider">
-              ↳ auto depuis l&apos;apprenant
-            </span>
-          )}
-        </label>
-        <input type="hidden" name="company_id" value={companyId} />
-        <SearchableCombobox<CompanyOption>
-          value={companyId}
-          onChange={setCompanyId}
-          query={companyQuery}
-          setQuery={setCompanyQuery}
-          options={companies}
-          filterFn={(c, q) => c.name.toLowerCase().includes(q)}
-          renderOption={(c) => <span className="text-sm">{c.name}</span>}
-          placeholder="Rechercher une entreprise existante…"
-          selectedLabel={
-            selectedCompany?.name ??
-            (companyFreetext
-              ? `${companyFreetext} (à créer)`
-              : null)
-          }
-          emptyText="Aucune entreprise trouvée. Tapez le nom complet pour la créer."
-          onPick={pickCompany}
-          icon={Building2}
-          onCreateNew={(typed) => {
-            setCompanyId("");
-            setCompanyFreetext(typed);
-            setCompanyQuery("");
-          }}
-          createNewLabel={(typed) =>
-            `Créer « ${typed} » comme nouvelle entreprise`
-          }
-        />
-        {companyFreetext && !companyId && (
-          <div className="rounded-md bg-cyan-50 dark:bg-cyan-950/30 border border-cyan-200 dark:border-cyan-900 p-3 space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-xs text-cyan-800 dark:text-cyan-300 inline-flex items-center gap-1.5">
-                <span className="text-base leading-none">+</span>
-                <span>
-                  <strong>{companyFreetext}</strong> sera créée dans le module
-                  Entreprises
-                </span>
-                {newCompanyLegalStatus && (
-                  <span
-                    className={cn(
-                      "inline-block px-1.5 py-0.5 rounded text-[10px] font-bold",
-                      SIRENE_STATUS_BADGE_CLASSES[newCompanyLegalStatus],
-                    )}
-                  >
-                    {SIRENE_STATUS_LABELS[newCompanyLegalStatus]}
-                  </span>
-                )}
-              </p>
-              <button
-                type="button"
-                onClick={() => {
-                  setCompanyFreetext("");
-                  setNewCompanySiret("");
-                  setNewCompanyAddress("");
-                  setNewCompanyPostalCode("");
-                  setNewCompanyCity("");
-                  setNewCompanySiren("");
-                  setNewCompanyLegalForm("");
-                  setNewCompanyIndustry("");
-                  setNewCompanyNafCode("");
-                  setNewCompanyLegalStatus("");
-                  setNewCompanyPappersUrl("");
-                }}
-                className="text-cyan-600 hover:text-red-600 underline text-[11px]"
-              >
-                Annuler
-              </button>
-            </div>
-
-            {/* Auto-remplissage SIRENE */}
-            <SireneLookup
-              compact
-              initialQuery={companyFreetext}
-              onPick={(c) => {
-                setCompanyFreetext(c.name);
-                setNewCompanySiret(c.siret ?? "");
-                setNewCompanySiren(c.siren);
-                setNewCompanyLegalForm(c.legal_form ?? "");
-                setNewCompanyIndustry(c.industry ?? c.naf_code ?? "");
-                setNewCompanyNafCode(c.naf_code ?? "");
-                setNewCompanyAddress(c.address ?? "");
-                setNewCompanyPostalCode(c.postal_code ?? "");
-                setNewCompanyCity(c.city ?? "");
-                setNewCompanyLegalStatus(c.legal_status);
-                setNewCompanyPappersUrl(c.pappers_url);
-              }}
-            />
-
-            <p className="text-[11px] text-slate-600 italic">
-              Renseignez (ou ajustez) les informations légales :
-            </p>
-            <div className="grid gap-2 md:grid-cols-2">
-              <div className="space-y-1">
-                <label className="text-[11px] font-semibold text-slate-700">
-                  SIRET
-                </label>
-                <input
-                  name="new_company_siret"
-                  value={newCompanySiret}
-                  onChange={(e) => setNewCompanySiret(e.target.value)}
-                  placeholder="14 chiffres"
-                  className="flex h-8 w-full rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[11px] font-semibold text-slate-700">
-                  Adresse
-                </label>
-                <input
-                  name="new_company_address"
-                  value={newCompanyAddress}
-                  onChange={(e) => setNewCompanyAddress(e.target.value)}
-                  placeholder="N°, rue, complément…"
-                  className="flex h-8 w-full rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500"
-                />
-              </div>
-              <div className="md:col-span-2">
-                <PostalCodeCity
-                  postalCodeName="new_company_postal_code"
-                  cityName="new_company_city"
-                  postalCodeValue={newCompanyPostalCode}
-                  cityValue={newCompanyCity}
-                  onPostalCodeChange={setNewCompanyPostalCode}
-                  onCityChange={setNewCompanyCity}
-                  size="sm"
-                  showLabels={false}
-                  postalCodeLabel="Code postal"
-                  cityLabel="Ville"
-                  gridClassName="grid gap-2 grid-cols-[1fr_3fr]"
-                />
-              </div>
-            </div>
-
-            {/* Champs cachés transmis à l'action serveur (issus de SIRENE) */}
-            <input type="hidden" name="new_company_siren" value={newCompanySiren} />
-            <input type="hidden" name="new_company_legal_form" value={newCompanyLegalForm} />
-            <input type="hidden" name="new_company_industry" value={newCompanyIndustry} />
-            <input type="hidden" name="new_company_naf_code" value={newCompanyNafCode} />
-            <input type="hidden" name="new_company_legal_status" value={newCompanyLegalStatus} />
-            <input type="hidden" name="new_company_pappers_url" value={newCompanyPappersUrl} />
-          </div>
-        )}
-        {/* Champs cachés : nom libre toujours envoyé quand on crée à la volée */}
-        <input
-          type="hidden"
-          name="company_name_freetext"
-          value={companyFreetext}
-        />
-      </div>
-
       {/* === Référents pédagogiques (R6 — Gilles 2026-05-13) ===
-          Slot inséré entre l'Entreprise et la cible (Session/Parcours)
-          parce que les référents dépendent de l'entreprise sélectionnée. */}
+          Slot inséré entre l'Apprenant et la cible (Session/Parcours)
+          parce que les référents dépendent de l'entreprise sélectionnée
+          (qui est désormais saisie tout en haut). */}
       {referentsSlot}
 
       {/* ============ SESSION / PARCOURS ============ */}

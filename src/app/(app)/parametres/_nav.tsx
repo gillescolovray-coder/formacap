@@ -8,6 +8,7 @@ import {
   Cloud,
   Euro,
   FileText,
+  Landmark,
   Tag,
   Wrench,
 } from "lucide-react";
@@ -72,6 +73,13 @@ const GROUPS: NavGroup[] = [
         description: "Cycle de vie des sessions (brouillon, confirmée…)",
         icon: Tag,
         accent: "slate",
+      },
+      {
+        href: "/parametres/opcos",
+        label: "OPCO",
+        description: "Référentiel des Opérateurs de Compétences",
+        icon: Landmark,
+        accent: "emerald",
       },
     ],
   },

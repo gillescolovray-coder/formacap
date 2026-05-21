@@ -20,8 +20,6 @@ const HEADER_STORAGE_KEY = "inscriptions:session-header-items";
 export type ColumnKey =
   | "demandeur"
   | "entreprise"
-  | "code_postal"
-  | "ville"
   | "source"
   | "canal_inscription"
   | "financement"
@@ -30,15 +28,16 @@ export type ColumnKey =
   | "recue"
   | "ouvrir";
 
+// Refonte 2026-05-21 (Gilles) : les colonnes "code_postal" et "ville" ont
+// été fusionnées dans la colonne "entreprise" (affichage sur 2 lignes :
+// nom de la société puis CP · Ville en dessous).
 export const ALL_COLUMNS: {
   key: ColumnKey;
   label: string;
   defaultOn: boolean;
 }[] = [
   { key: "demandeur", label: "Demandeur", defaultOn: true },
-  { key: "entreprise", label: "Entreprise", defaultOn: true },
-  { key: "code_postal", label: "Code postal", defaultOn: true },
-  { key: "ville", label: "Ville", defaultOn: true },
+  { key: "entreprise", label: "Entreprise (avec CP + Ville)", defaultOn: true },
   { key: "source", label: "Source (canal de communication)", defaultOn: false },
   { key: "canal_inscription", label: "Source d'inscription", defaultOn: true },
   { key: "financement", label: "Financement", defaultOn: true },
