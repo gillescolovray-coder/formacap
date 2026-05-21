@@ -1,8 +1,9 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, Suspense, useContext, useEffect, useState } from "react";
 import { PanelLeftClose, PanelLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { NavigationProgress } from "./navigation-progress";
 
 const STORAGE_KEY = "cap-of-sidebar-collapsed";
 
@@ -46,6 +47,12 @@ export function AppShellClient({ sidebar, children }: AppShellClientProps) {
 
   return (
     <SidebarCollapsedContext.Provider value={isCollapsed}>
+      {/* Barre de progression en haut sur chaque navigation
+          (Gilles 2026-05-21 — feedback visuel anti-lenteur perçue).
+          Suspense requis car NavigationProgress utilise useSearchParams. */}
+      <Suspense fallback={null}>
+        <NavigationProgress />
+      </Suspense>
       <div className="flex min-h-screen bg-slate-50">
         {/* Sidebar — réduite à 64px en mode collapsed (icônes seules avec
             tooltip), 288px en mode étendu. */}
