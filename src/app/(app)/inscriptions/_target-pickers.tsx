@@ -460,12 +460,11 @@ export function TargetPickers({
         </div>
       </div>
 
-      {/* === Info coordonnées : snapshot, n'écrase pas la fiche apprenant === */}
+      {/* === Info coordonnées : sync vers la fiche apprenant === */}
       <p className="text-[11px] text-slate-500 italic bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-md px-3 py-2">
-        💡 <strong>Bon à savoir</strong> : les modifications d&apos;email
-        et de téléphone faites ici ne touchent pas la fiche apprenant.
-        La fiche apprenant n&apos;est complétée que si elle a un champ
-        vide.
+        💡 <strong>Bon à savoir</strong> : les modifications de civilité,
+        email, téléphone, fonction faites ici sont propagées
+        automatiquement à la fiche apprenant.
       </p>
 
       {/* === Ligne 2 : Email seul, pleine largeur === */}

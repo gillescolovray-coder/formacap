@@ -336,25 +336,41 @@ export async function createInscription(formData: FormData) {
       .eq("id", payload.learner_id)
       .maybeSingle();
     if (learner) {
-      // a) Compléter la fiche apprenant avec les infos saisies sur la
-      //    demande (uniquement si la fiche apprenant a un champ vide,
-      //    pour ne jamais écraser une donnée existante).
+      // a) Sync demande → apprenant. Règle (Gilles 2026-05-21) : si
+      //    l'utilisateur saisit une valeur non-vide ET différente de
+      //    ce qui est sur la fiche apprenant, on ÉCRASE la fiche. Sinon
+      //    le RH qui corrige une civilité ou un mobile depuis la fiche
+      //    inscription voyait sa modif perdue (le code conservateur
+      //    précédent ne mettait à jour QUE si le champ était vide).
+      //    On ne touche jamais quand la valeur saisie est vide / null.
       const learnerUpdates: Record<string, unknown> = {};
-      if (!learner.email && payload.prospect_email)
+      if (
+        payload.prospect_email &&
+        payload.prospect_email !== learner.email
+      )
         learnerUpdates.email = payload.prospect_email;
-      if (!learner.phone && payload.prospect_phone)
+      if (
+        payload.prospect_phone &&
+        payload.prospect_phone !== learner.phone
+      )
         learnerUpdates.phone = payload.prospect_phone;
       const learnerMobile = (learner as unknown as { mobile?: string | null })
         .mobile;
-      if (!learnerMobile && payload.prospect_mobile)
+      if (
+        payload.prospect_mobile &&
+        payload.prospect_mobile !== learnerMobile
+      )
         learnerUpdates.mobile = payload.prospect_mobile;
-      if (!learner.birth_date && payload.prospect_birth_date)
+      if (
+        payload.prospect_birth_date &&
+        payload.prospect_birth_date !== learner.birth_date
+      )
         learnerUpdates.birth_date = payload.prospect_birth_date;
-      if (!learner.job_title && prospectJobTitle)
+      if (prospectJobTitle && prospectJobTitle !== learner.job_title)
         learnerUpdates.job_title = prospectJobTitle;
-      if (!learner.civility && prospectCivility)
+      if (prospectCivility && prospectCivility !== learner.civility)
         learnerUpdates.civility = prospectCivility;
-      if (!learner.company_id && payload.company_id)
+      if (payload.company_id && payload.company_id !== learner.company_id)
         learnerUpdates.company_id = payload.company_id;
       if (Object.keys(learnerUpdates).length > 0) {
         await supabase
@@ -550,22 +566,27 @@ export async function updateInscription(id: string, formData: FormData) {
       .eq("id", payload.learner_id)
       .maybeSingle();
     if (learner) {
+      // Sync demande → apprenant : ecrase la fiche si la valeur saisie
+      // differe de l'existante (Gilles 2026-05-21).
       const learnerUpdates: Record<string, unknown> = {};
-      if (!learner.email && payload.prospect_email)
+      if (payload.prospect_email && payload.prospect_email !== learner.email)
         learnerUpdates.email = payload.prospect_email;
-      if (!learner.phone && payload.prospect_phone)
+      if (payload.prospect_phone && payload.prospect_phone !== learner.phone)
         learnerUpdates.phone = payload.prospect_phone;
       const learnerMobile = (learner as unknown as { mobile?: string | null })
         .mobile;
-      if (!learnerMobile && payload.prospect_mobile)
+      if (payload.prospect_mobile && payload.prospect_mobile !== learnerMobile)
         learnerUpdates.mobile = payload.prospect_mobile;
-      if (!learner.birth_date && payload.prospect_birth_date)
+      if (
+        payload.prospect_birth_date &&
+        payload.prospect_birth_date !== learner.birth_date
+      )
         learnerUpdates.birth_date = payload.prospect_birth_date;
-      if (!learner.job_title && prospectJobTitle)
+      if (prospectJobTitle && prospectJobTitle !== learner.job_title)
         learnerUpdates.job_title = prospectJobTitle;
-      if (!learner.civility && prospectCivility)
+      if (prospectCivility && prospectCivility !== learner.civility)
         learnerUpdates.civility = prospectCivility;
-      if (!learner.company_id && payload.company_id)
+      if (payload.company_id && payload.company_id !== learner.company_id)
         learnerUpdates.company_id = payload.company_id;
       if (Object.keys(learnerUpdates).length > 0) {
         await supabase
