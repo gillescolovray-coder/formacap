@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { InscrireLink } from "./_inscrire-link";
 import { SessionActionsButtons } from "./_session-actions-buttons";
+import { SessionTitleLink } from "./_session-title-link";
 import { LocationPopover } from "./_location-popover";
 import { OpenSessionLink } from "./_open-session-link";
 import {
@@ -791,17 +792,17 @@ function SessionCard({
                     {session.is_inter ? "INTER" : "INTRA"}
                   </span>
                 </HeaderItem>
-                <span
+                <SessionTitleLink
+                  sessionId={session.id}
+                  title={session.formation?.title ?? "Session"}
                   className={cn(
-                    "text-sm font-black tracking-tight",
+                    "text-sm font-black tracking-tight hover:underline",
                     session.modality === "presentiel" && "text-emerald-800",
                     session.modality === "distanciel" && "text-blue-800",
                     session.modality === "hybride" && "text-violet-800",
                     !session.modality && "text-slate-900",
                   )}
-                >
-                  {session.formation?.title ?? "Session"}
-                </span>
+                />
                 {session.formation?.internal_code && (
                   <HeaderItem k="code">
                     <span className="inline-block px-1.5 py-0.5 rounded bg-white text-slate-600 font-mono text-[10px] border border-slate-200 shrink-0">
