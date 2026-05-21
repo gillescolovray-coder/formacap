@@ -224,21 +224,60 @@ export async function createMirroredEnrollmentForRequest(
 ): Promise<string | null> {
   const status = mapStageKeyToStatus(request.stage_key);
 
-  // 1) Enrollment existant ?
+  // Garde-fou : sans learner_id valide, on ne peut pas créer d'enrollment.
+  if (!request.learner_id || !request.target_session_id) {
+    console.warn(
+      "[createMirroredEnrollmentForRequest] manque learner_id ou session_id",
+      { request_id: request.id, learner_id: request.learner_id, session_id: request.target_session_id },
+    );
+    return null;
+  }
+
+  // 1) Enrollment existant pour ce couple (session, learner) ?
   const { data: existing } = await supabase
     .from("session_enrollments")
-    .select("id, inscription_request_id")
+    .select("id, inscription_request_id, status")
     .eq("session_id", request.target_session_id)
     .eq("learner_id", request.learner_id)
     .maybeSingle();
 
   if (existing) {
-    // S'il n'est pas encore lié à une request, on le rattache.
-    if (!existing.inscription_request_id) {
-      await supabase
+    // Cas A : enrollment libre → on le rattache à la request actuelle.
+    // Cas B (BUG corrigé Gilles 2026-05-21) : enrollment deja lié à une
+    // AUTRE request → on RE-LIE à la request actuelle pour eviter de
+    // laisser des requests confirmees orphelines (visibles a tort
+    // dans le bloc « Demandes en cours » de la page Participants).
+    // Note : on conserve le status existant si plus avance que celui
+    // de la nouvelle request (ex : enrollment deja `convoque` et nouvelle
+    // request `confirmed`).
+    const currentStatusRank: Record<string, number> = {
+      preinscrit: 0,
+      option: 1,
+      confirmed: 2,
+      convoque: 3,
+      in_progress: 4,
+      completed: 5,
+      cancelled: -1,
+      absent: -1,
+      abandoned: -1,
+    };
+    const existingRank = currentStatusRank[existing.status as string] ?? 0;
+    const newRank = currentStatusRank[status] ?? 0;
+    const finalStatus = existingRank > newRank ? existing.status : status;
+    const needsUpdate =
+      existing.inscription_request_id !== request.id ||
+      existing.status !== finalStatus;
+    if (needsUpdate) {
+      const { error: updErr } = await supabase
         .from("session_enrollments")
-        .update({ inscription_request_id: request.id, status })
+        .update({ inscription_request_id: request.id, status: finalStatus })
         .eq("id", existing.id);
+      if (updErr) {
+        console.error(
+          "[createMirroredEnrollmentForRequest] update rattachement echec",
+          { enrollment_id: existing.id, request_id: request.id, error: updErr.message },
+        );
+      }
     }
     return existing.id as string;
   }
@@ -255,8 +294,84 @@ export async function createMirroredEnrollmentForRequest(
     .select("id")
     .single();
 
-  if (error || !created) return null;
+  if (error || !created) {
+    console.error(
+      "[createMirroredEnrollmentForRequest] insert enrollment echec",
+      { request_id: request.id, session_id: request.target_session_id, learner_id: request.learner_id, error: error?.message },
+    );
+    return null;
+  }
   return created.id as string;
+}
+
+/**
+ * Self-healing : pour une session donnée, détecte les inscription_requests
+ * qui sont au stage `confirmed` (= won, terminal positif) MAIS qui n'ont
+ * pas d'enrollment correspondant. Recrée ou re-rattache automatiquement
+ * les enrollments manquants pour réparer les désynchronisations.
+ *
+ * Appelé au chargement de la page Participants — silencieux, pas
+ * d'erreur côté UI. Renvoie le nombre d'enrollments réparés.
+ */
+export async function healEnrollmentsForSession(
+  supabase: SupabaseClient,
+  sessionId: string,
+): Promise<{ healed: number; checked: number }> {
+  // 1) Trouve l'ID du stage "confirmed" pour cette orga via la session
+  const { data: session } = await supabase
+    .from("sessions")
+    .select("organization_id")
+    .eq("id", sessionId)
+    .maybeSingle<{ organization_id: string }>();
+  if (!session) return { healed: 0, checked: 0 };
+
+  const { data: stage } = await supabase
+    .from("inscription_stages")
+    .select("id")
+    .eq("organization_id", session.organization_id)
+    .eq("key", "confirmed")
+    .maybeSingle<{ id: string }>();
+  if (!stage) return { healed: 0, checked: 0 };
+
+  // 2) Récupère toutes les requests `confirmed` pour cette session avec
+  //    un learner_id renseigné.
+  const { data: requests } = await supabase
+    .from("inscription_requests")
+    .select("id, learner_id, target_session_id")
+    .eq("target_session_id", sessionId)
+    .eq("stage_id", stage.id)
+    .not("learner_id", "is", null);
+  const confirmedReqs = (requests ?? []) as Array<{
+    id: string;
+    learner_id: string;
+    target_session_id: string;
+  }>;
+  if (confirmedReqs.length === 0) return { healed: 0, checked: 0 };
+
+  // 3) Pour chaque request, vérifie qu'un enrollment existe et est lié.
+  //    Sinon, appelle createMirroredEnrollmentForRequest (qui gère le
+  //    cas existant / création).
+  let healed = 0;
+  for (const r of confirmedReqs) {
+    const { data: enrollment } = await supabase
+      .from("session_enrollments")
+      .select("id, inscription_request_id")
+      .eq("session_id", sessionId)
+      .eq("learner_id", r.learner_id)
+      .maybeSingle();
+    // Si pas d'enrollment OU enrollment lié à une autre request → on
+    // appelle la fonction de sync qui va re-rattacher.
+    if (!enrollment || enrollment.inscription_request_id !== r.id) {
+      await createMirroredEnrollmentForRequest(supabase, {
+        id: r.id,
+        target_session_id: r.target_session_id,
+        learner_id: r.learner_id,
+        stage_key: "confirmed",
+      });
+      healed++;
+    }
+  }
+  return { healed, checked: confirmedReqs.length };
 }
 
 /**

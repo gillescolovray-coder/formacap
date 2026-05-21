@@ -11,6 +11,7 @@ import {
   computeConventionAmount,
   type SessionPricingConfig,
 } from "@/lib/pricing/compute";
+import { healEnrollmentsForSession } from "@/lib/inscriptions/sync";
 
 // Force le rechargement à chaque accès pour que la liste des apprenants
 // disponibles soit toujours à jour (sinon, un apprenant qu'on vient de
@@ -36,6 +37,19 @@ export default async function ParticipantsPage({
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
+
+  // Self-healing : repare automatiquement les inscription_requests
+  // confirmees qui n'ont pas d'enrollment correspondant (cas constate
+  // 2026-05-21 sur la validation des pre-inscriptions partenaires).
+  // Silencieux : ne bloque pas le chargement de la page.
+  try {
+    await healEnrollmentsForSession(supabase, id);
+  } catch (e) {
+    console.warn(
+      "[participants/page] healEnrollmentsForSession failed",
+      (e as Error).message,
+    );
+  }
 
   const { data: session } = await supabase
     .from("sessions")
