@@ -192,6 +192,37 @@ async function computeConventionPricing(
     }
   }
 
+  // FILET DE SÉCURITÉ ULTIME (Gilles 2026-05-22 — bug TORRES) : si
+  // aucune des voies précédentes ne marche, on prend la moyenne des
+  // quote_amount_ht de TOUTES les inscriptions de la session (peu
+  // importe la company). C'est une approximation, mais préférable
+  // au blocage de l'envoi à 0 €.
+  const { data: anyQuotes } = await supabase
+    .from("inscription_requests")
+    .select("quote_amount_ht")
+    .eq("target_session_id", sessionId)
+    .not("quote_amount_ht", "is", null);
+  const anyQuoteRows = (anyQuotes ?? []) as Array<{
+    quote_amount_ht: number | null;
+  }>;
+  if (anyQuoteRows.length > 0) {
+    const sum = anyQuoteRows.reduce(
+      (acc, r) => acc + Number(r.quote_amount_ht ?? 0),
+      0,
+    );
+    const avg = sum / anyQuoteRows.length;
+    if (avg > 0) {
+      console.warn(
+        "[computeConventionPricing] fallback ultime : moyenne session entière",
+        { sessionId, companyId, avg, nbApprenantsCompany },
+      );
+      return {
+        unitPrice: avg,
+        totalHt: avg * Math.max(nbApprenantsCompany, 1),
+      };
+    }
+  }
+
   console.warn(
     "[computeConventionPricing] aucun montant trouvé — retour 0",
     {
@@ -568,6 +599,56 @@ export async function ensureConventionShareLink(
   const origin = await getAppOrigin();
   const url = `${origin}/conventions/sign/${token}`;
   return { ok: true, url, token };
+}
+
+/**
+ * Force le recalcul + UPDATE du montant d'une convention persistée.
+ * Utilisé par le bouton « Recalculer » sur le tableau Conventions
+ * quand le montant figé est resté à 0 € malgré l'auto-update silencieux
+ * au chargement de la page (peut arriver si RLS bloque l'update).
+ *
+ * Gilles 2026-05-22 — bug Mme TORRES : montant 0 € persistant.
+ */
+export async function recomputeConventionAmount(
+  sessionId: string,
+  conventionId: string,
+): Promise<
+  | { ok: true; unitHt: number; totalHt: number }
+  | { ok: false; error: string }
+> {
+  const supabase = await createClient();
+
+  const { data: conv } = await supabase
+    .from("session_conventions")
+    .select("id, company_id")
+    .eq("id", conventionId)
+    .maybeSingle<{ id: string; company_id: string }>();
+  if (!conv || !conv.company_id) {
+    return { ok: false, error: "Convention introuvable" };
+  }
+
+  const r = await computeConventionPricing(supabase, sessionId, conv.company_id);
+  if (r.unitPrice <= 0 || r.totalHt <= 0) {
+    return {
+      ok: false,
+      error:
+        "Le calcul retourne 0 €. Vérifie la tarification de la session ou la saisie quote_amount_ht sur au moins une inscription.",
+    };
+  }
+
+  const { error: updErr } = await supabase
+    .from("session_conventions")
+    .update({
+      amount_ht_unit: r.unitPrice,
+      amount_ht_total: r.totalHt,
+    })
+    .eq("id", conventionId);
+  if (updErr) {
+    return { ok: false, error: `Mise à jour BDD échouée : ${updErr.message}` };
+  }
+
+  revalidatePath(`/sessions/${sessionId}/conventions`);
+  return { ok: true, unitHt: r.unitPrice, totalHt: r.totalHt };
 }
 
 export async function cancelConvention(
