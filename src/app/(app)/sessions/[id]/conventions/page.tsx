@@ -22,6 +22,7 @@ import { NotifyInscriptionsButton } from "./_inscription-notif-button";
 import { ResendModal } from "./_resend-modal";
 import { ConventionEditButton } from "./_edit-modal";
 import { ReferentsModal } from "./_referents-modal";
+import { ShareConventionButton } from "./_share-button";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -928,6 +929,12 @@ export default async function ConventionsPage({
                                 nbApprenants: c.learners.length,
                               }}
                             />
+                          )}
+                          {/* Bouton "Partager" : QR code + lien direct,
+                              utile si l'email est filtré par anti-spam
+                              (Outlook/Mailinblack). Gilles 2026-05-22. */}
+                          {conv && (
+                            <ShareConventionButton conventionId={conv.id} />
                           )}
                           {/* Bouton "Annuler" : disponible sur toute convention
                               existante (brouillon, envoyée, signée, obsolète).

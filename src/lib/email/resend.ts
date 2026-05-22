@@ -25,10 +25,17 @@ export type SendEmailParams = {
   subject: string;
   /** HTML du corps de l'email. */
   html: string;
-  /** Texte brut alternatif (fallback). */
+  /** Texte brut alternatif (fallback). Si non fourni, on en génère
+   *  automatiquement à partir du HTML (Gilles 2026-05-22 : améliore le
+   *  score anti-spam de Outlook / Mailinblack / Vade etc.). */
   text?: string;
   /** Optionnel : email de réponse différent de l'expéditeur. */
   replyTo?: string;
+  /** Optionnel : surcharge l'adresse expéditeur (RESEND_FROM par défaut).
+   *  Utile pour envoyer un 2ème email depuis un alias humain qui a moins
+   *  de risque d'être filtré (ex: gilles@capnumerique.com). Le domaine
+   *  doit être vérifié dans Resend. */
+  fromOverride?: string;
   /** Pièces jointes. */
   attachments?: ResendAttachment[];
   /** Emails à mettre en copie (CC). Utilisé pour les référents
@@ -37,6 +44,40 @@ export type SendEmailParams = {
    *  pas spammer plusieurs adresses identiques. */
   cc?: string[];
 };
+
+/**
+ * Convertit un HTML simple en texte brut acceptable pour la fallback
+ * `text` d'un email (Gilles 2026-05-22 : améliore la délivrabilité face
+ * aux filtres anti-spam qui pénalisent les emails HTML-only).
+ *
+ * Logique légère, sans dépendance — on retire les balises, on décode
+ * les entités les plus courantes, et on collapse les espaces.
+ */
+function htmlToPlainText(html: string): string {
+  return (
+    html
+      // 1. Tags structurants qui doivent générer un saut de ligne
+      .replace(/<\s*br\s*\/?\s*>/gi, "\n")
+      .replace(/<\/(p|div|h[1-6]|li|tr|td)\s*>/gi, "\n")
+      // 2. Liens : on les transforme en "texte (URL)" pour conserver l'info
+      .replace(/<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, "$2 ($1)")
+      // 3. Toutes les autres balises → supprimées
+      .replace(/<[^>]+>/g, "")
+      // 4. Entités HTML courantes
+      .replace(/&nbsp;/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&apos;/g, "'")
+      .replace(/&euro;/g, "€")
+      // 5. Collapsing : supprime espaces multiples + lignes vides multiples
+      .replace(/[ \t]+/g, " ")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim()
+  );
+}
 
 export type SendEmailResult =
   | { ok: true; providerId: string }
@@ -50,7 +91,8 @@ export async function sendEmail(
   params: SendEmailParams,
 ): Promise<SendEmailResult> {
   const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.RESEND_FROM;
+  const fromEnv = process.env.RESEND_FROM;
+  const from = params.fromOverride ?? fromEnv;
   if (!apiKey || !from) {
     return {
       ok: false,
@@ -90,6 +132,9 @@ export async function sendEmail(
     : (params.cc ?? [])
         .filter((e): e is string => Boolean(e && e.trim().length > 0))
         .filter((e) => e.trim().toLowerCase() !== params.to.trim().toLowerCase());
+  // Si pas de version texte fournie, on en génère une depuis le HTML
+  // pour améliorer le score anti-spam (Gilles 2026-05-22).
+  const textBody = params.text ?? htmlToPlainText(htmlWithBanner);
   const body: {
     from: string;
     to: string[];
@@ -108,7 +153,7 @@ export async function sendEmail(
     to: [recipient],
     subject,
     html: htmlWithBanner,
-    text: params.text,
+    text: textBody,
     reply_to: params.replyTo,
     attachments: params.attachments?.map((a) => ({
       filename: a.filename,

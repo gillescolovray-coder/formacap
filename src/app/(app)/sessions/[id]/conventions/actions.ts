@@ -476,6 +476,56 @@ export async function saveSessionCompanyReferents(
  * Une fois annulée, la société redevient "Non créée" dans la liste et
  * on peut générer une nouvelle convention complète.
  */
+/**
+ * Garantit l'existence d'un token de signature pour une convention et
+ * renvoie l'URL publique de signature à partager (lien direct + QR).
+ *
+ * Gilles 2026-05-22 : permet de partager le lien hors email (SMS,
+ * WhatsApp, téléphone) quand l'email est filtré par Outlook / Mailinblack
+ * ou tout autre anti-spam.
+ *
+ * - Si un token actif existe déjà → on le réutilise (pas de duplication)
+ * - Sinon, on en crée un, valable 30 jours
+ */
+export async function ensureConventionShareLink(
+  conventionId: string,
+): Promise<
+  | { ok: true; url: string; token: string }
+  | { ok: false; error: string }
+> {
+  const supabase = await createClient();
+
+  // Token actif existant ?
+  const { data: existing } = await supabase
+    .from("signature_links")
+    .select("token, expires_at")
+    .eq("convention_id", conventionId)
+    .gt("expires_at", new Date().toISOString())
+    .order("expires_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ token: string; expires_at: string }>();
+
+  let token = existing?.token ?? null;
+
+  if (!token) {
+    const newToken = generateToken();
+    const { error } = await supabase.from("signature_links").insert({
+      convention_id: conventionId,
+      enrollment_id: null,
+      token: newToken,
+      expires_at: new Date(
+        Date.now() + 30 * 24 * 60 * 60 * 1000,
+      ).toISOString(),
+    });
+    if (error) return { ok: false, error: error.message };
+    token = newToken;
+  }
+
+  const origin = await getAppOrigin();
+  const url = `${origin}/conventions/sign/${token}`;
+  return { ok: true, url, token };
+}
+
 export async function cancelConvention(
   sessionId: string,
   conventionId: string,
