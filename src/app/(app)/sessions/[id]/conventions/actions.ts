@@ -1262,6 +1262,9 @@ export async function sendConvention(
         status: "sent",
         sent_at: new Date().toISOString(),
         sent_to_email: convention.contact_email,
+        // Stocke l'ID Resend pour matcher les webhooks (delivered,
+        // opened, clicked…). Migration 0097 — Gilles 2026-05-22.
+        resend_email_id: result.providerId || null,
       })
       .eq("id", conventionId);
   }
@@ -1272,4 +1275,59 @@ export async function sendConvention(
     return { ok: false, error: result.error };
   }
   return { ok: true, publicUrl };
+}
+
+/**
+ * Marque une convention comme "pré-notifiée" : l'admin a cliqué sur le
+ * bouton Gmail pour ouvrir l'email de pré-notification (anti-spam).
+ * Ce flag déclenche l'affichage d'un check dans le tableau et désactive
+ * le rappel "voulez-vous prévenir par Gmail d'abord ?" au moment du
+ * "Créer & envoyer". (Gilles 2026-05-22)
+ *
+ * Le marquage se fait à la SOUMISSION (clic du bouton), pas après
+ * vérification que l'email est parti — Gmail compose ne nous donne pas
+ * de retour. C'est volontairement permissif (mieux vaut un faux positif
+ * qu'un blocage).
+ */
+export async function markConventionPreNotified(
+  sessionId: string,
+  conventionId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Non authentifié." };
+
+  const { error } = await supabase
+    .from("session_conventions")
+    .update({ prenotified_at: new Date().toISOString() })
+    .eq("id", conventionId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/sessions/${sessionId}/conventions`);
+  return { ok: true };
+}
+
+/**
+ * Variante batch : marque PLUSIEURS conventions pré-notifiées d'un coup
+ * (bouton "Prévenir tout le monde par Gmail" en haut du tableau).
+ */
+export async function markConventionsPreNotified(
+  sessionId: string,
+  conventionIds: string[],
+): Promise<{ ok: boolean; error?: string }> {
+  if (conventionIds.length === 0) return { ok: true };
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Non authentifié." };
+
+  const { error } = await supabase
+    .from("session_conventions")
+    .update({ prenotified_at: new Date().toISOString() })
+    .in("id", conventionIds);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/sessions/${sessionId}/conventions`);
+  return { ok: true };
 }

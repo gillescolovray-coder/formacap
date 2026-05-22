@@ -24,6 +24,9 @@ import { ConventionEditButton } from "./_edit-modal";
 import { ReferentsModal } from "./_referents-modal";
 import { ShareConventionButton } from "./_share-button";
 import { RecomputeAmountButton } from "./_recompute-button";
+import { PreNotifyGmailButton } from "./_pre-notify-gmail";
+import { BulkPreNotifyGmailButton } from "./_pre-notify-bulk";
+import { EmailStatusTimeline } from "./_email-status-timeline";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -41,6 +44,31 @@ export default async function ConventionsPage({
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
+  const currentUserEmail = user.email ?? "";
+
+  // Téléphone de l'organisation — utilisé dans la signature des emails
+  // de pré-notification Gmail (Gilles 2026-05-22).
+  let trainerPhone: string | null = null;
+  try {
+    const { data: membership } = await supabase
+      .from("organization_members")
+      .select("organization:organizations(phone)")
+      .eq("profile_id", user.id)
+      .eq("is_active", true)
+      .limit(1)
+      .maybeSingle<{
+        organization:
+          | { phone: string | null }
+          | Array<{ phone: string | null }>
+          | null;
+      }>();
+    const org = Array.isArray(membership?.organization)
+      ? membership?.organization[0]
+      : membership?.organization;
+    trainerPhone = org?.phone ?? null;
+  } catch {
+    trainerPhone = null;
+  }
 
   const { data: session } = await supabase
     .from("sessions")
@@ -168,13 +196,13 @@ export default async function ConventionsPage({
 
   const companyIds = Array.from(byCompany.keys());
 
-  // Conventions existantes
+  // Conventions existantes (avec colonnes tracking email migration 0097)
   const { data: conventions } =
     companyIds.length > 0
       ? await supabase
           .from("session_conventions")
           .select(
-            "id, company_id, status, contact_name, contact_email, sent_at, signed_at, signed_by_name, amount_ht_unit, amount_ht_total, financing_mode, obsolete_reason",
+            "id, company_id, status, contact_name, contact_email, sent_at, signed_at, signed_by_name, amount_ht_unit, amount_ht_total, financing_mode, obsolete_reason, prenotified_at, delivered_at, opened_at, clicked_at, bounced_at, complained_at",
           )
           .eq("session_id", id)
           .in("company_id", companyIds)
@@ -194,6 +222,12 @@ export default async function ConventionsPage({
       amount_ht_total: number | null;
       financing_mode: string | null;
       obsolete_reason: string | null;
+      prenotified_at: string | null;
+      delivered_at: string | null;
+      opened_at: string | null;
+      clicked_at: string | null;
+      bounced_at: string | null;
+      complained_at: string | null;
     }
   >();
   (conventions ?? []).forEach((c) => {
@@ -209,6 +243,12 @@ export default async function ConventionsPage({
       amount_ht_total: c.amount_ht_total as number | null,
       financing_mode: c.financing_mode as string | null,
       obsolete_reason: c.obsolete_reason as string | null,
+      prenotified_at: (c as { prenotified_at?: string | null }).prenotified_at ?? null,
+      delivered_at: (c as { delivered_at?: string | null }).delivered_at ?? null,
+      opened_at: (c as { opened_at?: string | null }).opened_at ?? null,
+      clicked_at: (c as { clicked_at?: string | null }).clicked_at ?? null,
+      bounced_at: (c as { bounced_at?: string | null }).bounced_at ?? null,
+      complained_at: (c as { complained_at?: string | null }).complained_at ?? null,
     });
   });
 
@@ -291,6 +331,19 @@ export default async function ConventionsPage({
 
   const title = session.formation?.title ?? "Session";
   const resendOn = isResendConfigured();
+
+  // Date range pour les emails de pré-notification (Gilles 2026-05-22).
+  const dateRange = (() => {
+    const s = session.start_date;
+    const e = session.end_date;
+    if (!s || !e) return "";
+    const sObj = new Date(s);
+    const eObj = new Date(e);
+    if (s === e) {
+      return `le ${sObj.toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}`;
+    }
+    return `du ${sObj.toLocaleDateString("fr-FR", { day: "numeric", month: "long" })} au ${eObj.toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}`;
+  })();
   const companies = Array.from(byCompany.values()).sort((a, b) =>
     a.companyName.localeCompare(b.companyName, "fr"),
   );
@@ -589,7 +642,27 @@ export default async function ConventionsPage({
               </li>
             </ul>
           </div>
-          <div className="flex items-center justify-end gap-2">
+          <div className="flex items-center justify-end gap-2 flex-wrap">
+            {/* Bouton "Prévenir tous par Gmail" : ouvre Gmail compose
+                avec tous les contacts RH en CCI + message anti-spam
+                pré-rédigé (Gilles 2026-05-22 — migration 0097). */}
+            <BulkPreNotifyGmailButton
+              sessionId={id}
+              recipients={Array.from(conventionByCompany.entries())
+                .filter(
+                  ([cid, conv]) =>
+                    !partnerOfNameByCompany.has(cid) && Boolean(conv.contact_email),
+                )
+                .map(([, conv]) => ({
+                  conventionId: conv.id,
+                  email: conv.contact_email ?? "",
+                  contactName: conv.contact_name ?? "Madame, Monsieur",
+                }))}
+              formationTitle={title}
+              dateRange={dateRange}
+              authUserEmail={currentUserEmail}
+              trainerPhone={trainerPhone}
+            />
             <ResendModal items={resendItems} disabled={!resendOn} />
             <NotifyInscriptionsButton sessionId={id} disabled={!resendOn} />
           </div>
@@ -961,6 +1034,24 @@ export default async function ConventionsPage({
                               € HT
                             </div>
                           )}
+                        {/* Timeline mini-icônes du cycle de vie email
+                            (Gilles 2026-05-22 — migration 0097). Pas
+                            affichée pour les OF partenaires (CAP n'envoie
+                            pas la convention). */}
+                        {conv && !partnerOfNameByCompany.has(c.companyId) && (
+                          <div className="mt-2">
+                            <EmailStatusTimeline
+                              sentAt={conv.sent_at}
+                              deliveredAt={conv.delivered_at}
+                              openedAt={conv.opened_at}
+                              clickedAt={conv.clicked_at}
+                              signedAt={conv.signed_at}
+                              bouncedAt={conv.bounced_at}
+                              complainedAt={conv.complained_at}
+                              preNotifiedAt={conv.prenotified_at}
+                            />
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-right">
                         {/* Si la société est inscrite via un OF partenaire,
@@ -992,6 +1083,23 @@ export default async function ConventionsPage({
                               <Printer className="h-3.5 w-3.5" />
                               Aperçu PDF
                             </Button>
+                          )}
+                          {/* Bouton "Prévenir par Gmail" (anti-spam —
+                              Gilles 2026-05-22). Ouvre Gmail compose
+                              pré-rempli avec un message d'avertissement
+                              spam. Marque la convention comme pré-notifiée. */}
+                          {conv && conv.contact_email && (
+                            <PreNotifyGmailButton
+                              sessionId={id}
+                              conventionId={conv.id}
+                              toEmail={conv.contact_email}
+                              contactName={conv.contact_name ?? "Madame, Monsieur"}
+                              formationTitle={title}
+                              dateRange={dateRange}
+                              authUserEmail={currentUserEmail}
+                              trainerPhone={trainerPhone}
+                              alreadySent={Boolean(conv.prenotified_at)}
+                            />
                           )}
                           <EnsureAndSendConventionButton
                             sessionId={id}
