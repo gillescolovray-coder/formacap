@@ -476,9 +476,6 @@ export default async function ParcoursApprenantPage({
           <h1 className="text-xl md:text-2xl font-bold text-zinc-900">
             {fullName}
           </h1>
-          <p className="text-sm md:text-base font-semibold text-cyan-700">
-            {formatDateRange(session.start_date, session.end_date)}
-          </p>
           <p className="text-xs text-zinc-500">{sourceLabel}</p>
         </header>
 
@@ -486,8 +483,8 @@ export default async function ParcoursApprenantPage({
             horaires + lieu + contact + boutons agenda et convocation.
             Gilles 2026-05-22. */}
         <div className="rounded-xl bg-white border-2 border-cyan-200 p-4 space-y-3 shadow-sm">
-          {/* Titre formation EN GROS et EN GRAS — déplacé du header
-              ici pour qu'il soit visible dans le bloc des détails
+          {/* Titre formation + date — déplacés du header ici pour
+              qu'ils soient visibles dans le bloc des détails
               (Gilles 2026-05-22). */}
           <div className="text-center pb-2 border-b border-zinc-100">
             <p className="text-[10px] uppercase tracking-widest font-bold text-cyan-700 mb-1">
@@ -495,6 +492,9 @@ export default async function ParcoursApprenantPage({
             </p>
             <p className="text-base md:text-lg font-extrabold text-zinc-900 leading-tight">
               {formationTitle}
+            </p>
+            <p className="text-sm md:text-base font-semibold text-cyan-700 mt-1">
+              {formatDateRange(session.start_date, session.end_date)}
             </p>
           </div>
           <div className="grid gap-2 text-sm">
