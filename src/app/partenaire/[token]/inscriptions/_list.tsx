@@ -439,7 +439,7 @@ export function InscriptionsList({
                   >
                     {/* Apprenant + email + téléphone */}
                     <td className="px-3 py-3">
-                      <div className="font-medium text-zinc-900">
+                      <div className="font-bold text-zinc-900 text-sm">
                         {r.learnerName}
                       </div>
                       {r.learnerEmail && (
@@ -557,37 +557,38 @@ export function InscriptionsList({
                       </span>
                     </td>
 
-                    {/* Actions Ajouter / Modifier / Supprimer */}
+                    {/* Actions Ajouter / Modifier / Supprimer
+                        (Gilles 2026-05-22 : icônes agrandies + couleurs
+                        plus contrastées pour meilleure lisibilité). */}
                     <td className="px-3 py-3">
-                      <div className="flex items-center gap-1">
-                        {/* Bouton "+ Ajouter apprenant pour entreprise"
-                            (Gilles 2026-05-22) */}
+                      <div className="flex items-center gap-1.5">
+                        {/* Bouton "+ Ajouter apprenant pour entreprise" */}
                         {r.companyId && r.sessionId && (
                           <Link
                             href={`/partenaire/${token}/inscrire/${r.sessionId}?prefillCompanyId=${r.companyId}`}
-                            className="inline-flex items-center justify-center h-7 w-7 rounded-md text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50"
+                            className="inline-flex items-center justify-center h-9 w-9 rounded-md bg-emerald-50 border border-emerald-300 text-emerald-700 hover:bg-emerald-100 hover:border-emerald-500 transition-colors"
                             title={`Ajouter un autre apprenant pour ${r.companyName ?? "cette entreprise"}`}
                           >
-                            <UserPlus className="h-3.5 w-3.5" />
+                            <UserPlus className="h-5 w-5" strokeWidth={2.25} />
                           </Link>
                         )}
                         <button
                           type="button"
                           onClick={() => setEditingId(r.id)}
                           disabled={pending}
-                          className="inline-flex items-center justify-center h-7 w-7 rounded-md text-zinc-500 hover:text-cyan-700 hover:bg-cyan-50 disabled:opacity-30"
+                          className="inline-flex items-center justify-center h-9 w-9 rounded-md bg-cyan-50 border border-cyan-300 text-cyan-700 hover:bg-cyan-100 hover:border-cyan-500 transition-colors disabled:opacity-30"
                           title="Modifier les coordonnées de l'apprenant"
                         >
-                          <Pencil className="h-3.5 w-3.5" />
+                          <Pencil className="h-5 w-5" strokeWidth={2.25} />
                         </button>
                         <button
                           type="button"
                           onClick={() => doDelete(r)}
                           disabled={pending}
-                          className="inline-flex items-center justify-center h-7 w-7 rounded-md text-zinc-500 hover:text-rose-700 hover:bg-rose-50 disabled:opacity-30"
+                          className="inline-flex items-center justify-center h-9 w-9 rounded-md bg-rose-50 border border-rose-300 text-rose-700 hover:bg-rose-100 hover:border-rose-500 transition-colors disabled:opacity-30"
                           title="Supprimer l'inscription"
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
+                          <Trash2 className="h-5 w-5" strokeWidth={2.25} />
                         </button>
                       </div>
                     </td>
