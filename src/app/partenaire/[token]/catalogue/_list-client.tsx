@@ -481,15 +481,29 @@ export function CatalogueList({
                         Programme
                       </a>
                     )}
-                    {negotiated !== undefined && (
-                      <Link
-                        href={`/partenaire/${token}/inscrire/${s.id}`}
-                        className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 sm:py-2 rounded-lg bg-cyan-600 text-white text-sm font-bold hover:bg-cyan-700"
-                      >
-                        Inscrire un apprenant
-                        <ArrowRight className="h-4 w-4" />
-                      </Link>
-                    )}
+                    {/* Bouton inscription : TOUJOURS visible (Option B —
+                        Gilles 2026-05-22). Si pas de tarif négocié, le
+                        bouton est en couleur secondaire avec libellé
+                        "Tarif à confirmer" et la page d'inscription
+                        affichera un message si nécessaire. */}
+                    <Link
+                      href={`/partenaire/${token}/inscrire/${s.id}`}
+                      className={
+                        negotiated !== undefined
+                          ? "inline-flex items-center justify-center gap-1.5 px-4 py-2.5 sm:py-2 rounded-lg bg-cyan-600 text-white text-sm font-bold hover:bg-cyan-700"
+                          : "inline-flex items-center justify-center gap-1.5 px-4 py-2.5 sm:py-2 rounded-lg bg-amber-500 text-white text-sm font-bold hover:bg-amber-600"
+                      }
+                      title={
+                        negotiated !== undefined
+                          ? "Inscrire un apprenant sur cette session"
+                          : "Aucun tarif spécifique défini — l'inscription sera possible après validation du tarif par CAP NUMERIQUE."
+                      }
+                    >
+                      {negotiated !== undefined
+                        ? "Inscrire un apprenant"
+                        : "Inscrire (tarif à confirmer)"}
+                      <ArrowRight className="h-4 w-4" />
+                    </Link>
                   </div>
                 </div>
               </article>

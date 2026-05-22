@@ -313,7 +313,9 @@ export default async function ConventionsPage({
   // rien (cas des sessions sans pricing_mode défini — Gilles 2026-05-22).
   const { data: companyInscriptions } = await supabase
     .from("inscription_requests")
-    .select("company_id, inscription_channel, quote_amount_ht")
+    .select(
+      "company_id, inscription_channel, inscription_channel_company_id, quote_amount_ht, referrer:companies!inscription_channel_company_id(name, type)",
+    )
     .eq("target_session_id", id)
     .in(
       "company_id",
@@ -340,6 +342,14 @@ export default async function ConventionsPage({
   // cascade R7 ne donne rien).
   const inscriptionsByCompany = new Map<string, string[]>();
   const channelsByCompany = new Map<string, Set<string>>();
+  // Nom du partenaire (OF / prescripteur) qui a inscrit pour cette société
+  // → utilisé dans la colonne SOURCE D'INSCRIPTION à la place du label
+  // générique "OF" / "Prescripteur" (Gilles 2026-05-22).
+  const partnerNameByCompany = new Map<string, string>();
+  // Nom de l'OF PARTENAIRE (type='of') qui a inscrit pour cette société.
+  // Si rempli → la convention est à la charge de l'OF, CAP NUMERIQUE
+  // masque ses boutons d'envoi/édition.
+  const partnerOfNameByCompany = new Map<string, string>();
   const quoteAmountByCompany = new Map<
     string,
     { total: number; nbWithQuote: number }
@@ -347,7 +357,12 @@ export default async function ConventionsPage({
   for (const row of (companyInscriptions ?? []) as Array<{
     company_id: string | null;
     inscription_channel: string | null;
+    inscription_channel_company_id: string | null;
     quote_amount_ht: number | null;
+    referrer:
+      | { name: string; type: string | null }
+      | Array<{ name: string; type: string | null }>
+      | null;
   }>) {
     if (!row.company_id) continue;
     const list = inscriptionsByCompany.get(row.company_id) ?? [];
@@ -356,6 +371,13 @@ export default async function ConventionsPage({
     const channels = channelsByCompany.get(row.company_id) ?? new Set<string>();
     channels.add(row.inscription_channel ?? "direct");
     channelsByCompany.set(row.company_id, channels);
+    const ref = Array.isArray(row.referrer) ? row.referrer[0] : row.referrer;
+    if (ref?.name) {
+      partnerNameByCompany.set(row.company_id, ref.name);
+      if (ref.type === "of") {
+        partnerOfNameByCompany.set(row.company_id, ref.name);
+      }
+    }
     if (row.quote_amount_ht !== null && row.quote_amount_ht !== undefined) {
       const cur = quoteAmountByCompany.get(row.company_id) ?? {
         total: 0,
@@ -698,6 +720,44 @@ export default async function ConventionsPage({
                       {/* === Montant HT (Gilles 2026-05-22) === */}
                       <td className="px-4 py-3 align-top text-right">
                         {(() => {
+                          // Cas OF partenaire : CAP NUMERIQUE n'édite pas
+                          // de convention avec le client final, mais facture
+                          // l'OF en interne. On affiche donc le PRIX
+                          // FACTURATION INTERNE = somme des quote_amount_ht
+                          // saisis lors de l'inscription via le portail
+                          // partenaire (Gilles 2026-05-22).
+                          if (partnerOfNameByCompany.has(c.companyId)) {
+                            const q = quoteAmountByCompany.get(c.companyId);
+                            const nb = c.learners.length;
+                            const total = q?.total ?? 0;
+                            const unit =
+                              q && q.nbWithQuote > 0
+                                ? total / q.nbWithQuote
+                                : 0;
+                            if (total > 0) {
+                              return (
+                                <div className="space-y-0.5 inline-block text-right">
+                                  <div className="text-sm font-bold text-zinc-900 tabular-nums">
+                                    {formatEur(total)}
+                                  </div>
+                                  <div className="text-[10px] text-zinc-500 tabular-nums">
+                                    {formatEur(unit)} × {nb}
+                                  </div>
+                                  <div className="text-[10px] text-indigo-700 font-bold uppercase tracking-wide">
+                                    Facturation interne OF
+                                  </div>
+                                </div>
+                              );
+                            }
+                            return (
+                              <span
+                                className="text-[10px] italic text-rose-700"
+                                title="Aucun tarif partenaire n'a été défini pour cet OF. Renseigne-le sur la fiche entreprise de l'OF (rubrique Tarif partenaire)."
+                              >
+                                Tarif OF non défini
+                              </span>
+                            );
+                          }
                           const computed = computedByCompany.get(c.companyId);
                           if (!computed) return <span className="text-zinc-300">—</span>;
                           const conv = conventionByCompany.get(c.companyId);
@@ -731,19 +791,33 @@ export default async function ConventionsPage({
                         {(() => {
                           const computed = computedByCompany.get(c.companyId);
                           const channels = computed?.channels ?? ["direct"];
+                          const partnerName = partnerNameByCompany.get(
+                            c.companyId,
+                          );
                           return (
                             <div className="space-y-1">
-                              {channels.map((ch) => (
-                                <span
-                                  key={ch}
-                                  className={cn(
-                                    "inline-block px-1.5 py-0.5 rounded text-[10px] font-bold border whitespace-nowrap",
-                                    channelClass(ch),
-                                  )}
-                                >
-                                  {channelLabel(ch)}
-                                </span>
-                              ))}
+                              {channels.map((ch) => {
+                                // Si on connaît le nom du partenaire et que
+                                // le canal est partenaire, on affiche le NOM
+                                // (ex: "BATYS COMPETENCES PACA"). Sinon, on
+                                // retombe sur le label générique.
+                                const label =
+                                  (ch === "of" || ch === "prescripteur") &&
+                                  partnerName
+                                    ? partnerName
+                                    : channelLabel(ch);
+                                return (
+                                  <span
+                                    key={ch}
+                                    className={cn(
+                                      "inline-block px-1.5 py-0.5 rounded text-[10px] font-bold border whitespace-nowrap",
+                                      channelClass(ch),
+                                    )}
+                                  >
+                                    {label}
+                                  </span>
+                                );
+                              })}
                             </div>
                           );
                         })()}
@@ -889,6 +963,18 @@ export default async function ConventionsPage({
                           )}
                       </td>
                       <td className="px-4 py-3 text-right">
+                        {/* Si la société est inscrite via un OF partenaire,
+                            la convention est à sa charge — CAP NUMERIQUE
+                            n'a aucun bouton à proposer (Gilles 2026-05-22). */}
+                        {partnerOfNameByCompany.has(c.companyId) ? (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-zinc-100 text-zinc-600 border border-zinc-200"
+                            title={`La convention est à la charge de l'OF partenaire ${partnerOfNameByCompany.get(c.companyId)} — CAP NUMERIQUE n'édite pas de convention dans ce cas.`}
+                          >
+                            À la charge de l&apos;OF{" "}
+                            {partnerOfNameByCompany.get(c.companyId)}
+                          </span>
+                        ) : (
                         <div className="flex flex-wrap items-center justify-end gap-1.5">
                           {conv && (
                             <Button
@@ -966,6 +1052,7 @@ export default async function ConventionsPage({
                             />
                           )}
                         </div>
+                        )}
                       </td>
                     </tr>
                   );

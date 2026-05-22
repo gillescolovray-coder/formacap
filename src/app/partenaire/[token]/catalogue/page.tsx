@@ -1,7 +1,10 @@
 import { notFound } from "next/navigation";
 import { BookOpen, Calendar } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { computeEffectivePartnerPrice } from "@/lib/portal/partner-pricing";
+import {
+  computeEffectivePartnerPrice,
+  loadOrgPartnerDefaults,
+} from "@/lib/portal/partner-pricing";
 import { resolvePartnerContext } from "../_resolve";
 import { InviteBlock } from "../_invite-block";
 import { CatalogueList, type CatalogueSession } from "./_list-client";
@@ -156,6 +159,14 @@ export default async function PartnerCataloguePage({
     overrideMap.set(p.formation_id, Number(p.unit_price_ht));
   }
 
+  // Tarifs par défaut au niveau organisation (Option A — 2026-05-22).
+  // Permet à un OF/Prescripteur sans tarif spécifique de voir quand même
+  // un prix calculé à partir des défauts admin.
+  const orgDefaults = await loadOrgPartnerDefaults(
+    supabase,
+    ctx.company.organization_id,
+  );
+
   // Comptage des apprenants inscrits par session (statut != "cancelled")
   // pour afficher "X / Y inscrits" sur chaque carte.
   const enrolledBySession = new Map<string, number>();
@@ -239,6 +250,7 @@ export default async function PartnerCataloguePage({
           | "distanciel"
           | "hybride"
           | null,
+        ...orgDefaults,
       });
       return {
         id: s.id,

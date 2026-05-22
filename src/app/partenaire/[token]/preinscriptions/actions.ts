@@ -8,7 +8,10 @@ import {
   findStageIdByKey,
 } from "@/lib/inscriptions/sync";
 import { isResendConfigured, sendEmail } from "@/lib/email/resend";
-import { computeEffectivePartnerPrice } from "@/lib/portal/partner-pricing";
+import {
+  computeEffectivePartnerPrice,
+  loadOrgPartnerDefaults,
+} from "@/lib/portal/partner-pricing";
 
 /**
  * Valide une pré-inscription publique. Étapes :
@@ -223,6 +226,10 @@ export async function validatePreinscription(
         .eq("company_id", ctx.company.id)
         .eq("formation_id", sessTyped.formation_id)
         .maybeSingle<{ unit_price_ht: string | number }>();
+      const orgDefaults = await loadOrgPartnerDefaults(
+        supabase,
+        ctx.company.organization_id,
+      );
       const eff = computeEffectivePartnerPrice({
         partnerType: ctx.company.type,
         dailyRateDistancielHt: ctx.company.daily_rate_distanciel_ht,
@@ -236,6 +243,7 @@ export async function validatePreinscription(
           | "distanciel"
           | "hybride"
           | null,
+        ...orgDefaults,
       });
       computedAmountHt = eff.price ?? null;
     }
@@ -269,6 +277,9 @@ export async function validatePreinscription(
       stage_id: confirmedStageId,
       learner_id: learnerId,
       company_id: learnerCompanyId,
+      // Fix Gilles 2026-05-22 : canal d'inscription = partenaire qui valide
+      inscription_channel: ctx.company.type === "of" ? "of" : "prescripteur",
+      inscription_channel_company_id: ctx.company.id,
       // Stocke le tarif partenaire calculé pour qu'il apparaisse dans
       // la colonne « Montant HT » côté admin (page Participants).
       ...(computedAmountHt !== null
@@ -293,6 +304,9 @@ export async function validatePreinscription(
     target_session_id: req.target_session_id,
     learner_id: learnerId,
     stage_key: "confirmed",
+    // Fix Gilles 2026-05-22 : canal d'inscription = partenaire qui valide
+    inscription_channel: ctx.company.type === "of" ? "of" : "prescripteur",
+    inscription_channel_company_id: ctx.company.id,
   });
 
   await supabase.from("inscription_events").insert({

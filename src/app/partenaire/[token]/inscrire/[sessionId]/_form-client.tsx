@@ -4,6 +4,8 @@ import { useState } from "react";
 import {
   Building2,
   Euro,
+  Info,
+  Mail,
   Plus,
   Send,
   Trash2,
@@ -80,6 +82,16 @@ export function PartnerInscribeForm({
     phone: "",
     role: "",
   });
+  // Toggle "Renseigner un référent pédagogique ?" (prescripteur uniquement).
+  // - Coché (défaut)   : bloc référent visible + obligatoire
+  // - Décoché          : pas de référent. Le PREMIER apprenant recevra
+  //                      automatiquement la convention, convocation, etc.
+  // (Demande Gilles 2026-05-22)
+  const [hasReferent, setHasReferent] = useState<boolean>(true);
+  // Pour les OF on n'utilise pas ce toggle (workflow simplifié — pas de
+  // convention, donc le contact référent est toujours optionnel sans
+  // basculement sur l'apprenant).
+  const referentEnabled = partnerType === "prescripteur" && hasReferent;
 
   function handleSirenePick(c: SireneCompany) {
     setCompany({
@@ -121,10 +133,14 @@ export function PartnerInscribeForm({
   const totalHt = unitPriceHt * learners.length;
   const financingOk =
     financing === "employeur" ? true : opcoName.trim().length > 0;
-  const contactOk =
-    contact.firstName.trim().length > 0 &&
-    contact.lastName.trim().length > 0 &&
-    /^\S+@\S+\.\S+$/.test(contact.email.trim());
+  // Le contact référent n'est requis que si :
+  //   - prescripteur ET case "Renseigner un référent pédagogique" cochée.
+  // Sinon (OF, ou prescripteur sans référent), pas d'exigence sur ce bloc.
+  const contactOk = referentEnabled
+    ? contact.firstName.trim().length > 0 &&
+      contact.lastName.trim().length > 0 &&
+      /^\S+@\S+\.\S+$/.test(contact.email.trim())
+    : true;
   const canSubmit =
     company.siret.trim().length > 0 &&
     company.name.trim().length > 0 &&
@@ -177,13 +193,36 @@ export function PartnerInscribeForm({
       <input
         type="hidden"
         name="contact_referent"
-        value={JSON.stringify({
-          first_name: contact.firstName.trim(),
-          last_name: contact.lastName.trim(),
-          email: contact.email.trim(),
-          phone: contact.phone.trim() || null,
-          role: contact.role.trim() || null,
-        })}
+        value={JSON.stringify(
+          // Si le prescripteur a décoché la case, on n'envoie pas de
+          // contact référent (le serveur basculera sur le premier
+          // apprenant). Pour les OF, on respecte la saisie partielle
+          // (le serveur la prend telle quelle, optionnelle).
+          referentEnabled || partnerType === "of"
+            ? {
+                first_name: contact.firstName.trim(),
+                last_name: contact.lastName.trim(),
+                email: contact.email.trim(),
+                phone: contact.phone.trim() || null,
+                role: contact.role.trim() || null,
+              }
+            : {
+                first_name: "",
+                last_name: "",
+                email: "",
+                phone: null,
+                role: null,
+              },
+        )}
+      />
+      {/* Flag explicite : true = bascule sur premier apprenant si pas
+          de référent (workflow prescripteur sans référent dédié). */}
+      <input
+        type="hidden"
+        name="referent_fallback_first_learner"
+        value={
+          partnerType === "prescripteur" && !hasReferent ? "1" : "0"
+        }
       />
 
       {/* ===== ENTREPRISE DES APPRENANTS ===== */}
@@ -264,8 +303,8 @@ export function PartnerInscribeForm({
 
         {/* Contact référent / Personne qui inscrit l'apprenant.
             Adaptatif selon le type de partenaire (Gilles 2026-05-22) :
-            - PRESCRIPTEUR : contact référent pédagogique obligatoire
-              (recevra la convention de formation)
+            - PRESCRIPTEUR : case à cocher pour activer le bloc référent.
+              Si décoché → le premier apprenant reçoit les documents.
             - OF : personne qui inscrit (workflow simplifié sans
               convention, juste contact pour rappel/SAV) */}
         <div className="pt-3 mt-2 border-t border-zinc-100 space-y-3">
@@ -282,89 +321,131 @@ export function PartnerInscribeForm({
                 : "Personne RH / responsable formation côté entreprise — distincte des apprenants. C'est elle qui recevra la convention de formation et les documents administratifs."}
             </p>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-bold text-zinc-700 mb-1">
-                Prénom{" "}
-                {partnerType === "prescripteur" && (
-                  <span className="text-rose-500">*</span>
-                )}
-              </label>
+
+          {/* Toggle prescripteur : avez-vous un référent pédagogique ? */}
+          {partnerType === "prescripteur" && (
+            <label className="flex items-start gap-2 cursor-pointer p-2 rounded-md hover:bg-zinc-50">
               <input
-                type="text"
-                value={contact.firstName}
-                onChange={(e) =>
-                  setContact((c) => ({ ...c, firstName: e.target.value }))
-                }
-                required={partnerType === "prescripteur"}
-                className="w-full h-9 rounded-md border border-zinc-300 px-3 text-sm"
+                type="checkbox"
+                checked={hasReferent}
+                onChange={(e) => setHasReferent(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-zinc-300 text-cyan-600"
               />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-zinc-700 mb-1">
-                Nom{" "}
-                {partnerType === "prescripteur" && (
-                  <span className="text-rose-500">*</span>
-                )}
-              </label>
-              <input
-                type="text"
-                value={contact.lastName}
-                onChange={(e) =>
-                  setContact((c) => ({ ...c, lastName: e.target.value }))
-                }
-                required={partnerType === "prescripteur"}
-                className="w-full h-9 rounded-md border border-zinc-300 px-3 text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-zinc-700 mb-1">
-                Email{" "}
-                {partnerType === "prescripteur" && (
-                  <span className="text-rose-500">*</span>
-                )}
-              </label>
-              <input
-                type="email"
-                value={contact.email}
-                onChange={(e) =>
-                  setContact((c) => ({ ...c, email: e.target.value }))
-                }
-                required={partnerType === "prescripteur"}
-                className="w-full h-9 rounded-md border border-zinc-300 px-3 text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-zinc-700 mb-1">
-                Téléphone
-              </label>
-              <input
-                type="text"
-                value={contact.phone}
-                onChange={(e) =>
-                  setContact((c) => ({ ...c, phone: e.target.value }))
-                }
-                placeholder="06 …"
-                className="w-full h-9 rounded-md border border-zinc-300 px-3 text-sm"
-              />
-            </div>
-            {partnerType === "prescripteur" && (
-              <div className="sm:col-span-2">
+              <span className="text-xs text-zinc-700 leading-relaxed">
+                <strong>Renseigner un référent pédagogique</strong>{" "}
+                (recommandé)
+                <span className="block text-[11px] text-zinc-500">
+                  Si décoché, le <strong>premier apprenant</strong> de la
+                  liste recevra à sa place la convention, la convocation
+                  et les autres documents administratifs.
+                </span>
+              </span>
+            </label>
+          )}
+
+          {/* Bloc champs référent : visible si OF (optionnel) OU si
+              prescripteur ET case cochée. */}
+          {(partnerType === "of" || hasReferent) && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
                 <label className="block text-xs font-bold text-zinc-700 mb-1">
-                  Fonction
+                  Prénom{" "}
+                  {referentEnabled && (
+                    <span className="text-rose-500">*</span>
+                  )}
                 </label>
                 <input
                   type="text"
-                  value={contact.role}
+                  value={contact.firstName}
                   onChange={(e) =>
-                    setContact((c) => ({ ...c, role: e.target.value }))
+                    setContact((c) => ({ ...c, firstName: e.target.value }))
                   }
-                  placeholder="Ex : Responsable formation"
+                  required={referentEnabled}
                   className="w-full h-9 rounded-md border border-zinc-300 px-3 text-sm"
                 />
               </div>
-            )}
-          </div>
+              <div>
+                <label className="block text-xs font-bold text-zinc-700 mb-1">
+                  Nom{" "}
+                  {referentEnabled && (
+                    <span className="text-rose-500">*</span>
+                  )}
+                </label>
+                <input
+                  type="text"
+                  value={contact.lastName}
+                  onChange={(e) =>
+                    setContact((c) => ({ ...c, lastName: e.target.value }))
+                  }
+                  required={referentEnabled}
+                  className="w-full h-9 rounded-md border border-zinc-300 px-3 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-zinc-700 mb-1">
+                  Email{" "}
+                  {referentEnabled && (
+                    <span className="text-rose-500">*</span>
+                  )}
+                </label>
+                <input
+                  type="email"
+                  value={contact.email}
+                  onChange={(e) =>
+                    setContact((c) => ({ ...c, email: e.target.value }))
+                  }
+                  required={referentEnabled}
+                  className="w-full h-9 rounded-md border border-zinc-300 px-3 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-zinc-700 mb-1">
+                  Téléphone
+                </label>
+                <input
+                  type="text"
+                  value={contact.phone}
+                  onChange={(e) =>
+                    setContact((c) => ({ ...c, phone: e.target.value }))
+                  }
+                  placeholder="06 …"
+                  className="w-full h-9 rounded-md border border-zinc-300 px-3 text-sm"
+                />
+              </div>
+              {partnerType === "prescripteur" && (
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-bold text-zinc-700 mb-1">
+                    Fonction
+                  </label>
+                  <input
+                    type="text"
+                    value={contact.role}
+                    onChange={(e) =>
+                      setContact((c) => ({ ...c, role: e.target.value }))
+                    }
+                    placeholder="Ex : Responsable formation"
+                    className="w-full h-9 rounded-md border border-zinc-300 px-3 text-sm"
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Encart d'avertissement : aucun référent côté prescripteur */}
+          {partnerType === "prescripteur" && !hasReferent && (
+            <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 flex items-start gap-2">
+              <Info className="h-4 w-4 text-amber-700 shrink-0 mt-0.5" />
+              <div className="text-[11px] text-amber-900 leading-relaxed">
+                <strong>Aucun référent renseigné.</strong> Le{" "}
+                <strong>premier apprenant</strong> de la liste recevra
+                automatiquement la <strong>convention</strong>, la{" "}
+                <strong>convocation</strong>, l&apos;<strong>attestation
+                </strong> et les autres documents administratifs.
+                <br />
+                Pensez à le placer en haut de la liste.
+              </div>
+            </div>
+          )}
         </div>
       </section>
 
@@ -393,10 +474,26 @@ export function PartnerInscribeForm({
             key={l.uid}
             className="rounded-lg border border-zinc-200 p-4 space-y-3 bg-zinc-50/40"
           >
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-wider text-zinc-600">
-                Apprenant {idx + 1}
-              </span>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-bold uppercase tracking-wider text-zinc-600">
+                  Apprenant {idx + 1}
+                </span>
+                {/* Badge : le premier apprenant recevra tous les
+                    documents si aucun référent n'a été renseigné
+                    (prescripteur uniquement). */}
+                {idx === 0 &&
+                  partnerType === "prescripteur" &&
+                  !hasReferent && (
+                    <span
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 text-[10px] font-bold"
+                      title="À défaut de référent pédagogique, c'est cet apprenant qui recevra la convention, la convocation et tous les autres documents administratifs."
+                    >
+                      <Mail className="h-3 w-3" />
+                      Recevra tous les documents
+                    </span>
+                  )}
+              </div>
               {learners.length > 1 && (
                 <button
                   type="button"
@@ -615,7 +712,11 @@ export function PartnerInscribeForm({
         {!canSubmit && (
           <p className="text-[11px] text-zinc-600 mt-2">
             Remplissez les champs obligatoires (SIRET, raison sociale,
-            prénom/nom/email pour chaque apprenant) pour activer le bouton.
+            prénom/nom/email pour chaque apprenant
+            {referentEnabled
+              ? " et pour le référent pédagogique"
+              : ""}
+            ) pour activer le bouton.
           </p>
         )}
       </section>

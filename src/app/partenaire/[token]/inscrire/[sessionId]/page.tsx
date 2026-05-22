@@ -8,7 +8,10 @@ import {
   Euro,
 } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { computeEffectivePartnerPrice } from "@/lib/portal/partner-pricing";
+import {
+  computeEffectivePartnerPrice,
+  loadOrgPartnerDefaults,
+} from "@/lib/portal/partner-pricing";
 import { resolvePartnerContext } from "../../_resolve";
 import { PartnerInscribeForm } from "./_form-client";
 
@@ -97,6 +100,10 @@ export default async function PartnerInscribePage({
     .eq("formation_id", formation.id)
     .maybeSingle<{ unit_price_ht: string | number }>();
 
+  const orgDefaults = await loadOrgPartnerDefaults(
+    supabase,
+    ctx.company.organization_id,
+  );
   const effective = computeEffectivePartnerPrice({
     partnerType: ctx.company.type,
     dailyRateDistancielHt: ctx.company.daily_rate_distanciel_ht,
@@ -110,6 +117,7 @@ export default async function PartnerInscribePage({
       | "distanciel"
       | "hybride"
       | null,
+    ...orgDefaults,
   });
 
   if (effective.price === null) {

@@ -66,9 +66,13 @@ export async function upsertPartnerPrice(
  *   1) Override spécifique (`partner_pricing`) → utilise le prix override
  *   2) Sinon : daily_rate × duration_days (selon la modalité), pour OF
  *      ET prescripteur. Modèle harmonisé depuis 2026-05-18.
- *   3) Fallback OF legacy : quiz_unit_price (forfait par apprenant) si
+ *   3) NOUVEAU (Option A — 2026-05-22) : tarif par défaut au niveau
+ *      organisation (organization_pricing_defaults.partner_*_per_day_ht)
+ *      selon partnerType × modalité. Évite la saisie manuelle sur
+ *      chaque société partenaire.
+ *   4) Fallback OF legacy : quiz_unit_price (forfait par apprenant) si
  *      l'OF n'a pas encore migré vers les tarifs jour.
- *   4) Sinon → null (l'UI affichera "Nous consulter")
+ *   5) Sinon → null (l'UI affichera "Nous consulter")
  */
 export type PartnerType = "of" | "prescripteur";
 
@@ -97,6 +101,11 @@ export function computeEffectivePartnerPrice(input: {
   durationHours: number | null;
   /** Modalité de la formation, pour choisir le bon tarif jour. */
   modality: "presentiel" | "distanciel" | "hybride" | null;
+  /** Tarifs par défaut au niveau organisation (Option A — 2026-05-22). */
+  orgDefaultOfDistancielHt?: number | null;
+  orgDefaultOfPresentielHt?: number | null;
+  orgDefaultPrescripteurDistancielHt?: number | null;
+  orgDefaultPrescripteurPresentielHt?: number | null;
 }): EffectivePriceResult {
   // 1) Override
   if (typeof input.overrideHt === "number" && Number.isFinite(input.overrideHt)) {
@@ -148,7 +157,66 @@ export function computeEffectivePartnerPrice(input: {
     }
   }
 
-  // 3) Fallback OF legacy : forfait quiz par apprenant (rétrocompat
+  // 3) Tarif par défaut au niveau organisation (Option A — 2026-05-22).
+  //    Permet à un admin de définir un tarif générique pour TOUS les OF
+  //    (ou TOUS les prescripteurs) sans avoir à saisir chaque société.
+  let orgDaily: number | null | undefined = null;
+  let orgLabel = "";
+  if (input.partnerType === "of") {
+    if (input.modality === "presentiel") {
+      orgDaily = input.orgDefaultOfPresentielHt;
+      orgLabel = "présentiel — défaut OF";
+    } else if (input.modality === "distanciel") {
+      orgDaily = input.orgDefaultOfDistancielHt;
+      orgLabel = "distanciel — défaut OF";
+    } else if (input.modality === "hybride") {
+      orgDaily =
+        input.orgDefaultOfPresentielHt ?? input.orgDefaultOfDistancielHt;
+      orgLabel = "hybride — défaut OF";
+    } else {
+      orgDaily =
+        input.orgDefaultOfDistancielHt ?? input.orgDefaultOfPresentielHt;
+      orgLabel = "défaut OF";
+    }
+  } else {
+    // prescripteur
+    if (input.modality === "presentiel") {
+      orgDaily = input.orgDefaultPrescripteurPresentielHt;
+      orgLabel = "présentiel — défaut prescripteur";
+    } else if (input.modality === "distanciel") {
+      orgDaily = input.orgDefaultPrescripteurDistancielHt;
+      orgLabel = "distanciel — défaut prescripteur";
+    } else if (input.modality === "hybride") {
+      orgDaily =
+        input.orgDefaultPrescripteurPresentielHt ??
+        input.orgDefaultPrescripteurDistancielHt;
+      orgLabel = "hybride — défaut prescripteur";
+    } else {
+      orgDaily =
+        input.orgDefaultPrescripteurDistancielHt ??
+        input.orgDefaultPrescripteurPresentielHt;
+      orgLabel = "défaut prescripteur";
+    }
+  }
+  if (typeof orgDaily === "number" && Number.isFinite(orgDaily) && orgDaily > 0) {
+    let days = input.durationDays;
+    if (!days && input.durationHours) {
+      days = input.durationHours / 7;
+    }
+    if (days && days > 0) {
+      const total = Math.round(orgDaily * days * 100) / 100;
+      const daysLabel = Number.isInteger(days)
+        ? `${days} j`
+        : `${days.toFixed(1)} j`;
+      return {
+        price: total,
+        source: "auto",
+        explain: `${orgDaily.toFixed(2)} € × ${daysLabel} (${orgLabel})`,
+      };
+    }
+  }
+
+  // 4) Fallback OF legacy : forfait quiz par apprenant (rétrocompat
   //    pour les OF qui n'ont pas encore renseigné les tarifs jour).
   if (
     input.partnerType === "of" &&
@@ -162,8 +230,63 @@ export function computeEffectivePartnerPrice(input: {
     };
   }
 
-  // 4) Rien
+  // 5) Rien
   return { price: null, source: null, explain: null };
+}
+
+/**
+ * Charge les tarifs partenaires par défaut au niveau organisation
+ * (Option A — 2026-05-22). Renvoie un objet vide si la ligne ou les
+ * colonnes n'existent pas encore (migration 0096 pas encore appliquée).
+ */
+export type OrgPartnerDefaults = {
+  orgDefaultOfDistancielHt: number | null;
+  orgDefaultOfPresentielHt: number | null;
+  orgDefaultPrescripteurDistancielHt: number | null;
+  orgDefaultPrescripteurPresentielHt: number | null;
+};
+
+export async function loadOrgPartnerDefaults(
+  supabase: SupabaseClient,
+  organizationId: string,
+): Promise<OrgPartnerDefaults> {
+  try {
+    const { data } = await supabase
+      .from("organization_pricing_defaults")
+      .select(
+        "partner_of_distanciel_per_day_ht, partner_of_presentiel_per_day_ht, partner_prescripteur_distanciel_per_day_ht, partner_prescripteur_presentiel_per_day_ht",
+      )
+      .eq("organization_id", organizationId)
+      .maybeSingle();
+    const row = data as {
+      partner_of_distanciel_per_day_ht: number | string | null;
+      partner_of_presentiel_per_day_ht: number | string | null;
+      partner_prescripteur_distanciel_per_day_ht: number | string | null;
+      partner_prescripteur_presentiel_per_day_ht: number | string | null;
+    } | null;
+    const toNum = (v: number | string | null | undefined): number | null => {
+      if (v === null || v === undefined) return null;
+      const n = typeof v === "number" ? v : Number(v);
+      return Number.isFinite(n) ? n : null;
+    };
+    return {
+      orgDefaultOfDistancielHt: toNum(row?.partner_of_distanciel_per_day_ht),
+      orgDefaultOfPresentielHt: toNum(row?.partner_of_presentiel_per_day_ht),
+      orgDefaultPrescripteurDistancielHt: toNum(
+        row?.partner_prescripteur_distanciel_per_day_ht,
+      ),
+      orgDefaultPrescripteurPresentielHt: toNum(
+        row?.partner_prescripteur_presentiel_per_day_ht,
+      ),
+    };
+  } catch {
+    return {
+      orgDefaultOfDistancielHt: null,
+      orgDefaultOfPresentielHt: null,
+      orgDefaultPrescripteurDistancielHt: null,
+      orgDefaultPrescripteurPresentielHt: null,
+    };
+  }
 }
 
 /** Suppression d'un tarif négocié. */

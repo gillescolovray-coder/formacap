@@ -135,7 +135,7 @@ export default async function SessionsListPage({
   let query = supabase
     .from("sessions")
     .select(
-      "*, formation:formations(id, title), trainer:trainers!trainer_id(id, first_name, last_name), prescriber:companies!prescriber_company_id(id, name), quiz:quiz_templates!quiz_template_id(id, title), location_obj:formation_locations!location_id(id, name, address, postal_code, city)",
+      "*, formation:formations(id, title, public_price_excl_tax, price_company), trainer:trainers!trainer_id(id, first_name, last_name), prescriber:companies!prescriber_company_id(id, name), quiz:quiz_templates!quiz_template_id(id, title), location_obj:formation_locations!location_id(id, name, address, postal_code, city)",
     );
 
   if (q) {
@@ -219,6 +219,10 @@ export default async function SessionsListPage({
   // Somme des montants HT des inscriptions (devis) par session — sert
   // de fallback si la session n'a pas de `amount_ht` saisi à la main.
   const inscriptionAmounts = new Map<string, number>();
+  // Map session_id → tarif public unitaire (formation.price_company en
+  // priorité, sinon formation.public_price_excl_tax). Déclarée ici (hors
+  // du if hasSessions) pour rester accessible dans le rendu JSX du total.
+  const publicUnitBySession = new Map<string, number>();
   // Formateurs déduits des jours (session_days.trainer_id) — un seul
   // par id, fusionnés au cas où plusieurs jours partagent un formateur.
   const dayTrainersBySession = new Map<
@@ -281,7 +285,7 @@ export default async function SessionsListPage({
       ? supabase
           .from("inscription_requests")
           .select(
-            "target_session_id, learner_id, prospect_email, prospect_first_name, prospect_last_name, prospect_phone, stage_id, company_name_freetext, quote_amount_ht, learner:learners(first_name, last_name, email, phone, job_title, company:companies(name))",
+            "target_session_id, learner_id, prospect_email, prospect_first_name, prospect_last_name, prospect_phone, stage_id, company_name_freetext, quote_amount_ht, via_partner_portal, learner:learners(first_name, last_name, email, phone, job_title, company:companies(name))",
           )
           .in("target_session_id", sessionIds)
       : Promise.resolve({ data: [] }),
@@ -359,15 +363,45 @@ export default async function SessionsListPage({
       });
     });
 
+    // Remplit la map tarif public déclarée plus haut (Gilles 2026-05-22).
+    for (const s of sessionsRaw ?? []) {
+      const f = (s as { formation?: { public_price_excl_tax?: number | null; price_company?: number | null } | null }).formation;
+      const pub =
+        (f?.price_company ?? null) !== null
+          ? Number(f?.price_company)
+          : (f?.public_price_excl_tax ?? null) !== null
+            ? Number(f?.public_price_excl_tax)
+            : null;
+      if (pub !== null && Number.isFinite(pub) && pub > 0) {
+        publicUnitBySession.set((s as { id: string }).id, pub);
+      }
+    }
+
     (inscriptions ?? []).forEach((r, idx) => {
       const id = r.target_session_id as string;
       if (!id) return;
       inscriptionCount.set(id, (inscriptionCount.get(id) ?? 0) + 1);
-      const amt = r.quote_amount_ht as number | null;
-      if (amt !== null && amt !== undefined && Number.isFinite(Number(amt))) {
+      // Pour les inscriptions VIA PORTAIL PARTENAIRE, on substitue le
+      // quote_amount_ht (tarif partenaire / facturation interne) par le
+      // tarif PUBLIC unitaire, afin que la vue liste sessions reflète le
+      // CA au tarif catalogue (Gilles 2026-05-22).
+      const viaPartner = (r as { via_partner_portal?: boolean | null }).via_partner_portal === true;
+      let amt: number | null = null;
+      if (viaPartner) {
+        const pub = publicUnitBySession.get(id);
+        if (pub !== undefined) amt = pub;
+        // Si pas de tarif public, on ne compte pas cette inscription
+        // (plutôt que d'afficher le tarif partenaire trompeur).
+      } else {
+        const raw = r.quote_amount_ht as number | null;
+        if (raw !== null && raw !== undefined && Number.isFinite(Number(raw))) {
+          amt = Number(raw);
+        }
+      }
+      if (amt !== null) {
         inscriptionAmounts.set(
           id,
-          (inscriptionAmounts.get(id) ?? 0) + Number(amt),
+          (inscriptionAmounts.get(id) ?? 0) + amt,
         );
       }
       const stage = r.stage_id ? stageById.get(r.stage_id as string) : null;
@@ -755,12 +789,34 @@ export default async function SessionsListPage({
                 }
                 const b = buckets.get(key)!;
                 b.count += 1;
-                // Même règle que la cellule : amount_ht prioritaire,
-                // sinon somme des devis d'inscription liés.
-                const amount =
-                  s.amount_ht !== null && s.amount_ht !== undefined
-                    ? Number(s.amount_ht)
-                    : (inscriptionAmounts.get(s.id) ?? 0);
+                // Règle Gilles 2026-05-22 : pour couvrir TOUTES les
+                // sessions dans le total, cascade :
+                //   1. amount_ht saisi sur la session (réel)
+                //   2. somme inscriptionAmounts (devis inscrits — déjà
+                //      avec tarif public substitué pour partenaires)
+                //   3. fallback CA potentiel = tarif public unitaire ×
+                //      nb d'inscrits (ou max_participants à défaut)
+                let amount = 0;
+                if (s.amount_ht !== null && s.amount_ht !== undefined) {
+                  amount = Number(s.amount_ht);
+                } else {
+                  const fromInscriptions = inscriptionAmounts.get(s.id) ?? 0;
+                  if (fromInscriptions > 0) {
+                    amount = fromInscriptions;
+                  } else {
+                    const pub = publicUnitBySession.get(s.id);
+                    if (pub && pub > 0) {
+                      const nb =
+                        totalPersons.get(s.id) ??
+                        enrollmentCount.get(s.id) ??
+                        inscriptionCount.get(s.id) ??
+                        0;
+                      const effectiveNb =
+                        nb > 0 ? nb : Number(s.max_participants ?? 0);
+                      if (effectiveNb > 0) amount = pub * effectiveNb;
+                    }
+                  }
+                }
                 if (amount > 0) {
                   b.totalHT += amount;
                   grandTotal += amount;
@@ -871,17 +927,29 @@ export default async function SessionsListPage({
                       }
                     }
 
-                    // Montant à afficher : amount_ht saisi sur la session
-                    // en priorité, sinon somme des quote_amount_ht des
-                    // inscriptions liées (devis).
+                    // Montant à afficher (Gilles 2026-05-22, révisé) :
+                    //   1. amount_ht saisi sur la session (total figé) →
+                    //      utilisé tel quel
+                    //   2. sinon : tarif PUBLIC unitaire × nb d'inscrits →
+                    //      donne le CA prévisionnel au tarif catalogue
+                    //   3. en dernier secours : somme des devis individuels
+                    //      (utile si tarif public formation non renseigné).
+                    const pubUnit = publicUnitBySession.get(s.id);
+                    const nbInscrits =
+                      totalPersons.get(s.id) ??
+                      enrollmentCount.get(s.id) ??
+                      inscriptionCount.get(s.id) ??
+                      0;
                     const inscriptionTotal =
                       inscriptionAmounts.get(s.id) ?? 0;
                     const displayedAmount =
                       s.amount_ht !== null && s.amount_ht !== undefined
                         ? Number(s.amount_ht)
-                        : inscriptionTotal > 0
-                          ? inscriptionTotal
-                          : null;
+                        : pubUnit && pubUnit > 0 && nbInscrits > 0
+                          ? pubUnit * nbInscrits
+                          : inscriptionTotal > 0
+                            ? inscriptionTotal
+                            : null;
                     const amountFromInscriptions =
                       (s.amount_ht === null || s.amount_ht === undefined) &&
                       inscriptionTotal > 0;

@@ -79,3 +79,62 @@ export async function saveTrainerObservation(
     `/sessions/${sessionId}/positionnement/${enrollmentId}?saved=1`,
   );
 }
+
+/**
+ * Variante object-based (sans redirect) appelée par le composant client
+ * TrainerObservationForm. Renvoie { ok } ou { ok:false, error }.
+ * (Gilles 2026-05-22, Sprint D Section 7)
+ */
+export async function saveTrainerObservationObject(
+  sessionId: string,
+  enrollmentId: string,
+  observation: PositioningTrainerObservation,
+): Promise<{ ok: boolean; error?: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Non authentifié." };
+
+  // Nettoyage défensif : adaptations doit être restreint aux valeurs valides.
+  const adaptations = (observation.adaptations ?? []).filter(
+    (v): v is TrainerAdaptationValue =>
+      VALID_ADAPTATION_VALUES.includes(v as TrainerAdaptationValue),
+  );
+  const payload: PositioningTrainerObservation = {
+    adaptations,
+    other_adaptation_text:
+      observation.other_adaptation_text?.trim() || undefined,
+    trainer_comment: observation.trainer_comment?.trim() || undefined,
+  };
+
+  const { data: existing } = await supabase
+    .from("positioning_responses")
+    .select("id")
+    .eq("enrollment_id", enrollmentId)
+    .maybeSingle<{ id: string }>();
+
+  const now = new Date().toISOString();
+  if (existing) {
+    const { error } = await supabase
+      .from("positioning_responses")
+      .update({
+        trainer_observation: payload,
+        trainer_filled_at: now,
+      })
+      .eq("id", existing.id);
+    if (error) return { ok: false, error: error.message };
+  } else {
+    const { error } = await supabase.from("positioning_responses").insert({
+      enrollment_id: enrollmentId,
+      data: {},
+      trainer_observation: payload,
+      trainer_filled_at: now,
+    });
+    if (error) return { ok: false, error: error.message };
+  }
+
+  revalidatePath(`/sessions/${sessionId}/positionnement/${enrollmentId}`);
+  revalidatePath(`/sessions/${sessionId}/positionnement`);
+  return { ok: true };
+}

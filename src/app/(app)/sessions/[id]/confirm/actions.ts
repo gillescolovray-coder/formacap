@@ -83,12 +83,47 @@ export async function confirmSession(
     }>();
 
   if (!session) return { ok: false, error: "Session introuvable." };
+
+  // Auto-promotion (Gilles 2026-05-22) : si la session n'a pas de
+  // trainer_id défini MAIS qu'un jour de session a un formateur assigné,
+  // on promeut ce formateur comme formateur principal de la session.
+  // Évite l'erreur "Aucun formateur assigné" alors qu'un formateur est
+  // bien défini au niveau des jours.
   if (!session.trainer_id || !session.trainer) {
-    return {
-      ok: false,
-      error:
-        "Aucun formateur n'est assigné à cette session. Veuillez d'abord en désigner un.",
-    };
+    const { data: dayTrainer } = await supabase
+      .from("session_days")
+      .select(
+        "trainer_id, trainer:trainers!trainer_id(id, first_name, last_name, email)",
+      )
+      .eq("session_id", sessionId)
+      .not("trainer_id", "is", null)
+      .order("day_date", { ascending: true })
+      .limit(1)
+      .maybeSingle<{
+        trainer_id: string | null;
+        trainer: {
+          id: string;
+          first_name: string;
+          last_name: string;
+          email: string | null;
+        } | null;
+      }>();
+
+    if (dayTrainer?.trainer_id && dayTrainer.trainer) {
+      // Promotion : on met à jour la session pour cohérence ultérieure.
+      await supabase
+        .from("sessions")
+        .update({ trainer_id: dayTrainer.trainer_id })
+        .eq("id", sessionId);
+      session.trainer_id = dayTrainer.trainer_id;
+      session.trainer = dayTrainer.trainer;
+    } else {
+      return {
+        ok: false,
+        error:
+          "Aucun formateur n'est assigné à cette session. Veuillez d'abord en désigner un (sur la fiche session ou sur au moins un jour).",
+      };
+    }
   }
 
   // 2. Passer le statut à 'confirmed' (et seulement si pas déjà confirmé)

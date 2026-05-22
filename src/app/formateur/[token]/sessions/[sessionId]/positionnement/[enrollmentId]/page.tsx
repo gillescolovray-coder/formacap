@@ -2,7 +2,12 @@ import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { PositioningResponseView } from "@/lib/positioning/response-view";
-import type { PositioningLearnerData } from "@/lib/positioning/types";
+import { TrainerObservationForm } from "@/lib/positioning/_trainer-observation-form";
+import type {
+  PositioningLearnerData,
+  PositioningTrainerObservation,
+} from "@/lib/positioning/types";
+import { saveTrainerObservationFromPortal } from "../../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -64,12 +69,16 @@ export default async function FormateurPositionnementDetailPage({
   // 3. Réponse positionnement
   const { data: response } = await supabase
     .from("positioning_responses")
-    .select("data, learner_signature, learner_submitted_at")
+    .select(
+      "data, learner_signature, learner_submitted_at, trainer_observation, trainer_filled_at",
+    )
     .eq("enrollment_id", enrollmentId)
     .maybeSingle<{
       data: PositioningLearnerData;
       learner_signature: string | null;
       learner_submitted_at: string;
+      trainer_observation: PositioningTrainerObservation | null;
+      trainer_filled_at: string | null;
     }>();
 
   const learnerName = [
@@ -117,14 +126,35 @@ export default async function FormateurPositionnementDetailPage({
             data={response.data}
             learnerSignatureDataUrl={response.learner_signature}
             submittedAt={response.learner_submitted_at}
+            trainerObservation={response.trainer_observation}
+            trainerFilledAt={response.trainer_filled_at}
           />
         ) : (
           <div className="rounded-xl bg-amber-50 border border-amber-200 p-6 text-center">
             <p className="text-sm text-amber-900 font-medium">
               ⏳ Test non encore rempli par cet apprenant.
             </p>
+            <p className="text-xs text-amber-700 mt-1">
+              Vous pouvez tout de même renseigner votre observation
+              pédagogique ci-dessous.
+            </p>
           </div>
         )}
+
+        {/* Section 7 — Observation formateur (Sprint D) */}
+        <TrainerObservationForm
+          initial={response?.trainer_observation ?? null}
+          initialFilledAt={response?.trainer_filled_at ?? null}
+          action={async (observation) => {
+            "use server";
+            return saveTrainerObservationFromPortal(
+              token,
+              sessionId,
+              enrollmentId,
+              observation,
+            );
+          }}
+        />
       </div>
     </div>
   );

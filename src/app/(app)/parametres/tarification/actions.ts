@@ -12,6 +12,12 @@ function parseAmount(raw: FormDataEntryValue | null): number | null {
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
+// Variante : 0 ou vide → null (désactivation du défaut)
+function parseAmountOrNull(raw: FormDataEntryValue | null): number | null {
+  const v = parseAmount(raw);
+  return v === null || v <= 0 ? null : v;
+}
+
 function parseInt0(raw: FormDataEntryValue | null): number | null {
   if (raw === null) return null;
   const s = String(raw).trim();
@@ -61,6 +67,20 @@ export async function updatePricingDefaults(formData: FormData) {
       parseAmount(formData.get("intra_distanciel_extra_per_day_ht")) ?? 150,
     intra_forfait_threshold:
       parseInt0(formData.get("intra_forfait_threshold")) ?? 4,
+    // Tarifs partenaires par défaut (Option A — Gilles 2026-05-22)
+    // 0 ou vide → null (désactivation du défaut)
+    partner_of_distanciel_per_day_ht: parseAmountOrNull(
+      formData.get("partner_of_distanciel_per_day_ht"),
+    ),
+    partner_of_presentiel_per_day_ht: parseAmountOrNull(
+      formData.get("partner_of_presentiel_per_day_ht"),
+    ),
+    partner_prescripteur_distanciel_per_day_ht: parseAmountOrNull(
+      formData.get("partner_prescripteur_distanciel_per_day_ht"),
+    ),
+    partner_prescripteur_presentiel_per_day_ht: parseAmountOrNull(
+      formData.get("partner_prescripteur_presentiel_per_day_ht"),
+    ),
   };
 
   // Upsert : la ligne existe déjà via la migration 0063 (backfill auto),

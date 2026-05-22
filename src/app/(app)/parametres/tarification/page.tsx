@@ -17,6 +17,11 @@ type PricingDefaults = {
   intra_distanciel_forfait_ht: number;
   intra_distanciel_extra_per_day_ht: number;
   intra_forfait_threshold: number;
+  // Tarifs par défaut partenaires (Gilles 2026-05-22 — Option A)
+  partner_of_distanciel_per_day_ht: number | null;
+  partner_of_presentiel_per_day_ht: number | null;
+  partner_prescripteur_distanciel_per_day_ht: number | null;
+  partner_prescripteur_presentiel_per_day_ht: number | null;
 };
 
 export default async function PricingSettingsPage({
@@ -48,7 +53,7 @@ export default async function PricingSettingsPage({
   const { data: defaults } = await supabase
     .from("organization_pricing_defaults")
     .select(
-      "inter_presentiel_per_day_ht, inter_distanciel_per_day_ht, intra_presentiel_forfait_ht, intra_presentiel_extra_per_day_ht, intra_distanciel_forfait_ht, intra_distanciel_extra_per_day_ht, intra_forfait_threshold",
+      "inter_presentiel_per_day_ht, inter_distanciel_per_day_ht, intra_presentiel_forfait_ht, intra_presentiel_extra_per_day_ht, intra_distanciel_forfait_ht, intra_distanciel_extra_per_day_ht, intra_forfait_threshold, partner_of_distanciel_per_day_ht, partner_of_presentiel_per_day_ht, partner_prescripteur_distanciel_per_day_ht, partner_prescripteur_presentiel_per_day_ht",
     )
     .eq("organization_id", orgId)
     .maybeSingle<PricingDefaults>();
@@ -60,6 +65,10 @@ export default async function PricingSettingsPage({
     intra_distanciel_forfait_ht: 990,
     intra_distanciel_extra_per_day_ht: 150,
     intra_forfait_threshold: 4,
+    partner_of_distanciel_per_day_ht: null,
+    partner_of_presentiel_per_day_ht: null,
+    partner_prescripteur_distanciel_per_day_ht: null,
+    partner_prescripteur_presentiel_per_day_ht: null,
   };
 
   return (
@@ -72,16 +81,6 @@ export default async function PricingSettingsPage({
           { label: "Paramètres", href: "/parametres/organisation" },
           { label: "Tarification" },
         ]}
-        actions={
-          <Link
-            href="/parametres/tarification/vue-globale"
-            className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md border border-amber-300 bg-amber-50 text-amber-800 text-sm font-medium hover:bg-amber-100"
-            title="Voir tous les tarifs : publics, catalogue, OF partenaires, prescripteurs, spécifiques"
-          >
-            <Eye className="h-4 w-4" />
-            Vue d&apos;ensemble des tarifications
-          </Link>
-        }
       />
       <ParametresNav />
 
@@ -199,6 +198,84 @@ export default async function PricingSettingsPage({
               />
             </div>
           </section>
+
+          {/* ===== OF PARTENAIRES ===== */}
+          <section className="rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 space-y-4">
+            <div className="flex items-center gap-2">
+              <Euro className="h-5 w-5 text-indigo-700" />
+              <h2 className="text-base font-bold">
+                Tarif par défaut OF partenaires
+              </h2>
+            </div>
+            <p className="text-xs text-slate-500">
+              Tarif HT <strong>par apprenant et par jour</strong> appliqué
+              automatiquement à tous les <strong>OF partenaires</strong> qui
+              n&apos;ont pas de tarif spécifique sur leur fiche entreprise.
+              Laissez vide pour forcer la saisie manuelle sur chaque société.
+            </p>
+            <div className="grid gap-4 md:grid-cols-2">
+              <PriceField
+                name="partner_of_distanciel_per_day_ht"
+                label="Distanciel — prix par jour / apprenant"
+                defaultValue={d.partner_of_distanciel_per_day_ht ?? 0}
+                hint="Ex. 60 € HT — laissez 0 pour désactiver le défaut"
+              />
+              <PriceField
+                name="partner_of_presentiel_per_day_ht"
+                label="Présentiel — prix par jour / apprenant"
+                defaultValue={d.partner_of_presentiel_per_day_ht ?? 0}
+                hint="Ex. 80 € HT — laissez 0 pour désactiver le défaut"
+              />
+            </div>
+          </section>
+
+          {/* ===== PRESCRIPTEURS ===== */}
+          <section className="rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 space-y-4">
+            <div className="flex items-center gap-2">
+              <Euro className="h-5 w-5 text-fuchsia-700" />
+              <h2 className="text-base font-bold">
+                Tarif par défaut prescripteurs
+              </h2>
+            </div>
+            <p className="text-xs text-slate-500">
+              Tarif HT <strong>par apprenant et par jour</strong> appliqué
+              automatiquement à tous les <strong>prescripteurs</strong> qui
+              n&apos;ont pas de tarif spécifique sur leur fiche entreprise.
+              Laissez vide pour forcer la saisie manuelle sur chaque société.
+            </p>
+            <div className="grid gap-4 md:grid-cols-2">
+              <PriceField
+                name="partner_prescripteur_distanciel_per_day_ht"
+                label="Distanciel — prix par jour / apprenant"
+                defaultValue={d.partner_prescripteur_distanciel_per_day_ht ?? 0}
+                hint="Ex. 250 € HT — laissez 0 pour désactiver le défaut"
+              />
+              <PriceField
+                name="partner_prescripteur_presentiel_per_day_ht"
+                label="Présentiel — prix par jour / apprenant"
+                defaultValue={d.partner_prescripteur_presentiel_per_day_ht ?? 0}
+                hint="Ex. 280 € HT — laissez 0 pour désactiver le défaut"
+              />
+            </div>
+          </section>
+
+          <div className="rounded-xl bg-amber-50/60 border border-amber-200 p-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-start gap-2.5">
+              <Eye className="h-4 w-4 text-amber-700 shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-900 leading-relaxed">
+                Besoin de voir <strong>tous les tarifs</strong> (publics,
+                catalogue, OF partenaires, prescripteurs, surcharges) sur
+                une même page de synthèse ?
+              </p>
+            </div>
+            <Link
+              href="/parametres/tarification/vue-globale"
+              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md border border-amber-300 bg-white text-amber-800 text-sm font-medium hover:bg-amber-100"
+            >
+              <Eye className="h-4 w-4" />
+              Vue d&apos;ensemble des tarifications
+            </Link>
+          </div>
 
           <div className="flex justify-end gap-2">
             <Button type="submit">

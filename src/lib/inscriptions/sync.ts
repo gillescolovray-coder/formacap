@@ -220,6 +220,12 @@ export async function createMirroredEnrollmentForRequest(
     target_session_id: string;
     learner_id: string;
     stage_key?: string | null;
+    /** Canal d'inscription (Fix Gilles 2026-05-22) : permet aux flux
+     *  portail partenaire (OF / prescripteur) de renseigner directement
+     *  la colonne SOURCE de l'onglet Participants. Si omis, valeur DB
+     *  par défaut ("direct" = CAP NUMERIQUE). */
+    inscription_channel?: "direct" | "prescripteur" | "of" | null;
+    inscription_channel_company_id?: string | null;
   },
 ): Promise<string | null> {
   const status = mapStageKeyToStatus(request.stage_key);
@@ -236,7 +242,7 @@ export async function createMirroredEnrollmentForRequest(
   // 1) Enrollment existant pour ce couple (session, learner) ?
   const { data: existing } = await supabase
     .from("session_enrollments")
-    .select("id, inscription_request_id, status")
+    .select("id, inscription_request_id, status, inscription_channel")
     .eq("session_id", request.target_session_id)
     .eq("learner_id", request.learner_id)
     .maybeSingle();
@@ -264,13 +270,31 @@ export async function createMirroredEnrollmentForRequest(
     const existingRank = currentStatusRank[existing.status as string] ?? 0;
     const newRank = currentStatusRank[status] ?? 0;
     const finalStatus = existingRank > newRank ? existing.status : status;
+    // Fix Gilles 2026-05-22 : on écrase le canal "direct" si on a une
+    // info plus précise (portail OF/prescripteur). Si l'admin a déjà
+    // choisi un autre canal manuellement, on respecte son choix.
+    const shouldOverrideChannel =
+      request.inscription_channel &&
+      request.inscription_channel !== "direct" &&
+      (existing as { inscription_channel?: string | null }).inscription_channel ===
+        "direct";
+    const updatePatch: Record<string, unknown> = {
+      inscription_request_id: request.id,
+      status: finalStatus,
+    };
+    if (shouldOverrideChannel) {
+      updatePatch.inscription_channel = request.inscription_channel;
+      updatePatch.inscription_channel_company_id =
+        request.inscription_channel_company_id ?? null;
+    }
     const needsUpdate =
       existing.inscription_request_id !== request.id ||
-      existing.status !== finalStatus;
+      existing.status !== finalStatus ||
+      shouldOverrideChannel;
     if (needsUpdate) {
       const { error: updErr } = await supabase
         .from("session_enrollments")
-        .update({ inscription_request_id: request.id, status: finalStatus })
+        .update(updatePatch)
         .eq("id", existing.id);
       if (updErr) {
         console.error(
@@ -283,14 +307,20 @@ export async function createMirroredEnrollmentForRequest(
   }
 
   // 2) Sinon, on en crée un.
+  const insertPayload: Record<string, unknown> = {
+    session_id: request.target_session_id,
+    learner_id: request.learner_id,
+    status,
+    inscription_request_id: request.id,
+  };
+  if (request.inscription_channel) {
+    insertPayload.inscription_channel = request.inscription_channel;
+    insertPayload.inscription_channel_company_id =
+      request.inscription_channel_company_id ?? null;
+  }
   const { data: created, error } = await supabase
     .from("session_enrollments")
-    .insert({
-      session_id: request.target_session_id,
-      learner_id: request.learner_id,
-      status,
-      inscription_request_id: request.id,
-    })
+    .insert(insertPayload)
     .select("id")
     .single();
 

@@ -308,6 +308,43 @@ export async function createSession(formData: FormData) {
   }
 
   const supabase = await createClient();
+
+  // Formateur par défaut (Gilles 2026-05-22) : si aucun formateur n'a été
+  // sélectionné dans le formulaire, on assigne par défaut le formateur dont
+  // l'email correspond à l'utilisateur connecté (créateur de la session).
+  // Sinon, on prend le SEUL formateur de l'organisation si elle n'en a
+  // qu'un. Évite l'erreur "Aucun formateur assigné" à la confirmation.
+  if (!payload.trainer_id) {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    const email = user?.email ?? null;
+    let defaultTrainerId: string | null = null;
+    if (email) {
+      const { data: byEmail } = await supabase
+        .from("trainers")
+        .select("id")
+        .eq("organization_id", organizationId)
+        .ilike("email", email)
+        .limit(1)
+        .maybeSingle<{ id: string }>();
+      if (byEmail?.id) defaultTrainerId = byEmail.id;
+    }
+    if (!defaultTrainerId) {
+      const { data: trainers } = await supabase
+        .from("trainers")
+        .select("id")
+        .eq("organization_id", organizationId)
+        .limit(2);
+      if (trainers && trainers.length === 1) {
+        defaultTrainerId = trainers[0].id as string;
+      }
+    }
+    if (defaultTrainerId) {
+      payload.trainer_id = defaultTrainerId;
+    }
+  }
+
   const { data, error } = await supabase
     .from("sessions")
     .insert({

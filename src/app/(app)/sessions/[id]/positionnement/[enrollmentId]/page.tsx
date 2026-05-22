@@ -7,7 +7,12 @@ import { BackButton } from "@/components/back-button";
 import { SessionTabs } from "../../_session-tabs";
 import { SessionHeaderMeta } from "../../_session-header-meta";
 import { PositioningResponseView } from "@/lib/positioning/response-view";
-import type { PositioningLearnerData } from "@/lib/positioning/types";
+import { TrainerObservationForm } from "@/lib/positioning/_trainer-observation-form";
+import type {
+  PositioningLearnerData,
+  PositioningTrainerObservation,
+} from "@/lib/positioning/types";
+import { saveTrainerObservationObject } from "../actions";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -54,12 +59,16 @@ export default async function PositionnementDetailAdminPage({
 
   const { data: response } = await supabase
     .from("positioning_responses")
-    .select("data, learner_signature, learner_submitted_at")
+    .select(
+      "data, learner_signature, learner_submitted_at, trainer_observation, trainer_filled_at",
+    )
     .eq("enrollment_id", enrollmentId)
     .maybeSingle<{
       data: PositioningLearnerData;
       learner_signature: string | null;
       learner_submitted_at: string;
+      trainer_observation: PositioningTrainerObservation | null;
+      trainer_filled_at: string | null;
     }>();
 
   const learnerName = [
@@ -136,6 +145,8 @@ export default async function PositionnementDetailAdminPage({
             data={response.data}
             learnerSignatureDataUrl={response.learner_signature}
             submittedAt={response.learner_submitted_at}
+            trainerObservation={response.trainer_observation}
+            trainerFilledAt={response.trainer_filled_at}
           />
         ) : (
           <div className="rounded-xl bg-amber-50 border border-amber-200 p-6 text-center">
@@ -144,10 +155,27 @@ export default async function PositionnementDetailAdminPage({
             </p>
             <p className="text-xs text-amber-700 mt-1">
               Il pourra le compléter depuis son portail (QR sur sa
-              convocation).
+              convocation). Vous pouvez tout de même renseigner votre
+              observation pédagogique ci-dessous.
             </p>
           </div>
         )}
+
+        {/* Formulaire Section 7 — Observation formateur (Sprint D).
+            Toujours visible côté admin (même si test apprenant pas
+            encore rempli). */}
+        <TrainerObservationForm
+          initial={response?.trainer_observation ?? null}
+          initialFilledAt={response?.trainer_filled_at ?? null}
+          action={async (observation) => {
+            "use server";
+            return saveTrainerObservationObject(
+              id,
+              enrollmentId,
+              observation,
+            );
+          }}
+        />
       </div>
     </>
   );

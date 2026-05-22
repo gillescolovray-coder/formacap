@@ -3,6 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  TRAINER_ADAPTATIONS,
+  type PositioningTrainerObservation,
+  type TrainerAdaptationValue,
+} from "@/lib/positioning/types";
+
+const VALID_TRAINER_ADAPTATIONS = TRAINER_ADAPTATIONS.map((a) => a.value);
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 Mo
 const ALLOWED_TYPES = [
@@ -431,5 +438,73 @@ export async function signAttendanceAsTrainer(params: {
   }
 
   revalidatePath(`/formateur/${token}/sessions/${sessionId}`);
+  return { ok: true };
+}
+
+/**
+ * Sprint D Section 7 — Observation formateur sur un test de positionnement.
+ * Auth via token portail formateur (pas de session Supabase).
+ * (Gilles 2026-05-22)
+ */
+export async function saveTrainerObservationFromPortal(
+  token: string,
+  sessionId: string,
+  enrollmentId: string,
+  observation: PositioningTrainerObservation,
+): Promise<{ ok: boolean; error?: string }> {
+  const supabase = createAdminClient();
+  const ctx = await validateTrainerAccess(supabase, token, sessionId);
+  if (!ctx) return { ok: false, error: "Accès refusé." };
+
+  // Vérifier que l'enrollment appartient bien à cette session
+  const { data: enrollment } = await supabase
+    .from("session_enrollments")
+    .select("id, session_id")
+    .eq("id", enrollmentId)
+    .maybeSingle<{ id: string; session_id: string }>();
+  if (!enrollment || enrollment.session_id !== sessionId) {
+    return { ok: false, error: "Enrollment introuvable pour cette session." };
+  }
+
+  const adaptations = (observation.adaptations ?? []).filter(
+    (v): v is TrainerAdaptationValue =>
+      VALID_TRAINER_ADAPTATIONS.includes(v as TrainerAdaptationValue),
+  );
+  const payload: PositioningTrainerObservation = {
+    adaptations,
+    other_adaptation_text:
+      observation.other_adaptation_text?.trim() || undefined,
+    trainer_comment: observation.trainer_comment?.trim() || undefined,
+  };
+
+  const { data: existing } = await supabase
+    .from("positioning_responses")
+    .select("id")
+    .eq("enrollment_id", enrollmentId)
+    .maybeSingle<{ id: string }>();
+
+  const now = new Date().toISOString();
+  if (existing) {
+    const { error } = await supabase
+      .from("positioning_responses")
+      .update({
+        trainer_observation: payload,
+        trainer_filled_at: now,
+      })
+      .eq("id", existing.id);
+    if (error) return { ok: false, error: error.message };
+  } else {
+    const { error } = await supabase.from("positioning_responses").insert({
+      enrollment_id: enrollmentId,
+      data: {},
+      trainer_observation: payload,
+      trainer_filled_at: now,
+    });
+    if (error) return { ok: false, error: error.message };
+  }
+
+  revalidatePath(
+    `/formateur/${token}/sessions/${sessionId}/positionnement/${enrollmentId}`,
+  );
   return { ok: true };
 }

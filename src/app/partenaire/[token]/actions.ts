@@ -3,7 +3,10 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { computeEffectivePartnerPrice } from "@/lib/portal/partner-pricing";
+import {
+  computeEffectivePartnerPrice,
+  loadOrgPartnerDefaults,
+} from "@/lib/portal/partner-pricing";
 import { resolvePartnerContext } from "./_resolve";
 import {
   createMirroredEnrollmentForRequest,
@@ -125,6 +128,10 @@ export async function submitPartnerEnrollment(formData: FormData): Promise<
     .eq("formation_id", formationId)
     .maybeSingle<{ unit_price_ht: string | number }>();
 
+  const orgDefaults = await loadOrgPartnerDefaults(
+    supabase,
+    ctx.company.organization_id,
+  );
   const effective = computeEffectivePartnerPrice({
     partnerType: ctx.company.type,
     dailyRateDistancielHt: ctx.company.daily_rate_distanciel_ht,
@@ -138,6 +145,7 @@ export async function submitPartnerEnrollment(formData: FormData): Promise<
       | "distanciel"
       | "hybride"
       | null,
+    ...orgDefaults,
   });
 
   if (effective.price === null) {
@@ -204,6 +212,12 @@ export async function submitPartnerEnrollment(formData: FormData): Promise<
       stage_id: confirmedStageId,
       referrer_company_id: ctx.company.id,
       via_partner_portal: true,
+      // Fix Gilles 2026-05-22 : canal d'inscription = type du partenaire
+      // pour que la colonne SOURCE D'INSCRIPTION (onglets Convocations,
+      // Conventions, etc.) affiche directement « Via BATYS » au lieu de
+      // « CAP NUMERIQUE ».
+      inscription_channel: ctx.company.type === "of" ? "of" : "prescripteur",
+      inscription_channel_company_id: ctx.company.id,
       financing_mode: "employeur",
       quote_amount_ht: unitPriceHt,
       request_message: message || null,
@@ -220,11 +234,16 @@ export async function submitPartnerEnrollment(formData: FormData): Promise<
   }
 
   // 5) Enrollment miroir
+  // Renseigne explicitement le canal d'inscription pour que l'onglet
+  // Participants affiche « Via [nom du partenaire] » au lieu de
+  // « CAP NUMERIQUE (direct) » par défaut (fix Gilles 2026-05-22).
   await createMirroredEnrollmentForRequest(supabase, {
     id: request.id,
     target_session_id: sessionId,
     learner_id: learnerId,
     stage_key: "confirmed",
+    inscription_channel: ctx.company.type === "of" ? "of" : "prescripteur",
+    inscription_channel_company_id: ctx.company.id,
   });
 
   // 6) Trace pour Qualiopi : event timeline
@@ -435,27 +454,47 @@ export async function submitPartnerBatchEnrollmentForm(formData: FormData) {
   const ctx = await resolvePartnerContext(token);
   if (!ctx) return redirectError("Token invalide.");
 
-  // Validation contact référent : obligatoire UNIQUEMENT pour les
-  // prescripteurs (qui génèrent une convention). Pour les OF,
-  // workflow simplifié sans convention → optionnel.
-  // (Gilles 2026-05-22)
+  // Validation contact référent (Gilles 2026-05-22).
+  //
+  // PRESCRIPTEUR :
+  //   - Si le formulaire envoie referent_fallback_first_learner=1
+  //     (case "Renseigner un référent pédagogique" décochée), on
+  //     bascule sur le PREMIER APPRENANT comme destinataire des
+  //     documents (convention, convocation, etc.).
+  //   - Sinon, contact référent obligatoire (prénom, nom, email).
+  //
+  // OF : workflow simplifié sans convention → contact référent optionnel.
   const isPrescripteur = ctx.company.type === "prescripteur";
-  if (
+  const referentFallbackFirstLearner =
+    String(formData.get("referent_fallback_first_learner") ?? "") === "1";
+
+  if (isPrescripteur && referentFallbackFirstLearner) {
+    // On bascule sur le premier apprenant. La validation des
+    // apprenants a déjà été faite plus haut, donc on est sûr d'avoir
+    // au moins un apprenant valide.
+    const first = learners[0];
+    contactReferent = {
+      first_name: first.firstName.trim(),
+      last_name: first.lastName.trim(),
+      email: first.email.trim(),
+      phone: first.phone?.trim() || null,
+      role: "Apprenant — destinataire des documents",
+    };
+  } else if (
     isPrescripteur &&
     (!contactReferent?.first_name?.trim() ||
       !contactReferent?.last_name?.trim() ||
       !/^\S+@\S+\.\S+$/.test(contactReferent?.email ?? ""))
   ) {
     return redirectError(
-      "Contact référent (prénom, nom, email) obligatoire pour la convention.",
+      "Contact référent (prénom, nom, email) obligatoire, ou cochez la case pour faire recevoir les documents par le premier apprenant.",
     );
-  }
-  // OF : si le contact n'est pas saisi, on le met à null.
-  if (
+  } else if (
     !contactReferent?.first_name?.trim() ||
     !contactReferent?.last_name?.trim() ||
     !/^\S+@\S+\.\S+$/.test(contactReferent?.email ?? "")
   ) {
+    // OF avec contact partiellement rempli ou vide → on met à null.
     contactReferent = null;
   }
 
@@ -513,6 +552,10 @@ export async function submitPartnerBatchEnrollmentForm(formData: FormData) {
     .eq("company_id", ctx.company.id)
     .eq("formation_id", formationId)
     .maybeSingle<{ unit_price_ht: string | number }>();
+  const orgDefaultsBatch = await loadOrgPartnerDefaults(
+    supabase,
+    ctx.company.organization_id,
+  );
   const effective = computeEffectivePartnerPrice({
     partnerType: ctx.company.type,
     dailyRateDistancielHt: ctx.company.daily_rate_distanciel_ht,
@@ -526,6 +569,7 @@ export async function submitPartnerBatchEnrollmentForm(formData: FormData) {
       | "distanciel"
       | "hybride"
       | null,
+    ...orgDefaultsBatch,
   });
   if (effective.price === null) {
     return redirectError("Aucun tarif defini pour cette formation.");
@@ -629,6 +673,9 @@ export async function submitPartnerBatchEnrollmentForm(formData: FormData) {
       stage_id: confirmedStageId,
       referrer_company_id: ctx.company.id,
       via_partner_portal: true,
+      // Fix Gilles 2026-05-22 : voir commentaire similaire plus haut.
+      inscription_channel: ctx.company.type === "of" ? "of" : "prescripteur",
+      inscription_channel_company_id: ctx.company.id,
       financing_mode: financingMode,
       financing_details: financingDetails,
       quote_amount_ht: unitPriceHt,
@@ -670,6 +717,10 @@ export async function submitPartnerBatchEnrollmentForm(formData: FormData) {
       target_session_id: sessionId,
       learner_id: learnerId,
       stage_key: "confirmed",
+      // Fix Gilles 2026-05-22 : renseigne le canal pour que l'onglet
+      // Participants affiche « Via BATYS » et non « CAP NUMERIQUE ».
+      inscription_channel: ctx.company.type === "of" ? "of" : "prescripteur",
+      inscription_channel_company_id: ctx.company.id,
     });
     await supabase.from("inscription_events").insert({
       request_id: request.id,

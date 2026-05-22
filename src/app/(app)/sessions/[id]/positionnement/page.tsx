@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { BackButton } from "@/components/back-button";
 import { SessionTabs } from "../_session-tabs";
@@ -50,29 +51,76 @@ export default async function SessionPositionnementListPage({
     }>();
   if (!session) notFound();
 
-  // Inscriptions
+  // Inscriptions — on charge aussi email/téléphone/mobile + l'ID
+  // de la demande d'inscription (pour récupérer la source).
   const { data: enrollments } = await supabase
     .from("session_enrollments")
     .select(
-      "id, learner:learners(civility, first_name, last_name, company:companies(name))",
+      "id, inscription_request_id, learner:learners(civility, first_name, last_name, email, phone, mobile, company:companies(name))",
     )
     .eq("session_id", id);
 
-  const participants = ((enrollments ?? []) as unknown as Array<{
+  const rawEnrollments = (enrollments ?? []) as unknown as Array<{
     id: string;
+    inscription_request_id: string | null;
     learner: {
       civility: string | null;
       first_name: string | null;
       last_name: string | null;
+      email: string | null;
+      phone: string | null;
+      mobile: string | null;
       company: { name: string } | null;
     } | null;
-  }>).map((e) => ({
+  }>;
+
+  // Source d'inscription par enrollment (canal + nom partenaire)
+  // — Gilles 2026-05-22.
+  const requestIds = Array.from(
+    new Set(
+      rawEnrollments
+        .map((e) => e.inscription_request_id)
+        .filter((x): x is string => Boolean(x)),
+    ),
+  );
+  const channelByRequestId = new Map<string, string>();
+  const partnerNameByRequestId = new Map<string, string>();
+  if (requestIds.length > 0) {
+    const { data: reqs } = await supabase
+      .from("inscription_requests")
+      .select(
+        "id, inscription_channel, referrer:companies!inscription_channel_company_id(name)",
+      )
+      .in("id", requestIds);
+    for (const r of (reqs ?? []) as Array<{
+      id: string;
+      inscription_channel: string | null;
+      referrer:
+        | { name: string }
+        | Array<{ name: string }>
+        | null;
+    }>) {
+      channelByRequestId.set(r.id, r.inscription_channel ?? "direct");
+      const ref = Array.isArray(r.referrer) ? r.referrer[0] : r.referrer;
+      if (ref?.name) partnerNameByRequestId.set(r.id, ref.name);
+    }
+  }
+
+  const participants = rawEnrollments.map((e) => ({
     enrollmentId: e.id,
     fullName: [e.learner?.first_name, e.learner?.last_name]
       .filter(Boolean)
       .join(" "),
     civility: e.learner?.civility ?? null,
     companyName: e.learner?.company?.name ?? null,
+    email: e.learner?.email ?? null,
+    phone: e.learner?.mobile ?? e.learner?.phone ?? null,
+    channel: e.inscription_request_id
+      ? (channelByRequestId.get(e.inscription_request_id) ?? "direct")
+      : "direct",
+    partnerName: e.inscription_request_id
+      ? (partnerNameByRequestId.get(e.inscription_request_id) ?? null)
+      : null,
   }));
 
   const enrollmentIds = participants.map((p) => p.enrollmentId);
@@ -179,6 +227,7 @@ export default async function SessionPositionnementListPage({
                 <tr>
                   <th className="px-4 py-3">Apprenant</th>
                   <th className="px-4 py-3">Entreprise</th>
+                  <th className="px-4 py-3">Source d&apos;inscription</th>
                   <th className="px-4 py-3">Statut</th>
                   <th className="px-4 py-3">Niveau déclaré</th>
                   <th className="px-4 py-3">Alerte</th>
@@ -188,14 +237,67 @@ export default async function SessionPositionnementListPage({
               <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
                 {participants.map((p) => {
                   const pos = byEnrollment.get(p.enrollmentId);
+                  // Label SOURCE : nom du partenaire si OF/prescripteur,
+                  // sinon label générique. (Gilles 2026-05-22)
+                  const channelLabel =
+                    (p.channel === "of" || p.channel === "prescripteur") &&
+                    p.partnerName
+                      ? p.partnerName
+                      : p.channel === "prescripteur"
+                        ? "Prescripteur"
+                        : p.channel === "of"
+                          ? "OF"
+                          : "CAP NUMERIQUE";
+                  const channelCls =
+                    p.channel === "prescripteur"
+                      ? "bg-blue-100 text-blue-800 border-blue-200"
+                      : p.channel === "of"
+                        ? "bg-violet-100 text-violet-800 border-violet-200"
+                        : "bg-emerald-100 text-emerald-800 border-emerald-200";
                   return (
                     <tr key={p.enrollmentId}>
-                      <td className="px-4 py-3 font-medium">
-                        {p.civility ? `${p.civility} ` : ""}
-                        {p.fullName}
+                      <td className="px-4 py-3 align-top">
+                        <div className="font-medium">
+                          {p.civility ? `${p.civility} ` : ""}
+                          {p.fullName}
+                        </div>
+                        {(p.email || p.phone) && (
+                          <div className="text-[11px] text-zinc-500 mt-0.5 space-y-0.5">
+                            {p.email && (
+                              <div className="truncate">
+                                <a
+                                  href={`mailto:${p.email}`}
+                                  className="hover:text-cyan-700 hover:underline"
+                                >
+                                  ✉ {p.email}
+                                </a>
+                              </div>
+                            )}
+                            {p.phone && (
+                              <div className="tabular-nums">
+                                <a
+                                  href={`tel:${p.phone}`}
+                                  className="hover:text-cyan-700 hover:underline"
+                                >
+                                  ☎ {p.phone}
+                                </a>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </td>
-                      <td className="px-4 py-3 text-zinc-600">
+                      <td className="px-4 py-3 text-zinc-600 align-top">
                         {p.companyName ?? "—"}
+                      </td>
+                      <td className="px-4 py-3 align-top">
+                        <span
+                          className={cn(
+                            "inline-block px-1.5 py-0.5 rounded text-[10px] font-bold border whitespace-nowrap",
+                            channelCls,
+                          )}
+                        >
+                          {channelLabel}
+                        </span>
                       </td>
                       <td className="px-4 py-3">
                         {pos ? (

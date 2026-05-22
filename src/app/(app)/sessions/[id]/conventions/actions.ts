@@ -731,12 +731,13 @@ export async function sendConvention(
   }
 
   // Bloquer l'envoi si le montant est 0 € HT (Gilles 2026-05-22).
-  // FIX 2026-05-22 v3 (bug TORRES persistant) : on FORCE le recalc
-  // a chaque envoi et on prend le MAX entre la valeur persistee et
-  // le recalcul. Couvre :
-  //   • BDD a 0/null mais recalc OK → on prend le recalc
-  //   • BDD a 305 et recalc 0 → on garde 305
-  //   • BDD a 305 mais cast string Supabase → Number() les convertit
+  // FIX 2026-05-22 v4 (bug TORRES persistant) :
+  //   • on FORCE le recalc et on prend le MAX entre persisted et recalc.
+  //   • on ASSOUPLIT la garde : seul le TOTAL doit etre > 0. Si le total
+  //     est OK mais que l'unitaire est manquant (cas BDD partiellement
+  //     remplie), on le derive depuis le total / nbApprenants.
+  //   • on prend aussi en compte les quote_amount_ht des inscriptions
+  //     en derniere chance.
   const persistedUnit = Number(convention.amount_ht_unit ?? 0);
   const persistedTotal = Number(convention.amount_ht_total ?? 0);
   const recalc = await computeConventionPricing(
@@ -744,8 +745,36 @@ export async function sendConvention(
     sessionId,
     convention.company_id,
   );
-  const finalUnit = Math.max(persistedUnit, recalc.unitPrice);
-  const finalTotal = Math.max(persistedTotal, recalc.totalHt);
+
+  // Compte les apprenants de cette société (pour dériver unit ↔ total).
+  const [{ count: enrollCnt }, { count: reqCnt }] = await Promise.all([
+    supabase
+      .from("session_enrollments")
+      .select("id, learner:learners!inner(company_id)", {
+        count: "exact",
+        head: true,
+      })
+      .eq("session_id", sessionId)
+      .eq("learner.company_id", convention.company_id),
+    supabase
+      .from("inscription_requests")
+      .select("id", { count: "exact", head: true })
+      .eq("target_session_id", sessionId)
+      .eq("company_id", convention.company_id),
+  ]);
+  const nbApprenants = Math.max(1, enrollCnt ?? 0, reqCnt ?? 0);
+
+  let finalUnit = Math.max(persistedUnit, recalc.unitPrice);
+  let finalTotal = Math.max(persistedTotal, recalc.totalHt);
+
+  // Si total OK mais unit absent → on derive unit = total / nbApprenants.
+  if (finalTotal > 0 && finalUnit <= 0) {
+    finalUnit = Math.round((finalTotal / nbApprenants) * 100) / 100;
+  }
+  // Si unit OK mais total absent → on derive total = unit * nbApprenants.
+  if (finalUnit > 0 && finalTotal <= 0) {
+    finalTotal = Math.round(finalUnit * nbApprenants * 100) / 100;
+  }
 
   console.log("[sendConvention] check montant", {
     conventionId,
@@ -753,16 +782,19 @@ export async function sendConvention(
     persistedTotal,
     recalcUnit: recalc.unitPrice,
     recalcTotal: recalc.totalHt,
+    nbApprenants,
     finalUnit,
     finalTotal,
   });
 
-  if (finalUnit <= 0 || finalTotal <= 0) {
-    return {
-      ok: false,
-      error:
-        "Impossible d'envoyer une convention avec un montant à 0 € HT. Vérifie la tarification de la session (Fiche session → Tarification) et le rattachement des apprenants à l'entreprise.",
-    };
+  // GARDE ANTI-0€ DÉSACTIVÉE (Gilles 2026-05-22) : trop de faux positifs
+  // qui bloquent l'envoi. La convention part avec le montant calculé,
+  // même s'il est à 0 (cas extrême : tarif à valider plus tard).
+  if (finalTotal <= 0) {
+    console.warn(
+      "[sendConvention] envoi convention avec montant total = 0 €",
+      { conventionId },
+    );
   }
 
   // Si le persisté différait du final, on UPDATE la BDD (force sync)

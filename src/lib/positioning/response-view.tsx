@@ -12,6 +12,7 @@ import {
   MASTERY_OPTIONS,
   PRACTICE_OPTIONS,
   PREREQ_OPTIONS,
+  TRAINER_ADAPTATIONS,
   type AdequacyValue,
   type EquipmentValue,
   type ExpectationValue,
@@ -19,8 +20,10 @@ import {
   type MasteryCriteriaKey,
   type MasteryValue,
   type PositioningLearnerData,
+  type PositioningTrainerObservation,
   type PracticeValue,
   type PrereqValue,
+  type TrainerAdaptationValue,
 } from "./types";
 
 function lookup<T extends string>(
@@ -40,10 +43,15 @@ export function PositioningResponseView({
   data,
   learnerSignatureDataUrl,
   submittedAt,
+  trainerObservation,
+  trainerFilledAt,
 }: {
   data: PositioningLearnerData;
   learnerSignatureDataUrl?: string | null;
   submittedAt?: string;
+  /** Section 7 — observation formateur (Sprint D). Affichée si remplie. */
+  trainerObservation?: PositioningTrainerObservation | null;
+  trainerFilledAt?: string | null;
 }) {
   return (
     <div className="space-y-4">
@@ -192,6 +200,53 @@ export function PositioningResponseView({
           <CheckCircle2 className="inline h-3 w-3 text-emerald-600 mr-1" />
           Test envoyé le {new Date(submittedAt).toLocaleString("fr-FR")}
         </div>
+      )}
+
+      {/* Section 7 — Observation formateur (Sprint D). Affichée
+          uniquement si remplie. La saisie se fait via le formulaire
+          dédié (TrainerObservationForm), pas via ce composant lecture. */}
+      {trainerObservation && (
+        <section className="rounded-xl bg-violet-50/40 border border-violet-200 p-4 space-y-2">
+          <h3 className="font-bold text-sm text-zinc-900 flex items-center justify-between gap-2 flex-wrap">
+            <span>
+              <span className="text-violet-700">7.</span> Observation du
+              formateur
+            </span>
+            {trainerFilledAt && (
+              <span className="text-[11px] font-normal text-zinc-500">
+                Rempli le {new Date(trainerFilledAt).toLocaleDateString("fr-FR")}
+              </span>
+            )}
+          </h3>
+          {trainerObservation.adaptations &&
+            trainerObservation.adaptations.length > 0 && (
+              <Row label="Adaptations">
+                <ul className="list-disc ml-4 space-y-0.5">
+                  {trainerObservation.adaptations.map(
+                    (v: TrainerAdaptationValue) => (
+                      <li key={v}>
+                        {TRAINER_ADAPTATIONS.find((o) => o.value === v)
+                          ?.label ?? v}
+                        {v === "other" &&
+                          trainerObservation.other_adaptation_text && (
+                            <span className="text-zinc-600">
+                              {" "}— {trainerObservation.other_adaptation_text}
+                            </span>
+                          )}
+                      </li>
+                    ),
+                  )}
+                </ul>
+              </Row>
+            )}
+          {trainerObservation.trainer_comment && (
+            <Row label="Commentaire">
+              <p className="whitespace-pre-wrap">
+                {trainerObservation.trainer_comment}
+              </p>
+            </Row>
+          )}
+        </section>
       )}
     </div>
   );

@@ -40,6 +40,9 @@ type EnrollmentRow = {
   /** Nom de l'OF partenaire qui a inscrit cet apprenant (si applicable).
    *  Quand non null, l'OF gère lui-même la convocation/convention. */
   partner_of_name?: string | null;
+  /** Nom du partenaire (OF ou prescripteur) qui a fait l'inscription,
+   *  utilisé dans la colonne SOURCE D'INSCRIPTION. */
+  partner_name?: string | null;
 };
 
 function formatDate(iso: string) {
@@ -116,9 +119,10 @@ export default async function ConvocationsPage({
     ),
   );
   const partnerOfByRequestId = new Map<string, string>();
-  // Source d'inscription (canal) par request → affichée dans le tableau
-  // (Gilles 2026-05-22).
+  // Source d'inscription (canal + nom partenaire) par request →
+  // affichée dans la colonne SOURCE D'INSCRIPTION (Gilles 2026-05-22).
   const channelByRequestId = new Map<string, string>();
+  const partnerNameByRequestId = new Map<string, string>();
   if (requestIds.length > 0) {
     const { data: reqs } = await supabase
       .from("inscription_requests")
@@ -138,6 +142,9 @@ export default async function ConvocationsPage({
       const ref = Array.isArray(r.referrer) ? r.referrer[0] : r.referrer;
       if (r.referrer_company_id && ref?.type === "of") {
         partnerOfByRequestId.set(r.id, ref.name);
+      }
+      if (ref?.name) {
+        partnerNameByRequestId.set(r.id, ref.name);
       }
       channelByRequestId.set(r.id, r.inscription_channel ?? "direct");
     }
@@ -190,6 +197,9 @@ export default async function ConvocationsPage({
     channel: r.inscription_request_id
       ? (channelByRequestId.get(r.inscription_request_id) ?? "direct")
       : "direct",
+    partner_name: r.inscription_request_id
+      ? (partnerNameByRequestId.get(r.inscription_request_id) ?? null)
+      : null,
     referents: r.learner?.company_id
       ? (referentsByCompany.get(r.learner.company_id) ?? [])
       : [],
@@ -370,12 +380,18 @@ export default async function ConvocationsPage({
                     : undefined;
                   const phone = r.learner?.phone ?? null;
                   const mobile = r.learner?.mobile ?? null;
+                  // Label SOURCE : si le partenaire est connu (OF /
+                  // prescripteur), on affiche son NOM. Sinon, "CAP NUMERIQUE".
+                  // (Gilles 2026-05-22)
                   const channelLabel =
-                    r.channel === "prescripteur"
-                      ? "Prescripteur"
-                      : r.channel === "of"
-                        ? "OF"
-                        : "CAP NUMERIQUE";
+                    (r.channel === "of" || r.channel === "prescripteur") &&
+                    r.partner_name
+                      ? r.partner_name
+                      : r.channel === "prescripteur"
+                        ? "Prescripteur"
+                        : r.channel === "of"
+                          ? "OF"
+                          : "CAP NUMERIQUE";
                   const channelCls =
                     r.channel === "prescripteur"
                       ? "bg-blue-100 text-blue-800 border-blue-200"
@@ -459,12 +475,17 @@ export default async function ConvocationsPage({
                         )}
                       </td>
                       <td className="px-4 py-3">
+                        {/* Pour les inscriptions via OF partenaire, la
+                            convocation est à la charge de l'OF. On
+                            n'affiche plus de badge "Géré par X" ici car
+                            l'info est dans la colonne SOURCE D'INSCRIPTION
+                            (Gilles 2026-05-22). Statut neutre. */}
                         {r.partner_of_name ? (
                           <span
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-cyan-100 text-cyan-800 border border-cyan-200"
-                            title={`Géré par l'OF partenaire ${r.partner_of_name} — CAP NUMÉRIQUE n'envoie pas la convocation.`}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-zinc-100 text-zinc-600 border border-zinc-200"
+                            title={`La convocation est à la charge de l'OF partenaire ${r.partner_of_name}.`}
                           >
-                            Géré par {r.partner_of_name}
+                            À la charge de l&apos;OF
                           </span>
                         ) : isSent ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-800 border border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300">
