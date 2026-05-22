@@ -212,6 +212,7 @@ export default async function PartnerInscribePage({
         token={token}
         sessionId={sessionId}
         unitPriceHt={unitPriceHt}
+        partnerType={ctx.company.type as "of" | "prescripteur"}
       />
 
       <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-xs text-emerald-800 inline-flex items-start gap-2">

@@ -47,10 +47,15 @@ export function PartnerInscribeForm({
   token,
   sessionId,
   unitPriceHt,
+  partnerType,
 }: {
   token: string;
   sessionId: string;
   unitPriceHt: number;
+  /** Type du partenaire (OF vs prescripteur) — détermine le workflow.
+   *  Pour les OF : pas de convention → contact référent facultatif
+   *  et masqué par défaut. Pour les prescripteurs : obligatoire. */
+  partnerType: "of" | "prescripteur";
 }) {
   const [company, setCompany] = useState<CompanyForm>({
     siret: "",
@@ -257,23 +262,33 @@ export function PartnerInscribeForm({
           </div>
         </div>
 
-        {/* Contact référent pédagogique (recevra la convention) */}
+        {/* Contact référent / Personne qui inscrit l'apprenant.
+            Adaptatif selon le type de partenaire (Gilles 2026-05-22) :
+            - PRESCRIPTEUR : contact référent pédagogique obligatoire
+              (recevra la convention de formation)
+            - OF : personne qui inscrit (workflow simplifié sans
+              convention, juste contact pour rappel/SAV) */}
         <div className="pt-3 mt-2 border-t border-zinc-100 space-y-3">
           <div>
             <h4 className="text-xs font-bold text-zinc-900 uppercase tracking-wider inline-flex items-center gap-1.5">
               <User className="h-3.5 w-3.5 text-cyan-600" />
-              Contact référent pédagogique (recevra la convention)
+              {partnerType === "of"
+                ? "Personne qui inscrit l'apprenant"
+                : "Contact référent pédagogique (recevra la convention)"}
             </h4>
             <p className="text-[11px] text-zinc-500 mt-0.5">
-              Personne RH / responsable formation côté entreprise — distincte
-              des apprenants. C&apos;est elle qui recevra la convention
-              de formation et les documents administratifs.
+              {partnerType === "of"
+                ? "Vos coordonnées pour un contact éventuel (vous, en tant qu'organisme partenaire). Facultatif."
+                : "Personne RH / responsable formation côté entreprise — distincte des apprenants. C'est elle qui recevra la convention de formation et les documents administratifs."}
             </p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold text-zinc-700 mb-1">
-                Prénom <span className="text-rose-500">*</span>
+                Prénom{" "}
+                {partnerType === "prescripteur" && (
+                  <span className="text-rose-500">*</span>
+                )}
               </label>
               <input
                 type="text"
@@ -281,13 +296,16 @@ export function PartnerInscribeForm({
                 onChange={(e) =>
                   setContact((c) => ({ ...c, firstName: e.target.value }))
                 }
-                required
+                required={partnerType === "prescripteur"}
                 className="w-full h-9 rounded-md border border-zinc-300 px-3 text-sm"
               />
             </div>
             <div>
               <label className="block text-xs font-bold text-zinc-700 mb-1">
-                Nom <span className="text-rose-500">*</span>
+                Nom{" "}
+                {partnerType === "prescripteur" && (
+                  <span className="text-rose-500">*</span>
+                )}
               </label>
               <input
                 type="text"
@@ -295,13 +313,16 @@ export function PartnerInscribeForm({
                 onChange={(e) =>
                   setContact((c) => ({ ...c, lastName: e.target.value }))
                 }
-                required
+                required={partnerType === "prescripteur"}
                 className="w-full h-9 rounded-md border border-zinc-300 px-3 text-sm"
               />
             </div>
             <div>
               <label className="block text-xs font-bold text-zinc-700 mb-1">
-                Email (convention) <span className="text-rose-500">*</span>
+                Email{" "}
+                {partnerType === "prescripteur" && (
+                  <span className="text-rose-500">*</span>
+                )}
               </label>
               <input
                 type="email"
@@ -309,7 +330,7 @@ export function PartnerInscribeForm({
                 onChange={(e) =>
                   setContact((c) => ({ ...c, email: e.target.value }))
                 }
-                required
+                required={partnerType === "prescripteur"}
                 className="w-full h-9 rounded-md border border-zinc-300 px-3 text-sm"
               />
             </div>
@@ -327,20 +348,22 @@ export function PartnerInscribeForm({
                 className="w-full h-9 rounded-md border border-zinc-300 px-3 text-sm"
               />
             </div>
-            <div className="sm:col-span-2">
-              <label className="block text-xs font-bold text-zinc-700 mb-1">
-                Fonction
-              </label>
-              <input
-                type="text"
-                value={contact.role}
-                onChange={(e) =>
-                  setContact((c) => ({ ...c, role: e.target.value }))
-                }
-                placeholder="Ex : Responsable formation"
-                className="w-full h-9 rounded-md border border-zinc-300 px-3 text-sm"
-              />
-            </div>
+            {partnerType === "prescripteur" && (
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-bold text-zinc-700 mb-1">
+                  Fonction
+                </label>
+                <input
+                  type="text"
+                  value={contact.role}
+                  onChange={(e) =>
+                    setContact((c) => ({ ...c, role: e.target.value }))
+                  }
+                  placeholder="Ex : Responsable formation"
+                  className="w-full h-9 rounded-md border border-zinc-300 px-3 text-sm"
+                />
+              </div>
+            )}
           </div>
         </div>
       </section>

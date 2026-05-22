@@ -406,15 +406,10 @@ export async function submitPartnerBatchEnrollmentForm(formData: FormData) {
   if (financing.mode === "opco" && !financing.opco_name?.trim()) {
     return redirectError("Nom de l'OPCO obligatoire.");
   }
-  if (
-    !contactReferent?.first_name?.trim() ||
-    !contactReferent?.last_name?.trim() ||
-    !/^\S+@\S+\.\S+$/.test(contactReferent?.email ?? "")
-  ) {
-    return redirectError(
-      "Contact référent (prénom, nom, email) obligatoire pour la convention.",
-    );
-  }
+  // Note : la validation du contact référent dépend du type du
+  // partenaire (cf. plus bas, après resolvePartnerContext).
+  // Pour les OF : workflow simplifié (quiz only, pas de convention)
+  // → contact référent optionnel.
   // Sérialisation pour l'INSERT : mode + détails texte (nom OPCO +
   // subrogation oui/non). Permet à l'admin de lire l'info sans déplier.
   const financingMode: "employeur" | "opco" = financing.mode;
@@ -439,6 +434,30 @@ export async function submitPartnerBatchEnrollmentForm(formData: FormData) {
   // Resolve token + session
   const ctx = await resolvePartnerContext(token);
   if (!ctx) return redirectError("Token invalide.");
+
+  // Validation contact référent : obligatoire UNIQUEMENT pour les
+  // prescripteurs (qui génèrent une convention). Pour les OF,
+  // workflow simplifié sans convention → optionnel.
+  // (Gilles 2026-05-22)
+  const isPrescripteur = ctx.company.type === "prescripteur";
+  if (
+    isPrescripteur &&
+    (!contactReferent?.first_name?.trim() ||
+      !contactReferent?.last_name?.trim() ||
+      !/^\S+@\S+\.\S+$/.test(contactReferent?.email ?? ""))
+  ) {
+    return redirectError(
+      "Contact référent (prénom, nom, email) obligatoire pour la convention.",
+    );
+  }
+  // OF : si le contact n'est pas saisi, on le met à null.
+  if (
+    !contactReferent?.first_name?.trim() ||
+    !contactReferent?.last_name?.trim() ||
+    !/^\S+@\S+\.\S+$/.test(contactReferent?.email ?? "")
+  ) {
+    contactReferent = null;
+  }
 
   const supabase = createAdminClient();
 
@@ -595,35 +614,55 @@ export async function submitPartnerBatchEnrollmentForm(formData: FormData) {
     }
 
     // Inscription + enrollment miroir
-    const { data: request } = await supabase
+    // FIX Gilles 2026-05-22 : on capture l'erreur Supabase et on
+    // l'inclut dans le message renvoyé pour comprendre les echecs
+    // silencieux (contrainte FK, NOT NULL, etc.). Le contact_referent
+    // est optionnel pour les OF (workflow simplifie : pas de convention).
+    const insertPayload: Record<string, unknown> = {
+      organization_id: ctx.company.organization_id,
+      source: "partenaire",
+      source_details: `Portail partenaire — ${ctx.company.name}`,
+      learner_id: learnerId,
+      company_id: learnerCompanyId,
+      target_session_id: sessionId,
+      target_formation_id: formationId,
+      stage_id: confirmedStageId,
+      referrer_company_id: ctx.company.id,
+      via_partner_portal: true,
+      financing_mode: financingMode,
+      financing_details: financingDetails,
+      quote_amount_ht: unitPriceHt,
+      request_message: message || null,
+      contract_signed_at: new Date().toISOString(),
+      received_at: new Date().toISOString(),
+    };
+    // Le contact référent n'est inséré que s'il a été saisi (cas
+    // prescripteur). Pour les OF, le workflow est simplifié — pas de
+    // convention donc pas de référent. Voir le formulaire client qui
+    // adapte les champs selon le type.
+    if (contactReferent) {
+      insertPayload.contact_referent_first_name =
+        contactReferent.first_name.trim();
+      insertPayload.contact_referent_last_name =
+        contactReferent.last_name.trim();
+      insertPayload.contact_referent_email = contactReferent.email.trim();
+      insertPayload.contact_referent_phone = contactReferent.phone;
+      insertPayload.contact_referent_role = contactReferent.role;
+    }
+
+    const { data: request, error: insertErr } = await supabase
       .from("inscription_requests")
-      .insert({
-        organization_id: ctx.company.organization_id,
-        source: "partenaire",
-        source_details: `Portail partenaire — ${ctx.company.name}`,
-        learner_id: learnerId,
-        company_id: learnerCompanyId,
-        target_session_id: sessionId,
-        target_formation_id: formationId,
-        stage_id: confirmedStageId,
-        referrer_company_id: ctx.company.id,
-        via_partner_portal: true,
-        financing_mode: financingMode,
-        financing_details: financingDetails,
-        contact_referent_first_name: contactReferent.first_name.trim(),
-        contact_referent_last_name: contactReferent.last_name.trim(),
-        contact_referent_email: contactReferent.email.trim(),
-        contact_referent_phone: contactReferent.phone,
-        contact_referent_role: contactReferent.role,
-        quote_amount_ht: unitPriceHt,
-        request_message: message || null,
-        contract_signed_at: new Date().toISOString(),
-        received_at: new Date().toISOString(),
-      })
+      .insert(insertPayload)
       .select("id")
       .single<{ id: string }>();
-    if (!request) {
-      errors.push(`Echec inscription ${firstName} ${lastName}`);
+    if (insertErr || !request) {
+      console.error(
+        "[partenaire/actions] INSERT inscription_requests échec",
+        { firstName, lastName, error: insertErr?.message },
+      );
+      errors.push(
+        `Echec inscription ${firstName} ${lastName} : ${insertErr?.message ?? "inconnu"}`,
+      );
       continue;
     }
     await createMirroredEnrollmentForRequest(supabase, {
