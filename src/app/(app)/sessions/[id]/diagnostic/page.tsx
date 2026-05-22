@@ -1,7 +1,10 @@
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/page-header";
+import { Button } from "@/components/ui/button";
+import { Wrench } from "lucide-react";
 import { healEnrollmentsForSession } from "@/lib/inscriptions/sync";
+import { repairOrphanInscriptions } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -17,11 +20,14 @@ const UUID_REGEX =
  */
 export default async function SessionDiagnosticPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ repaired?: string; errors?: string }>;
 }) {
   const { id } = await params;
   if (!UUID_REGEX.test(id)) notFound();
+  const query = await searchParams;
 
   const supabase = await createClient();
   const {
@@ -84,6 +90,10 @@ export default async function SessionDiagnosticPage({
     if (e.learner_id) enrollMap.set(e.learner_id, e);
   }
 
+  // Compte des inscriptions orphelines (sans learner_id) → drive le bouton
+  const orphanCount = reqs.filter((r) => !r.learner_id).length;
+  const repairAction = repairOrphanInscriptions.bind(null, id);
+
   return (
     <div className="p-8 max-w-6xl space-y-6">
       <PageHeader
@@ -94,6 +104,53 @@ export default async function SessionDiagnosticPage({
           { label: "Diagnostic" },
         ]}
       />
+
+      {/* Bandeau résultat de réparation */}
+      {query.repaired && Number(query.repaired) > 0 && (
+        <div className="rounded-xl bg-emerald-50 border-2 border-emerald-300 p-4 text-sm text-emerald-900">
+          <strong>✓ Réparation effectuée :</strong> {query.repaired}{" "}
+          inscription{Number(query.repaired) > 1 ? "s" : ""} corrigée
+          {Number(query.repaired) > 1 ? "s" : ""}.
+        </div>
+      )}
+      {query.errors && (
+        <div className="rounded-xl bg-rose-50 border border-rose-300 p-4 text-xs text-rose-900">
+          <strong>Erreurs rencontrées :</strong>
+          <ul className="mt-1 list-disc list-inside">
+            {query.errors.split(" | ").map((e, i) => (
+              <li key={i}>{e}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Bouton de réparation si orphelins détectés */}
+      {orphanCount > 0 && (
+        <form action={repairAction}>
+          <div className="rounded-xl bg-amber-50 border-2 border-amber-300 p-4 flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-bold text-amber-900">
+                {orphanCount} inscription{orphanCount > 1 ? "s" : ""}{" "}
+                orpheline{orphanCount > 1 ? "s" : ""} détectée
+                {orphanCount > 1 ? "s" : ""}
+              </p>
+              <p className="text-xs text-amber-800 mt-1">
+                Ces inscriptions n&apos;ont pas de <code>learner_id</code>{" "}
+                et ne peuvent donc pas générer convention / convocation /
+                émargement. Cliquez ci-dessous pour créer les apprenants
+                manquants et les rattacher automatiquement.
+              </p>
+            </div>
+            <Button
+              type="submit"
+              className="bg-amber-600 hover:bg-amber-700 text-white shrink-0"
+            >
+              <Wrench className="h-4 w-4" />
+              Réparer maintenant
+            </Button>
+          </div>
+        </form>
+      )}
 
       {/* Résumé */}
       <div className="grid grid-cols-3 gap-4">

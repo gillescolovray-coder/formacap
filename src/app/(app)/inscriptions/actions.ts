@@ -625,6 +625,9 @@ async function processAdditionalLearners(
     if (!learnerId && (!firstName || !lastName)) continue;
 
     // Résolution du learner_id : existant, par email, ou création.
+    // FIX 2026-05-22 : on log les erreurs et on tente un fallback si la
+    // création échoue (le bug initial perdait silencieusement le learner_id
+    // → inscriptions orphelines invisibles dans Conventions/Convocations).
     let resolvedLearnerId: string | null = learnerId;
     if (!resolvedLearnerId && email) {
       const { data: byEmail } = await supabase
@@ -637,7 +640,7 @@ async function processAdditionalLearners(
       resolvedLearnerId = (byEmail?.id as string | null) ?? null;
     }
     if (!resolvedLearnerId) {
-      const { data: newLearner } = await supabase
+      const { data: newLearner, error: createErr } = await supabase
         .from("learners")
         .insert({
           organization_id: parent.organizationId,
@@ -653,9 +656,40 @@ async function processAdditionalLearners(
         })
         .select("id")
         .single();
-      resolvedLearnerId = (newLearner?.id as string | null) ?? null;
+      if (createErr) {
+        console.error(
+          "[processAdditionalLearners] échec création learner",
+          {
+            idx: i,
+            email,
+            firstName,
+            lastName,
+            error: createErr.message,
+          },
+        );
+        // Fallback : essaie de re-trouver par email (cas race condition
+        // avec contrainte unique sur email, par exemple).
+        if (email) {
+          const { data: retry } = await supabase
+            .from("learners")
+            .select("id")
+            .eq("organization_id", parent.organizationId)
+            .ilike("email", email)
+            .limit(1)
+            .maybeSingle();
+          resolvedLearnerId = (retry?.id as string | null) ?? null;
+        }
+      } else {
+        resolvedLearnerId = (newLearner?.id as string | null) ?? null;
+      }
     }
-    if (!resolvedLearnerId) continue;
+    if (!resolvedLearnerId) {
+      console.warn(
+        "[processAdditionalLearners] skip ligne sans learner_id résolu",
+        { idx: i, firstName, lastName, email },
+      );
+      continue;
+    }
 
     // Anti-doublon : déjà inscrit à cette session ?
     if (parent.targetSessionId) {
