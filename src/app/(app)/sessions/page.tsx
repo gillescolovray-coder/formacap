@@ -6,6 +6,7 @@ import {
   Calendar,
   CheckCircle2,
   Clock,
+  Info,
   Layers,
   ListChecks,
   Plus,
@@ -282,6 +283,7 @@ export default async function SessionsListPage({
     { count: upcomingCount },
     { count: currentCount },
     { count: pastCount },
+    { count: hiddenOldSessionsCount },
   ] = await Promise.all([
     hasSessions
       ? supabase
@@ -334,6 +336,17 @@ export default async function SessionsListPage({
       .from("sessions")
       .select("id", { count: "exact", head: true })
       .lt("end_date", today),
+    // Compteur des sessions terminees depuis > 30 jours (masquees par
+    // defaut — Gilles 2026-05-22).
+    supabase
+      .from("sessions")
+      .select("id", { count: "exact", head: true })
+      .lt(
+        "end_date",
+        new Date(Date.now() - 30 * 24 * 3600 * 1000)
+          .toISOString()
+          .slice(0, 10),
+      ),
   ]);
   const customStatuses = (customStatusesRaw ?? []) as SessionStatusDef[];
 
@@ -545,6 +558,33 @@ export default async function SessionsListPage({
       />
 
       <div className="p-8 space-y-4">
+        {/* Info masquage automatique des sessions > 30 jours
+            (Gilles 2026-05-22) : on alerte l'utilisateur quand des
+            sessions sont cachees, et on propose un raccourci. */}
+        {periodFilter === "" &&
+          !q &&
+          (hiddenOldSessionsCount ?? 0) > 0 && (
+            <div className="rounded-lg bg-cyan-50/60 dark:bg-cyan-950/20 border border-cyan-200 dark:border-cyan-900 p-3 flex items-start gap-2.5">
+              <Info className="h-4 w-4 text-cyan-700 dark:text-cyan-400 shrink-0 mt-0.5" />
+              <p className="text-xs text-cyan-900 dark:text-cyan-200 leading-relaxed">
+                <strong>{hiddenOldSessionsCount}</strong> session
+                {(hiddenOldSessionsCount ?? 0) > 1 ? "s" : ""} termin
+                {(hiddenOldSessionsCount ?? 0) > 1 ? "ées" : "ée"} depuis
+                plus de <strong>30 jours</strong>{" "}
+                {(hiddenOldSessionsCount ?? 0) > 1 ? "sont masquées" : "est masquée"}{" "}
+                pour alléger l&apos;affichage. Pour les consulter,
+                cliquez sur{" "}
+                <Link
+                  href="/sessions?period=past"
+                  className="underline font-bold hover:text-cyan-700 dark:hover:text-cyan-300"
+                >
+                  Passées
+                </Link>{" "}
+                ci-dessous.
+              </p>
+            </div>
+          )}
+
         {/* Stat cards par période */}
         <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
           <Link
