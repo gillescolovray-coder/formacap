@@ -15,6 +15,7 @@ import {
   unmarkConvocationSent,
 } from "./actions";
 import { BulkSendButton, SendOneButton } from "./_send-buttons";
+import { GmailButton } from "./_gmail-button";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -357,22 +358,13 @@ export default async function ConvocationsPage({
                   // pour cohérence des actions ("Aperçu PDF" ouvre toujours
                   // le PDF, pas un aperçu intermédiaire).
                   const printUrl = `/api/sessions/${id}/convocations/${r.id}/pdf`;
-                  // Pré-remplissage email : on prépare l'URL Gmail compose
-                  // FORCÉE sur le compte de l'utilisateur connecté
-                  // (authuser=email) pour ouvrir le bon compte pro Workspace.
-                  // Gilles 2026-05-22 : le compose Gmail s'ouvrait sur le
-                  // compte par défaut (souvent perso) et pas le compte pro.
+                  // Pré-remplissage email pour Gmail / Mailto.
+                  // Gilles 2026-05-22 : le PDF ne peut PAS être attaché
+                  // via URL Gmail (limitation officielle Google). Donc le
+                  // bouton Gmail ouvre 2 onglets : le PDF + Gmail
+                  // compose. L'utilisateur glisse-dépose le PDF.
                   const mailSubject = `Convocation à la formation : ${title}`;
-                  // Body minimaliste : on laisse la signature Gmail s'ajouter
-                  // automatiquement à l'envoi (la signature n'est PAS
-                  // injectable via les params URL Gmail).
-                  const mailBody = `Bonjour,\n\nVous trouverez ci-joint votre convocation à la formation « ${title} » ${dateRange}.\n\nBien cordialement,`;
-                  const authUserParam = currentUserEmail
-                    ? `&authuser=${encodeURIComponent(currentUserEmail)}`
-                    : "";
-                  const gmailUrl = email
-                    ? `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(email)}&su=${encodeURIComponent(mailSubject)}&body=${encodeURIComponent(mailBody)}${authUserParam}`
-                    : undefined;
+                  const mailBody = `Bonjour,\n\nVotre convocation à la formation « ${title} » ${dateRange} vient de s'ouvrir dans un autre onglet. Merci de la glisser-déposer dans cet email avant de l'envoyer.\n\nBien cordialement,`;
                   const mailto = email
                     ? `mailto:${email}?subject=${encodeURIComponent(mailSubject)}&body=${encodeURIComponent(mailBody)}`
                     : undefined;
@@ -537,34 +529,25 @@ export default async function ConvocationsPage({
                               />
                             );
                           })()}
-                          {/* Gmail (compte pro force via authuser) +
-                              fallback mailto: en lien discret au-dessous.
-                              Gilles 2026-05-22 : layout vertical compact
-                              pour gagner de la place et eviter l'overflow
-                              de boutons. */}
-                          {!r.partner_of_name && gmailUrl && (
+                          {/* Bouton Gmail intelligent : ouvre le PDF
+                              dans un onglet + Gmail compose dans un
+                              autre. L'utilisateur glisse-dépose le PDF.
+                              + fallback mailto: en lien discret.
+                              Gilles 2026-05-22. */}
+                          {!r.partner_of_name && email && (
                             <div className="inline-flex flex-col items-stretch gap-0.5">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                nativeButton={false}
-                                render={
-                                  <a
-                                    href={gmailUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                  />
-                                }
-                                title="Ouvre Gmail (compte pro) avec un brouillon prérempli"
-                              >
-                                <Mail className="h-3.5 w-3.5" />
-                                Gmail
-                              </Button>
+                              <GmailButton
+                                printUrl={printUrl}
+                                toEmail={email}
+                                subject={mailSubject}
+                                body={mailBody}
+                                authUserEmail={currentUserEmail}
+                              />
                               {mailto && (
                                 <a
                                   href={mailto}
                                   className="text-[10px] text-center text-zinc-400 hover:text-zinc-700 hover:underline"
-                                  title="Fallback mailto: pour client email système"
+                                  title="Fallback mailto: pour client email système (sans pièce jointe automatique)"
                                 >
                                   ou Mailto
                                 </a>
