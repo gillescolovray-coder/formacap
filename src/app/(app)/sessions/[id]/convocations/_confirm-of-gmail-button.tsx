@@ -14,6 +14,7 @@
 
 import { Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { bold, PROMO_BLOCK, signature } from "@/lib/email/_unicode-bold";
 
 type Props = {
   toEmail: string;
@@ -24,6 +25,9 @@ type Props = {
   authUserEmail: string;
   trainerPhone?: string | null;
   partnerOfName: string;
+  /** Type du partenaire (Gilles 2026-05-22) — sert à formuler "via votre
+   *  OF" ou "via votre prescripteur". Par défaut "of". */
+  partnerType?: "of" | "prescripteur";
 };
 
 function buildSubject(formationTitle: string): string {
@@ -36,47 +40,40 @@ function buildBody({
   formationTitle,
   dateRange,
   trainerPhone,
+  partnerOfName,
+  partnerType,
 }: {
   learnerCivility: string | null;
   learnerName: string;
   formationTitle: string;
   dateRange: string;
   trainerPhone?: string | null;
+  partnerOfName: string;
+  partnerType: "of" | "prescripteur";
 }): string {
   const civilityPrefix =
     learnerCivility === "M." || learnerCivility === "Mme"
       ? `${learnerCivility} `
       : "";
-  const phoneInline = trainerPhone ? ` — 📞 ${trainerPhone}` : "";
+  const partnerLabel =
+    partnerType === "prescripteur" ? "prescripteur" : "OF partenaire";
   return `Bonjour ${civilityPrefix}${learnerName},
 
-Votre inscription à la formation « ${formationTitle} » (${dateRange}) est bien confirmée ✅
+Vous avez été inscrit·e par votre ${partnerLabel} ${bold(partnerOfName)} à la formation ${bold(`« ${formationTitle} »`)} qui aura lieu ${bold(dateRange)}. Votre inscription est bien ${bold("confirmée")} ✅
 
-📨 Vous recevrez 48 heures avant le démarrage de la session un second email contenant :
+📨 Vous recevrez ${bold("48 heures avant le démarrage de la session")} un second email contenant :
 - Le lien de connexion à la classe virtuelle
 - Les codes d'accès et instructions de connexion
 - Le programme détaillé de la session
 
-💡 Cet email partira depuis l'adresse noreply@send.capnumerique.com — pensez à vérifier votre dossier « Courriers indésirables » si vous ne le voyez pas dans votre boîte de réception. Marquez l'expéditeur comme fiable pour ne rien manquer.
+💡 Cet email partira depuis l'adresse ${bold("noreply@send.capnumerique.com")} — pensez à vérifier votre dossier « Courriers indésirables » si vous ne le voyez pas dans votre boîte de réception. Marquez l'expéditeur comme fiable pour ne rien manquer.
 
 En cas de question, répondez simplement à cet email — je vous répondrai personnellement.
 
 Au plaisir de vous accueillir,
-Gilles Colovray${phoneInline} — ✉️ gilles.colovray@capnumerique.com
-Dirigeant — CAP NUMÉRIQUE — Organisme de formation Qualiopi
+${signature(trainerPhone)}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🚀 Découvrez aussi nos solutions 100 % BTP — testez gratuitement :
-
-📋 BTPBOX — Le pointage chantier sans papier
-Pointez vos équipes en 30 secondes depuis smartphone, tablette ou PC.
-Heures, absences, tâches, chantiers — tout centralisé, export paie instantané.
-✅ 2 mois offerts, sans engagement 👉 www.btpbox.fr
-
-🚧 SUIVI DE CHANTIER — Le planning visuel pour les pros
-Reprenez le contrôle de vos plannings : qui fait quoi, où, quand.
-Fini les SMS et les tableaux Excel.
-✅ Essai gratuit immédiat 👉 suividechantier.capnumerique.com`;
+${PROMO_BLOCK}`;
 }
 
 export function ConfirmInscriptionGmailButton(props: Props) {
@@ -89,6 +86,7 @@ export function ConfirmInscriptionGmailButton(props: Props) {
     authUserEmail,
     trainerPhone,
     partnerOfName,
+    partnerType,
   } = props;
 
   const onClick = () => {
@@ -99,6 +97,8 @@ export function ConfirmInscriptionGmailButton(props: Props) {
       formationTitle,
       dateRange,
       trainerPhone,
+      partnerOfName,
+      partnerType: partnerType ?? "of",
     });
     const authUserParam = authUserEmail
       ? `&authuser=${encodeURIComponent(authUserEmail)}`

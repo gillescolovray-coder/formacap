@@ -20,6 +20,7 @@
 import { useState, useTransition } from "react";
 import { CheckCircle2, Loader2, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { bold, PROMO_BLOCK, signature } from "@/lib/email/_unicode-bold";
 import { markConventionPreNotified } from "./actions";
 
 type Props = {
@@ -52,12 +53,11 @@ function buildBody({
   dateRange: string;
   trainerPhone?: string | null;
 }): string {
-  const phoneInline = trainerPhone ? ` — 📞 ${trainerPhone}` : "";
   return `Bonjour ${contactName},
 
-Je vous informe que vous allez recevoir d'ici quelques minutes votre convention de formation pour la formation « ${formationTitle} » (${dateRange}).
+Je vous informe que vous allez recevoir d'ici quelques minutes votre ${bold("convention de formation")} pour la formation ${bold(`« ${formationTitle} »`)} qui aura lieu ${bold(dateRange)}.
 
-📧 L'email arrivera depuis l'adresse noreply@send.capnumerique.com — c'est notre service d'envoi sécurisé. Il contient un lien direct pour signer électroniquement votre convention en quelques clics.
+📧 L'email arrivera depuis l'adresse ${bold("noreply@send.capnumerique.com")} — c'est notre service d'envoi sécurisé. Il contient un lien direct pour signer électroniquement votre convention en quelques clics.
 
 ⚠️ Si vous ne le voyez pas dans votre boîte de réception d'ici 15 minutes :
 
@@ -71,21 +71,9 @@ Cela évitera que vos prochains documents (convocation, attestation, etc.) finis
 Si vous ne le recevez pas du tout, répondez simplement à cet email — je vous renverrai le lien directement.
 
 Bien cordialement,
-Gilles Colovray${phoneInline} — ✉️ gilles.colovray@capnumerique.com
-Dirigeant — CAP NUMÉRIQUE — Organisme de formation Qualiopi
+${signature(trainerPhone)}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🚀 Découvrez aussi nos solutions 100 % BTP — testez gratuitement :
-
-📋 BTPBOX — Le pointage chantier sans papier
-Pointez vos équipes en 30 secondes depuis smartphone, tablette ou PC.
-Heures, absences, tâches, chantiers — tout centralisé, export paie instantané.
-✅ 2 mois offerts, sans engagement 👉 www.btpbox.fr
-
-🚧 SUIVI DE CHANTIER — Le planning visuel pour les pros
-Reprenez le contrôle de vos plannings : qui fait quoi, où, quand.
-Fini les SMS et les tableaux Excel.
-✅ Essai gratuit immédiat 👉 suividechantier.capnumerique.com`;
+${PROMO_BLOCK}`;
 }
 
 export function PreNotifyGmailButton(props: Props) {

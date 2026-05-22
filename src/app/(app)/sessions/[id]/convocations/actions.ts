@@ -351,12 +351,48 @@ export async function sendConvocationEmail(
     emailBlocks?.subject_template ??
       `Convocation à la formation — {{formation_title}}`,
   );
+
+  // Bloc signature + promo BTPBOX + Suivi Chantier ajouté en bas de
+  // chaque email convocation (Gilles 2026-05-22). En HTML cette fois
+  // (Resend supporte les balises HTML <strong>, <a>).
+  const phoneHtml = org?.phone
+    ? ` — <a href="tel:${org.phone}" style="color:#0369a1;text-decoration:none;">📞 ${org.phone}</a>`
+    : "";
+  const orgEmailHtml = org?.email
+    ? ` — <a href="mailto:${org.email}" style="color:#0369a1;text-decoration:none;">✉️ ${org.email}</a>`
+    : "";
+  const promoSignatureHtml = `
+<table cellpadding="0" cellspacing="0" border="0" style="width:100%;margin-top:32px;border-top:1px solid #e5e7eb;padding-top:16px;font-family:Arial,sans-serif;font-size:13px;color:#475569;line-height:1.5">
+  <tr><td>
+    <p style="margin:0 0 8px 0;color:#0f172a;"><strong>Gilles Colovray</strong>${phoneHtml}${orgEmailHtml}<br/>
+      Dirigeant — <strong>CAP NUMÉRIQUE</strong> — Organisme de formation Qualiopi<br/>
+      🌐 <a href="https://www.capnumerique.com" style="color:#0369a1;">www.capnumerique.com</a> &nbsp;·&nbsp;
+      ⭐ <a href="https://www.google.com/search?q=CAP+NUMERIQUE+avis" style="color:#0369a1;">Avis Google</a>
+    </p>
+    <div style="margin-top:24px;padding:16px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px">
+      <p style="margin:0 0 12px 0;font-weight:bold;color:#0f172a;">🚀 Découvrez aussi nos solutions 100 % BTP — testez gratuitement :</p>
+      <p style="margin:0 0 12px 0">
+        <strong>📋 BTPBOX</strong> — Le pointage chantier sans papier<br/>
+        <span style="color:#475569">Pointez vos équipes en 30 secondes depuis smartphone, tablette ou PC. Heures, absences, tâches, chantiers — tout centralisé, export paie instantané.</span><br/>
+        ✅ <a href="https://www.btpbox.fr" style="color:#059669;font-weight:bold;">2 mois offerts, sans engagement → www.btpbox.fr</a>
+      </p>
+      <p style="margin:0">
+        <strong>🚧 SUIVI DE CHANTIER</strong> — Le planning visuel pour les pros<br/>
+        <span style="color:#475569">Reprenez le contrôle de vos plannings : qui fait quoi, où, quand. Fini les SMS et les tableaux Excel.</span><br/>
+        ✅ <a href="https://www.capnumerique.com/suivi-de-chantier" style="color:#059669;font-weight:bold;">Essai gratuit immédiat → capnumerique.com/suivi-de-chantier</a>
+      </p>
+    </div>
+  </td></tr>
+</table>
+`;
+
   const html = `
     ${substitute(emailBlocks?.intro_html ?? "")}
     ${substitute(emailBlocks?.main_html ?? "")}
     ${substitute(emailBlocks?.closing_html ?? "")}
+    ${promoSignatureHtml}
   `;
-  const text = `Bonjour ${learnerName},\n\nVeuillez trouver ci-joint votre convocation à la formation "${formationTitle}" (${sessionDateStr}).\n\nCordialement,\n${orgName}`;
+  const text = `Bonjour ${learnerName},\n\nVeuillez trouver ci-joint votre convocation à la formation "${formationTitle}" (${sessionDateStr}).\n\nCordialement,\n${orgName}\n\n---\n🌐 www.capnumerique.com\n⭐ Avis Google : https://www.google.com/search?q=CAP+NUMERIQUE+avis\n\n📋 BTPBOX — Pointage chantier 👉 www.btpbox.fr\n🚧 SUIVI DE CHANTIER — Planning chantier 👉 www.capnumerique.com/suivi-de-chantier`;
 
   // Nom de fichier propre
   const safeName = learnerName
