@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { AttendanceGrid, type PeriodDay } from "./_grid";
 import { RemoteSignSection } from "./_remote-sign-section";
 import { SignaturesDashboard } from "./_signatures-dashboard";
+import { EmargementTabs } from "./_tabs";
 import { SessionTabs } from "../_session-tabs";
 import { isResendConfigured } from "@/lib/email/resend";
 import { healEnrollmentsForSession } from "@/lib/inscriptions/sync";
@@ -113,7 +114,7 @@ export default async function EmargementPage({
     supabase
       .from("session_enrollments")
       .select(
-        "id, learner:learners(civility, first_name, last_name, email, company:companies(name))",
+        "id, inscription_request_id, learner:learners(civility, first_name, last_name, email, company:companies(name))",
       )
       .eq("session_id", id)
       .order("enrolled_at", { ascending: true }),
@@ -123,6 +124,40 @@ export default async function EmargementPage({
       .eq("session_id", id)
       .order("day_date", { ascending: true }),
   ]);
+
+  // OF partenaires (Gilles 2026-05-22) : un apprenant inscrit via le
+  // portail d'un OF partenaire n'a PAS d'émargement à la charge de CAP
+  // NUMERIQUE. Le formateur peut tout de même déclarer sa présence (pas
+  // de signature requise). On charge le nom de l'OF par request.
+  const requestIds = Array.from(
+    new Set(
+      (enrollments ?? [])
+        .map((e) => (e as { inscription_request_id?: string | null }).inscription_request_id)
+        .filter((x): x is string => Boolean(x)),
+    ),
+  );
+  const partnerOfNameByRequest = new Map<string, string>();
+  if (requestIds.length > 0) {
+    const { data: reqs } = await supabase
+      .from("inscription_requests")
+      .select(
+        "id, inscription_channel, referrer:companies!inscription_channel_company_id(name, type)",
+      )
+      .in("id", requestIds);
+    for (const r of (reqs ?? []) as Array<{
+      id: string;
+      inscription_channel: string | null;
+      referrer:
+        | { name: string; type: string | null }
+        | Array<{ name: string; type: string | null }>
+        | null;
+    }>) {
+      const ref = Array.isArray(r.referrer) ? r.referrer[0] : r.referrer;
+      if (r.inscription_channel === "of" && ref?.type === "of" && ref?.name) {
+        partnerOfNameByRequest.set(r.id, ref.name);
+      }
+    }
+  }
 
   const enrollmentIds = (enrollments ?? []).map((e) => e.id as string);
 
@@ -209,7 +244,9 @@ export default async function EmargementPage({
   });
 
   const rows = (enrollments ?? []).map((e) => {
-    const enrollment = e as unknown as EnrollmentRow;
+    const enrollment = e as unknown as EnrollmentRow & {
+      inscription_request_id?: string | null;
+    };
     const l = enrollment.learner;
     // Préfixer le nom par la civilité si renseignée (Gilles 2026-05-22).
     const base = l
@@ -227,21 +264,30 @@ export default async function EmargementPage({
         attendancesByKey[key] = keyMap.get(key) ?? "not_recorded";
       });
     });
+    const partnerOfName = enrollment.inscription_request_id
+      ? (partnerOfNameByRequest.get(enrollment.inscription_request_id) ?? null)
+      : null;
     return {
       enrollmentId: enrollment.id,
       learnerName: name,
       email: l?.email ?? null,
       company,
       attendancesByKey,
+      partnerOfName,
     };
   });
 
-  // Liste pour le bloc "signature à distance"
-  const learnersForRemoteSign = rows.map((r) => ({
-    enrollmentId: r.enrollmentId,
-    name: r.learnerName,
-    email: r.email,
-  }));
+  // Liste pour le bloc "signature à distance" — on exclut les
+  // apprenants inscrits via un OF partenaire (CAP NUMERIQUE n'a pas la
+  // charge de leur signature). (Gilles 2026-05-22)
+  const learnersForRemoteSign = rows
+    .filter((r) => !r.partnerOfName)
+    .map((r) => ({
+      enrollmentId: r.enrollmentId,
+      name: r.learnerName,
+      email: r.email,
+    }));
+  const partnerOfCount = rows.filter((r) => r.partnerOfName).length;
   const resendOn = isResendConfigured();
 
   // Stats
@@ -451,26 +497,95 @@ export default async function EmargementPage({
           {totalHalfDays} demi-journée{totalHalfDays > 1 ? "s" : ""}. Les
           horaires affichés proviennent du planning de la session ; chaque
           changement est enregistré automatiquement.
+          {partnerOfCount > 0 && (
+            <>
+              {" "}<span className="text-violet-700 font-semibold">
+                {partnerOfCount} apprenant{partnerOfCount > 1 ? "s" : ""}{" "}
+                inscrit{partnerOfCount > 1 ? "s" : ""} via un OF partenaire
+                — émargement déclaratif (pas de signature CAP NUMERIQUE
+                requise).
+              </span>
+            </>
+          )}
         </p>
 
-        {/* Dashboard de suivi des signatures */}
-        <SignaturesDashboard
-          enrollments={rows.map((r) => ({
-            enrollmentId: r.enrollmentId,
-            learnerName: r.learnerName,
-          }))}
-          periodDates={periods.map((p) => p.date)}
-          signaturesIndex={signaturesIndex}
-        />
+        {/* ====== ONGLETS (Gilles 2026-05-22) ======
+            Sous les compteurs, 2 onglets :
+              1) ÉMARGEMENT ÉLECTRONIQUE (défaut) : suivi des signatures
+                 + signature à distance par email + lien vers la page
+                 émargement électronique.
+              2) AUTRES SIGNATURES : grille manuelle (présent/absent…)
+                 + version imprimable papier. */}
+        <EmargementTabs
+          electroniqueContent={
+            <div className="space-y-4">
+              <div className="rounded-xl bg-gradient-to-br from-cyan-50 to-blue-50 dark:from-cyan-950/30 dark:to-blue-950/30 border border-cyan-200 dark:border-cyan-900 p-4">
+                <h3 className="font-bold text-sm text-cyan-900 dark:text-cyan-200 mb-1">
+                  Émargement électronique recommandé
+                </h3>
+                <p className="text-xs text-cyan-800 dark:text-cyan-300 mb-3 leading-relaxed">
+                  Chaque apprenant signe directement depuis son téléphone via un
+                  QR code (présentiel) ou un lien email (distanciel).
+                  Les signatures sont horodatées et traçables pour Qualiopi.
+                </p>
+                <Link
+                  href={`/sessions/${id}/emargement/electronique`}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-cyan-600 text-white text-sm font-bold hover:bg-cyan-700 shadow-sm"
+                >
+                  <PenLine className="h-4 w-4" />
+                  Ouvrir l&apos;émargement électronique
+                </Link>
+              </div>
 
-        {/* Section Signature à distance par email */}
-        <RemoteSignSection
-          sessionId={id}
-          learners={learnersForRemoteSign}
-          resendConfigured={resendOn}
-        />
+              {/* Dashboard de suivi des signatures (uniquement
+                  apprenants non-OF) */}
+              <SignaturesDashboard
+                enrollments={rows
+                  .filter((r) => !r.partnerOfName)
+                  .map((r) => ({
+                    enrollmentId: r.enrollmentId,
+                    learnerName: r.learnerName,
+                  }))}
+                periodDates={periods.map((p) => p.date)}
+                signaturesIndex={signaturesIndex}
+              />
 
-        <AttendanceGrid sessionId={id} periods={periods} rows={rows} />
+              {/* Section Signature à distance par email */}
+              <RemoteSignSection
+                sessionId={id}
+                learners={learnersForRemoteSign}
+                resendConfigured={resendOn}
+              />
+            </div>
+          }
+          autresContent={
+            <div className="space-y-4">
+              <div className="rounded-xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900 p-4 flex items-start gap-2.5">
+                <Info className="h-4 w-4 text-amber-700 dark:text-amber-400 shrink-0 mt-0.5" />
+                <div className="text-xs text-amber-900 dark:text-amber-200 leading-relaxed">
+                  <strong>Émargement manuel ou papier.</strong>{" "}
+                  Utilisez la grille ci-dessous pour pointer manuellement
+                  la présence ou imprimez la feuille papier. Pour les
+                  apprenants inscrits via un OF partenaire, vous pouvez
+                  déclarer leur présence sans signature requise.
+                  <div className="mt-2">
+                    <a
+                      href={`/sessions/${id}/emargement/print`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-white border border-amber-300 text-amber-900 text-xs font-bold hover:bg-amber-100"
+                    >
+                      <Printer className="h-3.5 w-3.5" />
+                      Version imprimable (PDF)
+                    </a>
+                  </div>
+                </div>
+              </div>
+
+              <AttendanceGrid sessionId={id} periods={periods} rows={rows} />
+            </div>
+          }
+        />
 
         <div className="pt-2">
           <Link

@@ -26,6 +26,10 @@ type Row = {
   learnerName: string;
   company: string | null;
   attendancesByKey: Record<string, AttendanceStatus>;
+  /** Nom de l'OF partenaire ayant inscrit cet apprenant — si défini,
+   *  l'émargement est DÉCLARATIF (CAP NUMERIQUE pointe sans signature
+   *  requise). Gilles 2026-05-22. */
+  partnerOfName?: string | null;
 };
 
 type AttendanceGridProps = {
@@ -216,6 +220,16 @@ export function AttendanceGrid({
                 {row.company && (
                   <div className="text-xs text-zinc-500 truncate max-w-[240px]">
                     {row.company}
+                  </div>
+                )}
+                {/* Badge déclaratif si l'apprenant vient d'un OF
+                    partenaire (Gilles 2026-05-22) */}
+                {row.partnerOfName && (
+                  <div
+                    className="mt-1 inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-violet-100 text-violet-800 border border-violet-200"
+                    title={`Inscrit via l'OF partenaire ${row.partnerOfName}. CAP NUMERIQUE n'a pas la charge de la signature — le formateur peut juste déclarer la présence.`}
+                  >
+                    Déclaratif · {row.partnerOfName}
                   </div>
                 )}
               </td>
