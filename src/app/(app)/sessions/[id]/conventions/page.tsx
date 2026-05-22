@@ -112,13 +112,18 @@ export default async function ConventionsPage({
   const { data: enrollments } = await supabase
     .from("session_enrollments")
     .select(
-      "id, inscription_email_sent_at, learner:learners(id, civility, first_name, last_name, email, phone, job_title, company_id, company:companies(id, name, industry, postal_code, city))",
+      "id, inscription_email_sent_at, inscription_request_id, learner:learners(id, civility, first_name, last_name, email, phone, job_title, company_id, company:companies(id, name, industry, postal_code, city)), request:inscription_requests!inscription_request_id(partner_confirmation_email_sent_at)",
     )
     .eq("session_id", id);
 
   type EnrollmentRow = {
     id: string;
     inscription_email_sent_at: string | null;
+    inscription_request_id?: string | null;
+    request?:
+      | { partner_confirmation_email_sent_at: string | null }
+      | Array<{ partner_confirmation_email_sent_at: string | null }>
+      | null;
     learner: {
       id: string;
       civility: string | null;
@@ -145,11 +150,16 @@ export default async function ConventionsPage({
   // Groupage par entreprise
   type LearnerInfo = {
     id: string;
+    /** enrollmentId — sert au bouton "Confirmer via Gmail" pour marquer
+     *  partner_confirmation_email_sent_at sur l'inscription_request liée. */
+    enrollmentId: string;
     civility: string | null;
     name: string;
     email: string | null;
     phone: string | null;
     jobTitle: string | null;
+    /** Date du dernier envoi du mail confirmation Gmail (OF). */
+    partnerConfirmationSentAt?: string | null;
   };
   type CompanyGroup = {
     companyId: string;
@@ -185,13 +195,18 @@ export default async function ConventionsPage({
         learners: [],
       });
     }
+    const reqRel = r.request;
+    const reqObj = Array.isArray(reqRel) ? reqRel[0] : reqRel;
     byCompany.get(cid)!.learners.push({
       id: r.learner.id,
+      enrollmentId: r.id,
       civility: r.learner.civility,
       name: lname,
       email: r.learner.email,
       phone: r.learner.phone,
       jobTitle: r.learner.job_title,
+      partnerConfirmationSentAt:
+        reqObj?.partner_confirmation_email_sent_at ?? null,
     });
   }
 
@@ -1076,6 +1091,8 @@ export default async function ConventionsPage({
                               l.email ? (
                                 <ConfirmInscriptionGmailButton
                                   key={l.id}
+                                  sessionId={id}
+                                  enrollmentId={l.enrollmentId}
                                   toEmail={l.email}
                                   learnerCivility={l.civility}
                                   learnerName={l.name}
@@ -1086,6 +1103,7 @@ export default async function ConventionsPage({
                                   partnerOfName={
                                     partnerOfNameByCompany.get(c.companyId) ?? ""
                                   }
+                                  alreadySentAt={l.partnerConfirmationSentAt}
                                 />
                               ) : null,
                             )}

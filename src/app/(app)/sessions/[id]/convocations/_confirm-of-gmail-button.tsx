@@ -12,11 +12,15 @@
  * un acte manuel de Gilles.
  */
 
-import { Mail } from "lucide-react";
+import { useState, useTransition } from "react";
+import { CheckCircle2, Loader2, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { bold, PROMO_BLOCK, signature } from "@/lib/email/_unicode-bold";
+import { markPartnerConfirmationSent } from "./actions";
 
 type Props = {
+  sessionId: string;
+  enrollmentId: string;
   toEmail: string;
   learnerCivility: string | null;
   learnerName: string;
@@ -28,6 +32,9 @@ type Props = {
   /** Type du partenaire (Gilles 2026-05-22) — sert à formuler "via votre
    *  OF" ou "via votre prescripteur". Par défaut "of". */
   partnerType?: "of" | "prescripteur";
+  /** Si déjà envoyé, on affiche un badge ✓ "Confirmé·e" avec date.
+   *  Pris depuis inscription_requests.partner_confirmation_email_sent_at. */
+  alreadySentAt?: string | null;
 };
 
 function buildSubject(formationTitle: string): string {
@@ -78,6 +85,8 @@ ${PROMO_BLOCK}`;
 
 export function ConfirmInscriptionGmailButton(props: Props) {
   const {
+    sessionId,
+    enrollmentId,
     toEmail,
     learnerCivility,
     learnerName,
@@ -87,7 +96,13 @@ export function ConfirmInscriptionGmailButton(props: Props) {
     trainerPhone,
     partnerOfName,
     partnerType,
+    alreadySentAt,
   } = props;
+
+  const [pending, startTransition] = useTransition();
+  const [doneLocal, setDoneLocal] = useState<string | null>(
+    alreadySentAt ?? null,
+  );
 
   const onClick = () => {
     const subject = buildSubject(formationTitle);
@@ -105,7 +120,45 @@ export function ConfirmInscriptionGmailButton(props: Props) {
       : "";
     const url = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(toEmail)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}${authUserParam}`;
     window.open(url, "_blank", "noopener,noreferrer");
+    // Marque en BDD côté serveur (Gilles 2026-05-22 — migration 0100)
+    startTransition(async () => {
+      const res = await markPartnerConfirmationSent(sessionId, enrollmentId);
+      if (res.ok) {
+        setDoneLocal(new Date().toISOString());
+      }
+    });
   };
+
+  // Si déjà envoyé : badge ✓ Confirmé·e + bouton "re-confirmer" discret
+  if (doneLocal) {
+    const dateLabel = (() => {
+      try {
+        return new Date(doneLocal).toLocaleDateString("fr-FR", {
+          day: "2-digit",
+          month: "short",
+        });
+      } catch {
+        return "";
+      }
+    })();
+    return (
+      <div
+        className="inline-flex items-center gap-1 text-[11px] text-emerald-700 dark:text-emerald-400 px-2 py-1 rounded bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900"
+        title={`Email de confirmation envoyé via Gmail le ${new Date(doneLocal).toLocaleString("fr-FR")}`}
+      >
+        <CheckCircle2 className="h-3 w-3" />
+        Confirmé·e {dateLabel}
+        <button
+          type="button"
+          onClick={onClick}
+          disabled={pending}
+          className="ml-1 text-[10px] underline hover:text-emerald-900 dark:hover:text-emerald-300 disabled:opacity-50"
+        >
+          re-confirmer
+        </button>
+      </div>
+    );
+  }
 
   return (
     <Button
@@ -113,7 +166,7 @@ export function ConfirmInscriptionGmailButton(props: Props) {
       variant="outline"
       size="sm"
       onClick={onClick}
-      disabled={!toEmail}
+      disabled={!toEmail || pending}
       title={
         toEmail
           ? `Confirmer l'inscription de ${learnerName} via Gmail (apprenant inscrit par ${partnerOfName})`
@@ -121,7 +174,11 @@ export function ConfirmInscriptionGmailButton(props: Props) {
       }
       className="border-violet-300 text-violet-700 hover:bg-violet-50"
     >
-      <Mail className="h-3.5 w-3.5" />
+      {pending ? (
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+      ) : (
+        <Mail className="h-3.5 w-3.5" />
+      )}
       Confirmer via Gmail
     </Button>
   );

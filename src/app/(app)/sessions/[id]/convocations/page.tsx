@@ -44,6 +44,8 @@ type EnrollmentRow = {
   /** Nom du partenaire (OF ou prescripteur) qui a fait l'inscription,
    *  utilisé dans la colonne SOURCE D'INSCRIPTION. */
   partner_name?: string | null;
+  /** Date d'envoi du mail confirmation Gmail (OF — migration 0100). */
+  partner_confirmation_sent_at?: string | null;
 };
 
 function formatDate(iso: string) {
@@ -148,17 +150,21 @@ export default async function ConvocationsPage({
   // affichée dans la colonne SOURCE D'INSCRIPTION (Gilles 2026-05-22).
   const channelByRequestId = new Map<string, string>();
   const partnerNameByRequestId = new Map<string, string>();
+  // Date d'envoi du mail confirmation Gmail pour les apprenants OF
+  // (Gilles 2026-05-22 — migration 0100).
+  const partnerConfirmationSentByRequestId = new Map<string, string>();
   if (requestIds.length > 0) {
     const { data: reqs } = await supabase
       .from("inscription_requests")
       .select(
-        "id, inscription_channel, referrer_company_id, referrer:companies!referrer_company_id(name, type)",
+        "id, inscription_channel, referrer_company_id, partner_confirmation_email_sent_at, referrer:companies!referrer_company_id(name, type)",
       )
       .in("id", requestIds);
     for (const r of (reqs ?? []) as Array<{
       id: string;
       inscription_channel: string | null;
       referrer_company_id: string | null;
+      partner_confirmation_email_sent_at: string | null;
       referrer:
         | { name: string; type: string }
         | Array<{ name: string; type: string }>
@@ -172,6 +178,12 @@ export default async function ConvocationsPage({
         partnerNameByRequestId.set(r.id, ref.name);
       }
       channelByRequestId.set(r.id, r.inscription_channel ?? "direct");
+      if (r.partner_confirmation_email_sent_at) {
+        partnerConfirmationSentByRequestId.set(
+          r.id,
+          r.partner_confirmation_email_sent_at,
+        );
+      }
     }
   }
 
@@ -224,6 +236,10 @@ export default async function ConvocationsPage({
       : "direct",
     partner_name: r.inscription_request_id
       ? (partnerNameByRequestId.get(r.inscription_request_id) ?? null)
+      : null,
+    partner_confirmation_sent_at: r.inscription_request_id
+      ? (partnerConfirmationSentByRequestId.get(r.inscription_request_id) ??
+        null)
       : null,
     referents: r.learner?.company_id
       ? (referentsByCompany.get(r.learner.company_id) ?? [])
@@ -609,9 +625,12 @@ export default async function ConvocationsPage({
                             <div className="inline-flex flex-col items-stretch gap-1">
                               {/* Bouton confirmation d'inscription via Gmail —
                                   réservé aux apprenants OF partenaires
-                                  (Gilles 2026-05-22). */}
+                                  (Gilles 2026-05-22). Tracking en BDD via
+                                  partner_confirmation_email_sent_at. */}
                               {email && (
                                 <ConfirmInscriptionGmailButton
+                                  sessionId={id}
+                                  enrollmentId={r.id}
                                   toEmail={email}
                                   learnerCivility={r.learner?.civility ?? null}
                                   learnerName={base}
@@ -620,6 +639,7 @@ export default async function ConvocationsPage({
                                   authUserEmail={currentUserEmail}
                                   trainerPhone={trainerPhone}
                                   partnerOfName={r.partner_of_name}
+                                  alreadySentAt={r.partner_confirmation_sent_at}
                                 />
                               )}
                               <span className="text-[10px] text-zinc-500 italic text-center max-w-[180px]">

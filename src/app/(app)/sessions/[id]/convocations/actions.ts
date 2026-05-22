@@ -52,6 +52,47 @@ export async function unmarkConvocationSent(
   revalidatePath(`/sessions/${sessionId}/convocations`);
 }
 
+/**
+ * Marque l'envoi (clic sur Gmail compose) de l'email de confirmation
+ * d'inscription à un apprenant OF — pour traçabilité Qualiopi.
+ * Gilles 2026-05-22 — migration 0100.
+ *
+ * Le marquage se fait au clic (engagement utilisateur), pas après
+ * envoi effectif (Gmail compose ne donne pas de retour).
+ */
+export async function markPartnerConfirmationSent(
+  sessionId: string,
+  enrollmentId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Non authentifié." };
+
+  // Récupérer inscription_request_id depuis l'enrollment
+  const { data: enrollment } = await supabase
+    .from("session_enrollments")
+    .select("inscription_request_id")
+    .eq("id", enrollmentId)
+    .maybeSingle<{ inscription_request_id: string | null }>();
+  if (!enrollment?.inscription_request_id) {
+    return { ok: false, error: "Aucune demande d'inscription liée." };
+  }
+
+  const { error } = await supabase
+    .from("inscription_requests")
+    .update({
+      partner_confirmation_email_sent_at: new Date().toISOString(),
+    })
+    .eq("id", enrollment.inscription_request_id);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath(`/sessions/${sessionId}/convocations`);
+  revalidatePath(`/sessions/${sessionId}/conventions`);
+  return { ok: true };
+}
+
 // ============================================================
 // Envoi automatique via Resend
 // ============================================================
