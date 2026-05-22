@@ -13,7 +13,10 @@ import {
 } from "lucide-react";
 import { SireneLookup } from "@/app/(app)/entreprises/_sirene-lookup";
 import type { SireneCompany } from "@/lib/sirene/types";
-import { submitPartnerBatchEnrollmentForm } from "../../actions";
+import {
+  lookupExistingPartnerCompanyContext,
+  submitPartnerBatchEnrollmentForm,
+} from "../../actions";
 
 type LearnerForm = {
   uid: string; // clé interne React
@@ -121,6 +124,24 @@ export function PartnerInscribeForm({
       postalCode: c.postal_code ?? "",
       city: c.city ?? "",
     });
+    // Auto-pré-remplissage du contact référent si on connait deja cette
+    // entreprise (Gilles 2026-05-22) : si le partenaire a deja inscrit
+    // des apprenants pour cette entreprise auparavant, on reprend le
+    // dernier contact référent qu'il avait saisi.
+    if (c.siret) {
+      lookupExistingPartnerCompanyContext({
+        token,
+        siret: c.siret,
+      })
+        .then((res) => {
+          if (res.ok && res.found && res.contactReferent) {
+            setContact(res.contactReferent);
+          }
+        })
+        .catch(() => {
+          // Lookup non bloquant — silencieux en cas d'erreur
+        });
+    }
   }
 
   function updateCompany<K extends keyof CompanyForm>(
@@ -281,6 +302,23 @@ export function PartnerInscribeForm({
               type="text"
               value={company.siret}
               onChange={(e) => updateCompany("siret", e.target.value)}
+              onBlur={(e) => {
+                // Auto-lookup du contact référent sur perte de focus
+                // si SIRET 14 chiffres et saisie manuelle (Gilles 2026-05-22).
+                const cleanSiret = e.target.value.replace(/\s/g, "");
+                if (cleanSiret.length === 14) {
+                  lookupExistingPartnerCompanyContext({
+                    token,
+                    siret: cleanSiret,
+                  })
+                    .then((res) => {
+                      if (res.ok && res.found && res.contactReferent) {
+                        setContact(res.contactReferent);
+                      }
+                    })
+                    .catch(() => {});
+                }
+              }}
               required
               maxLength={20}
               placeholder="14 chiffres"

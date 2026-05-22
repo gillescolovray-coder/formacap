@@ -825,3 +825,119 @@ export async function submitPartnerBatchEnrollmentForm(formData: FormData) {
     `/partenaire/${token}/inscriptions?ok=${successCount}${errors.length > 0 ? `&errors=${encodeURIComponent(errors.join(", "))}` : ""}`,
   );
 }
+
+// =====================================================================
+// Lookup automatique au moment de la saisie SIRET (Gilles 2026-05-22)
+// =====================================================================
+
+/**
+ * Cherche si une entreprise (par SIRET) est déjà connue dans la BDD du
+ * partenaire, et renvoie son dernier contact référent saisi (si existe).
+ *
+ * Utilisé par le formulaire d'inscription portail : quand le partenaire
+ * fait une recherche SIRENE et trouve une société, on regarde si elle a
+ * déjà été inscrite par ce partenaire avec un contact référent. Si oui,
+ * on pré-remplit le bloc CONTACT RÉFÉRENT PÉDAGOGIQUE pour éviter à
+ * l'utilisateur de ressaisir.
+ *
+ * Cascade :
+ *   1. Dernière inscription_request du partenaire pour ce SIRET avec
+ *      contact_referent_email rempli → reprend les coordonnées
+ *   2. Sinon : company_contacts.is_primary de l'entreprise
+ *   3. Sinon : null
+ */
+export async function lookupExistingPartnerCompanyContext(input: {
+  token: string;
+  siret: string;
+}): Promise<{
+  ok: true;
+  found: boolean;
+  contactReferent?: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    phone: string;
+    role: string;
+  } | null;
+}> {
+  const ctx = await resolvePartnerContext(input.token);
+  if (!ctx) return { ok: true, found: false };
+  const cleanSiret = input.siret.replace(/\s/g, "");
+  if (!cleanSiret) return { ok: true, found: false };
+
+  const supabase = createAdminClient();
+  // 1. Cherche l'entreprise par SIRET
+  const { data: company } = await supabase
+    .from("companies")
+    .select("id")
+    .eq("organization_id", ctx.company.organization_id)
+    .eq("siret", cleanSiret)
+    .limit(1)
+    .maybeSingle<{ id: string }>();
+  if (!company) return { ok: true, found: false };
+
+  // 2. Cherche la dernière inscription_request du partenaire pour cette
+  // entreprise qui a un contact référent saisi.
+  const { data: lastReq } = await supabase
+    .from("inscription_requests")
+    .select(
+      "contact_referent_first_name, contact_referent_last_name, contact_referent_email, contact_referent_phone, contact_referent_role",
+    )
+    .eq("organization_id", ctx.company.organization_id)
+    .eq("referrer_company_id", ctx.company.id)
+    .eq("company_id", company.id)
+    .not("contact_referent_email", "is", null)
+    .order("received_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<{
+      contact_referent_first_name: string | null;
+      contact_referent_last_name: string | null;
+      contact_referent_email: string | null;
+      contact_referent_phone: string | null;
+      contact_referent_role: string | null;
+    }>();
+
+  if (lastReq && lastReq.contact_referent_email) {
+    return {
+      ok: true,
+      found: true,
+      contactReferent: {
+        firstName: lastReq.contact_referent_first_name ?? "",
+        lastName: lastReq.contact_referent_last_name ?? "",
+        email: lastReq.contact_referent_email,
+        phone: lastReq.contact_referent_phone ?? "",
+        role: lastReq.contact_referent_role ?? "",
+      },
+    };
+  }
+
+  // 3. Fallback : contact principal de l'entreprise (table company_contacts).
+  const { data: primaryContact } = await supabase
+    .from("company_contacts")
+    .select("first_name, last_name, email, phone, job_title")
+    .eq("company_id", company.id)
+    .eq("is_primary", true)
+    .limit(1)
+    .maybeSingle<{
+      first_name: string | null;
+      last_name: string | null;
+      email: string | null;
+      phone: string | null;
+      job_title: string | null;
+    }>();
+  if (primaryContact?.email) {
+    return {
+      ok: true,
+      found: true,
+      contactReferent: {
+        firstName: primaryContact.first_name ?? "",
+        lastName: primaryContact.last_name ?? "",
+        email: primaryContact.email,
+        phone: primaryContact.phone ?? "",
+        role: primaryContact.job_title ?? "",
+      },
+    };
+  }
+
+  return { ok: true, found: true, contactReferent: null };
+}
