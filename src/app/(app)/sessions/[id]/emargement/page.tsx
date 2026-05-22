@@ -4,7 +4,6 @@ import {
   Clock,
   Info,
   MapPin,
-  PenLine,
   Printer,
   Video,
 } from "lucide-react";
@@ -16,6 +15,9 @@ import { AttendanceGrid, type PeriodDay } from "./_grid";
 import { RemoteSignSection } from "./_remote-sign-section";
 import { SignaturesDashboard } from "./_signatures-dashboard";
 import { EmargementTabs } from "./_tabs";
+import { SignatureGrid } from "./electronique/_signature-grid";
+import { QrButton } from "./electronique/_qr-button";
+import { QrEvaluationButton } from "./electronique/_qr-evaluation-button";
 import { SessionTabs } from "../_session-tabs";
 import { isResendConfigured } from "@/lib/email/resend";
 import { healEnrollmentsForSession } from "@/lib/inscriptions/sync";
@@ -82,12 +84,13 @@ export default async function EmargementPage({
   const { data: session, error } = await supabase
     .from("sessions")
     .select(
-      "*, formation:formations(id, title), location_ref:formation_locations!location_id(id, name, city)",
+      "*, formation:formations(id, title), location_ref:formation_locations!location_id(id, name, city), trainer:trainers!trainer_id(first_name, last_name)",
     )
     .eq("id", id)
     .maybeSingle<
       TrainingSession & {
         location_ref?: { id: string; name: string; city: string | null } | null;
+        trainer?: { first_name: string; last_name: string } | null;
       }
     >();
 
@@ -161,7 +164,7 @@ export default async function EmargementPage({
 
   const enrollmentIds = (enrollments ?? []).map((e) => e.id as string);
 
-  const [attendances, signaturesData] = await Promise.all([
+  const [attendances, signaturesData, fullSignaturesData] = await Promise.all([
     enrollmentIds.length > 0
       ? supabase
           .from("attendances")
@@ -173,6 +176,18 @@ export default async function EmargementPage({
       ? supabase
           .from("attendance_signatures")
           .select("enrollment_id, period_date, moment, signer_role")
+          .in("enrollment_id", enrollmentIds)
+          .then((r) => r.data ?? [])
+      : Promise.resolve([]),
+    // Snapshots complets des signatures (avec signature_data, signer_name,
+    // signed_at) pour pré-remplir le SignatureGrid affiché dans l'onglet
+    // ÉLECTRONIQUE (Gilles 2026-05-22 : on inline le module électronique).
+    enrollmentIds.length > 0
+      ? supabase
+          .from("attendance_signatures")
+          .select(
+            "enrollment_id, period_date, moment, signer_role, signer_name, signature_data, signed_at",
+          )
           .in("enrollment_id", enrollmentIds)
           .then((r) => r.data ?? [])
       : Promise.resolve([]),
@@ -277,18 +292,48 @@ export default async function EmargementPage({
     };
   });
 
-  // Liste pour le bloc "signature à distance" — on exclut les
-  // apprenants inscrits via un OF partenaire (CAP NUMERIQUE n'a pas la
-  // charge de leur signature). (Gilles 2026-05-22)
-  const learnersForRemoteSign = rows
+  // Liste pour le bloc "signature à distance" — on inclut TOUS les
+  // apprenants (Gilles 2026-05-22 v2). Pour ceux inscrits via un OF
+  // partenaire, l'envoi du bouton est désactivé côté UI (cf.
+  // RemoteSignSection), avec un message dirigeant le formateur vers
+  // l'onglet "Autres signatures" pour le pointage déclaratif.
+  const learnersForRemoteSign = rows.map((r) => ({
+    enrollmentId: r.enrollmentId,
+    name: r.learnerName,
+    email: r.email,
+    partnerOfName: r.partnerOfName,
+  }));
+  const partnerOfCount = rows.filter((r) => r.partnerOfName).length;
+  const resendOn = isResendConfigured();
+
+  // Pour le SignatureGrid inlined dans l'onglet ÉLECTRONIQUE :
+  // - learners au format LearnerRow (fullName)
+  // - signatures au format SignatureSnapshot
+  // - trainerDisplayName + modalityShortLabel
+  const learnerRowsForGrid = rows
     .filter((r) => !r.partnerOfName)
     .map((r) => ({
       enrollmentId: r.enrollmentId,
-      name: r.learnerName,
-      email: r.email,
+      fullName: r.learnerName,
+      company: r.company,
     }));
-  const partnerOfCount = rows.filter((r) => r.partnerOfName).length;
-  const resendOn = isResendConfigured();
+  const trainerJoined = (
+    session as unknown as {
+      trainer?: { first_name: string; last_name: string } | null;
+    }
+  ).trainer;
+  const trainerDisplayName =
+    session.trainer_name ??
+    (trainerJoined
+      ? `${trainerJoined.first_name} ${trainerJoined.last_name}`
+      : null);
+  const modalityShortLabel = session.modality
+    ? session.modality === "distanciel"
+      ? "Distanciel"
+      : session.modality === "hybride"
+        ? "Hybride"
+        : "Présentiel"
+    : null;
 
   // Stats
   const totals = {
@@ -419,29 +464,17 @@ export default async function EmargementPage({
           { label: "Émargement" },
         ]}
         actions={
-          <>
-            <Button
-              size="sm"
-              nativeButton={false}
-              render={
-                <Link href={`/sessions/${id}/emargement/electronique`} />
-              }
-            >
-              <PenLine className="h-4 w-4" />
-              Émargement électronique
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              nativeButton={false}
-              render={
-                <a href={`/sessions/${id}/emargement/print`} target="_blank" />
-              }
-            >
-              <Printer className="h-4 w-4" />
-              Version imprimable
-            </Button>
-          </>
+          <Button
+            variant="outline"
+            size="sm"
+            nativeButton={false}
+            render={
+              <a href={`/sessions/${id}/emargement/print`} target="_blank" />
+            }
+          >
+            <Printer className="h-4 w-4" />
+            Version imprimable
+          </Button>
         }
       />
 
@@ -519,22 +552,26 @@ export default async function EmargementPage({
         <EmargementTabs
           electroniqueContent={
             <div className="space-y-4">
+              {/* Bandeau d'aide + actions QR (inline, plus de bouton
+                  intermédiaire — Gilles 2026-05-22). */}
               <div className="rounded-xl bg-gradient-to-br from-cyan-50 to-blue-50 dark:from-cyan-950/30 dark:to-blue-950/30 border border-cyan-200 dark:border-cyan-900 p-4">
-                <h3 className="font-bold text-sm text-cyan-900 dark:text-cyan-200 mb-1">
-                  Émargement électronique recommandé
-                </h3>
-                <p className="text-xs text-cyan-800 dark:text-cyan-300 mb-3 leading-relaxed">
-                  Chaque apprenant signe directement depuis son téléphone via un
-                  QR code (présentiel) ou un lien email (distanciel).
-                  Les signatures sont horodatées et traçables pour Qualiopi.
-                </p>
-                <Link
-                  href={`/sessions/${id}/emargement/electronique`}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-cyan-600 text-white text-sm font-bold hover:bg-cyan-700 shadow-sm"
-                >
-                  <PenLine className="h-4 w-4" />
-                  Ouvrir l&apos;émargement électronique
-                </Link>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex-1 min-w-[260px]">
+                    <h3 className="font-bold text-sm text-cyan-900 dark:text-cyan-200 mb-1">
+                      Émargement électronique recommandé
+                    </h3>
+                    <p className="text-xs text-cyan-800 dark:text-cyan-300 leading-relaxed">
+                      Chaque apprenant signe directement depuis son téléphone
+                      via un QR code (présentiel) ou un lien email
+                      (distanciel). Les signatures sont horodatées et
+                      traçables pour Qualiopi.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <QrButton sessionId={id} />
+                    <QrEvaluationButton sessionId={id} />
+                  </div>
+                </div>
               </div>
 
               {/* Dashboard de suivi des signatures (uniquement
@@ -550,7 +587,48 @@ export default async function EmargementPage({
                 signaturesIndex={signaturesIndex}
               />
 
-              {/* Section Signature à distance par email */}
+              {/* Grille signatures — accessible immédiatement
+                  (Gilles 2026-05-22 : plus de page intermédiaire) */}
+              {periods.length === 0 ? (
+                <div className="rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-12 text-center text-sm text-zinc-500">
+                  Aucun jour planifié pour cette session. Ajoutez des jours
+                  dans le planning détaillé.
+                </div>
+              ) : learnerRowsForGrid.length === 0 ? (
+                <div className="rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-12 text-center text-sm text-zinc-500">
+                  Aucun apprenant à émarger électroniquement (les
+                  apprenants OF partenaires sont gérés dans l&apos;onglet
+                  Autres signatures).
+                </div>
+              ) : (
+                <SignatureGrid
+                  sessionId={id}
+                  periods={periods.map((p) => ({
+                    date: p.date,
+                    morning_start: p.morning_start,
+                    morning_end: p.morning_end,
+                    afternoon_start: p.afternoon_start,
+                    afternoon_end: p.afternoon_end,
+                  }))}
+                  learners={learnerRowsForGrid}
+                  initialSignatures={
+                    (fullSignaturesData ?? []) as Array<{
+                      enrollment_id: string;
+                      period_date: string;
+                      moment: "morning" | "afternoon";
+                      signer_role: "learner" | "trainer";
+                      signer_name: string;
+                      signature_data: string;
+                      signed_at: string;
+                    }>
+                  }
+                  trainerDisplayName={trainerDisplayName}
+                  modalityShortLabel={modalityShortLabel}
+                />
+              )}
+
+              {/* Section Signature à distance par email — affiche
+                  AUSSI les apprenants OF avec bouton grisé et message */}
               <RemoteSignSection
                 sessionId={id}
                 learners={learnersForRemoteSign}
