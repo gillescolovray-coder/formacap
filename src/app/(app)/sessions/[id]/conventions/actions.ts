@@ -66,16 +66,30 @@ async function computeConventionPricing(
       } | null;
     }>();
 
-  // Nb d'apprenants de cette société sur cette session (cohort facturable)
-  const { count: companyCount } = await supabase
-    .from("session_enrollments")
-    .select("id, learner:learners!inner(company_id)", {
-      count: "exact",
-      head: true,
-    })
-    .eq("session_id", sessionId)
-    .eq("learner.company_id", companyId);
-  const nbApprenantsCompany = companyCount ?? 0;
+  // Nb d'apprenants de cette société sur cette session (cohort facturable).
+  // FIX 2026-05-22 (Gilles) : on prend le MAX entre :
+  //   • enrollments avec learner.company_id = companyId
+  //   • inscription_requests avec company_id = companyId
+  // Cela évite le cas du bug constaté : conventions créées AVANT que les
+  // enrollments miroirs soient générés → nbApprenantsCompany = 0 → montant
+  // figé à 0. En lisant aussi inscription_requests, on capture l'intention
+  // métier même si la sync miroir n'a pas encore eu lieu.
+  const [{ count: enrollCount }, { count: reqCount }] = await Promise.all([
+    supabase
+      .from("session_enrollments")
+      .select("id, learner:learners!inner(company_id)", {
+        count: "exact",
+        head: true,
+      })
+      .eq("session_id", sessionId)
+      .eq("learner.company_id", companyId),
+    supabase
+      .from("inscription_requests")
+      .select("id", { count: "exact", head: true })
+      .eq("target_session_id", sessionId)
+      .eq("company_id", companyId),
+  ]);
+  const nbApprenantsCompany = Math.max(enrollCount ?? 0, reqCount ?? 0);
 
   // Cascade R7 active ?
   if (sessionRow?.pricing_mode) {
@@ -471,7 +485,7 @@ export async function sendConvention(
   const { data: convention } = await supabase
     .from("session_conventions")
     .select(
-      "id, contact_name, contact_email, company_id, session:sessions(organization_id, start_date, end_date, modality, location, location_ref:formation_locations!location_id(name, address, postal_code, city), formation:formations(title, duration_hours, duration_days)), company:companies(name)",
+      "id, contact_name, contact_email, company_id, amount_ht_unit, amount_ht_total, session:sessions(organization_id, start_date, end_date, modality, location, location_ref:formation_locations!location_id(name, address, postal_code, city), formation:formations(title, duration_hours, duration_days)), company:companies(name)",
     )
     .eq("id", conventionId)
     .maybeSingle<{
@@ -479,6 +493,8 @@ export async function sendConvention(
       contact_name: string | null;
       contact_email: string | null;
       company_id: string;
+      amount_ht_unit: number | null;
+      amount_ht_total: number | null;
       session: {
         organization_id: string;
         start_date: string | null;
@@ -508,6 +524,38 @@ export async function sendConvention(
       ok: false,
       error:
         "Le contact RH n'a pas d'email renseigné. Ajoute-le dans la fiche entreprise (contact principal).",
+    };
+  }
+
+  // Bloquer l'envoi si le montant est 0 € HT (Gilles 2026-05-22).
+  // Tente d'abord un auto-recalc avant de bloquer (cas du bug historique
+  // où la convention a été créée avant que les enrollments miroirs
+  // n'existent → montant figé à 0).
+  let unitForCheck = convention.amount_ht_unit;
+  let totalForCheck = convention.amount_ht_total;
+  if (!unitForCheck || unitForCheck === 0 || !totalForCheck || totalForCheck === 0) {
+    const recalc = await computeConventionPricing(
+      supabase,
+      sessionId,
+      convention.company_id,
+    );
+    if (recalc.unitPrice > 0 && recalc.totalHt > 0) {
+      await supabase
+        .from("session_conventions")
+        .update({
+          amount_ht_unit: recalc.unitPrice,
+          amount_ht_total: recalc.totalHt,
+        })
+        .eq("id", conventionId);
+      unitForCheck = recalc.unitPrice;
+      totalForCheck = recalc.totalHt;
+    }
+  }
+  if (!unitForCheck || unitForCheck === 0 || !totalForCheck || totalForCheck === 0) {
+    return {
+      ok: false,
+      error:
+        "Impossible d'envoyer une convention avec un montant à 0 € HT. Vérifie la tarification de la session (Fiche session → Tarification) et le rattachement des apprenants à l'entreprise.",
     };
   }
 

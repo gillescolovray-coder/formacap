@@ -367,11 +367,113 @@ export default async function ConventionPrintPage({
 
   // Prix : on prefere le total stocke sur la convention (fige le CA),
   // a defaut on calcule a la volee unit × nb apprenants.
-  const unitPrice =
-    conv.amount_ht_unit ?? session?.amount_ht ?? 0;
-  const amountHt =
+  // FIX 2026-05-22 (Gilles) : auto-recalcul si le montant figé est 0
+  // (cas du bug ou la convention a ete creee avant que les enrollments
+  // miroirs n'existent → nbApprenantsCompany = 0 → montant fige a 0).
+  let unitPrice = conv.amount_ht_unit ?? session?.amount_ht ?? 0;
+  let amountHt =
     conv.amount_ht_total ??
     (unitPrice ? unitPrice * apprenants.length : 0);
+
+  if ((!unitPrice || unitPrice === 0) && conv.session?.id) {
+    // Recalcule à la volée via les inscription_requests (plus fiable)
+    const sessionId = conv.session.id as string;
+    const companyId = (conv.company?.id as string | undefined) ?? null;
+    if (companyId) {
+      // Lecture des champs pricing R7 + count des inscriptions
+      const supa = await createClient();
+      const [
+        { data: sessRow },
+        { count: dCount },
+        { count: cReqCount },
+        { count: totalReqCount },
+      ] = await Promise.all([
+        supa
+          .from("sessions")
+          .select(
+            "amount_ht, pricing_mode, price_per_day_ht, price_forfait_ht, price_extra_per_day_ht, pricing_threshold, formation:formations(public_price_excl_tax, price_company)",
+          )
+          .eq("id", sessionId)
+          .maybeSingle(),
+        supa
+          .from("session_days")
+          .select("id", { count: "exact", head: true })
+          .eq("session_id", sessionId),
+        supa
+          .from("inscription_requests")
+          .select("id", { count: "exact", head: true })
+          .eq("target_session_id", sessionId)
+          .eq("company_id", companyId),
+        supa
+          .from("inscription_requests")
+          .select("id", { count: "exact", head: true })
+          .eq("target_session_id", sessionId),
+      ]);
+      const nbJours = dCount ?? 0;
+      const nbComp = Math.max(cReqCount ?? 0, apprenants.length);
+      const nbTotal = Math.max(totalReqCount ?? 0, nbComp);
+      const sr = sessRow as unknown as {
+        amount_ht: number | null;
+        pricing_mode: "per_learner" | "forfait" | null;
+        price_per_day_ht: number | null;
+        price_forfait_ht: number | null;
+        price_extra_per_day_ht: number | null;
+        pricing_threshold: number | null;
+        formation: {
+          public_price_excl_tax: number | null;
+          price_company: number | null;
+        } | null;
+      } | null;
+      if (sr?.pricing_mode && nbJours > 0 && nbComp > 0) {
+        const { computeConventionAmount } = await import(
+          "@/lib/pricing/compute"
+        );
+        const r = computeConventionAmount(
+          {
+            mode: sr.pricing_mode,
+            pricePerDayHt: sr.price_per_day_ht,
+            priceForfaitHt: sr.price_forfait_ht,
+            priceExtraPerDayHt: sr.price_extra_per_day_ht,
+            threshold: sr.pricing_threshold,
+          },
+          nbComp,
+          nbTotal,
+          nbJours,
+        );
+        if (r.unitHt > 0) {
+          unitPrice = r.unitHt;
+          amountHt = r.totalHt;
+          // Persiste pour les prochains rendus
+          await supa
+            .from("session_conventions")
+            .update({
+              amount_ht_unit: r.unitHt,
+              amount_ht_total: r.totalHt,
+            })
+            .eq("id", conv.id as string);
+        }
+      } else if (nbComp > 0) {
+        // Fallback legacy
+        const legacy =
+          sr?.amount_ht ??
+          sr?.formation?.price_company ??
+          sr?.formation?.public_price_excl_tax ??
+          0;
+        if (legacy > 0) {
+          unitPrice = Number(legacy);
+          amountHt = unitPrice * nbComp;
+          await supa
+            .from("session_conventions")
+            .update({
+              amount_ht_unit: unitPrice,
+              amount_ht_total: amountHt,
+            })
+            .eq("id", conv.id as string);
+        }
+      }
+    }
+  }
+
   const vatRate = conv.vat_rate ?? 20;
 
   return (

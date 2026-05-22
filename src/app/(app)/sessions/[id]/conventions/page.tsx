@@ -8,6 +8,10 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { isResendConfigured } from "@/lib/email/resend";
 import { healEnrollmentsForSession } from "@/lib/inscriptions/sync";
+import {
+  computeConventionAmount,
+  type SessionPricingConfig,
+} from "@/lib/pricing/compute";
 import { SessionTabs } from "../_session-tabs";
 import { SessionHeaderMeta } from "../_session-header-meta";
 import {
@@ -38,13 +42,26 @@ export default async function ConventionsPage({
 
   const { data: session } = await supabase
     .from("sessions")
-    .select("id, start_date, end_date, formation:formations(id, title)")
+    .select(
+      "id, start_date, end_date, amount_ht, pricing_mode, price_per_day_ht, price_forfait_ht, price_extra_per_day_ht, pricing_threshold, formation:formations(id, title, public_price_excl_tax, price_company)",
+    )
     .eq("id", id)
     .maybeSingle<{
       id: string;
       start_date: string;
       end_date: string;
-      formation: { id: string; title: string } | null;
+      amount_ht: number | null;
+      pricing_mode: "per_learner" | "forfait" | null;
+      price_per_day_ht: number | null;
+      price_forfait_ht: number | null;
+      price_extra_per_day_ht: number | null;
+      pricing_threshold: number | null;
+      formation: {
+        id: string;
+        title: string;
+        public_price_excl_tax: number | null;
+        price_company: number | null;
+      } | null;
     }>();
   if (!session) notFound();
 
@@ -276,6 +293,135 @@ export default async function ConventionsPage({
     a.companyName.localeCompare(b.companyName, "fr"),
   );
 
+  // === Précalcul Montant HT + Source d'inscription par société ===
+  // (Gilles 2026-05-22 — colonnes ajoutées au tableau Conventions pour
+  // vérifier le montant AVANT de générer + voir le canal d'inscription.)
+
+  // Nb réel de jours = count(session_days)
+  const { count: daysCount } = await supabase
+    .from("session_days")
+    .select("id", { count: "exact", head: true })
+    .eq("session_id", id);
+  const nbJours = daysCount ?? 0;
+
+  // Inscriptions de la session (par société) — utilisé pour Montant HT
+  // (fallback enrollment vide → bug constaté) ET pour la source d'inscription.
+  const { data: companyInscriptions } = await supabase
+    .from("inscription_requests")
+    .select("company_id, inscription_channel")
+    .eq("target_session_id", id)
+    .in(
+      "company_id",
+      companyIds.length > 0 ? companyIds : ["00000000-0000-0000-0000-000000000000"],
+    );
+
+  // Nombre total d'apprenants sur la session (toutes sociétés confondues)
+  // — pour le mode forfait. On utilise le MAX entre enrollments et
+  // inscriptions pour rester cohérent même si la sync miroir est en retard.
+  const [{ count: totalEnroll }, { count: totalReq }] = await Promise.all([
+    supabase
+      .from("session_enrollments")
+      .select("id", { count: "exact", head: true })
+      .eq("session_id", id),
+    supabase
+      .from("inscription_requests")
+      .select("id", { count: "exact", head: true })
+      .eq("target_session_id", id),
+  ]);
+  const nbApprenantsTotal = Math.max(totalEnroll ?? 0, totalReq ?? 0);
+
+  // Compte des apprenants par société (via inscriptions, plus fiable)
+  const inscriptionsByCompany = new Map<string, string[]>();
+  const channelsByCompany = new Map<string, Set<string>>();
+  for (const row of (companyInscriptions ?? []) as Array<{
+    company_id: string | null;
+    inscription_channel: string | null;
+  }>) {
+    if (!row.company_id) continue;
+    const list = inscriptionsByCompany.get(row.company_id) ?? [];
+    list.push(row.company_id);
+    inscriptionsByCompany.set(row.company_id, list);
+    const channels = channelsByCompany.get(row.company_id) ?? new Set<string>();
+    channels.add(row.inscription_channel ?? "direct");
+    channelsByCompany.set(row.company_id, channels);
+  }
+
+  const cfg: SessionPricingConfig | null = session.pricing_mode
+    ? {
+        mode: session.pricing_mode,
+        pricePerDayHt: session.price_per_day_ht,
+        priceForfaitHt: session.price_forfait_ht,
+        priceExtraPerDayHt: session.price_extra_per_day_ht,
+        threshold: session.pricing_threshold,
+      }
+    : null;
+
+  // Map company_id → { unitHt, totalHt, source }
+  const computedByCompany = new Map<
+    string,
+    {
+      unitHt: number;
+      totalHt: number;
+      channels: string[];
+      nbApprenants: number;
+    }
+  >();
+  for (const c of companies) {
+    const nbCompany = Math.max(
+      inscriptionsByCompany.get(c.companyId)?.length ?? 0,
+      c.learners.length,
+    );
+    let unitHt = 0;
+    let totalHt = 0;
+    if (cfg && nbJours > 0) {
+      const r = computeConventionAmount(
+        cfg,
+        nbCompany,
+        nbApprenantsTotal,
+        nbJours,
+      );
+      unitHt = r.unitHt;
+      totalHt = r.totalHt;
+    } else {
+      // Fallback legacy
+      const legacyUnit =
+        session.amount_ht ??
+        session.formation?.price_company ??
+        session.formation?.public_price_excl_tax ??
+        0;
+      unitHt = Number(legacyUnit);
+      totalHt = unitHt * nbCompany;
+    }
+    const channelsSet = channelsByCompany.get(c.companyId);
+    const channels = channelsSet ? Array.from(channelsSet).sort() : ["direct"];
+    computedByCompany.set(c.companyId, {
+      unitHt,
+      totalHt,
+      channels,
+      nbApprenants: nbCompany,
+    });
+  }
+
+  function formatEur(n: number): string {
+    return n.toLocaleString("fr-FR", {
+      style: "currency",
+      currency: "EUR",
+      maximumFractionDigits: 2,
+    });
+  }
+  function channelLabel(c: string): string {
+    if (c === "prescripteur") return "Prescripteur";
+    if (c === "of") return "OF";
+    return "CAP NUMERIQUE";
+  }
+  function channelClass(c: string): string {
+    if (c === "prescripteur")
+      return "bg-blue-100 text-blue-800 border-blue-200";
+    if (c === "of")
+      return "bg-violet-100 text-violet-800 border-violet-200";
+    return "bg-emerald-100 text-emerald-800 border-emerald-200";
+  }
+
   const signedCount = Array.from(conventionByCompany.values()).filter(
     (c) => c.status === "signed",
   ).length;
@@ -393,6 +539,22 @@ export default async function ConventionsPage({
                 <tr>
                   <th className="px-4 py-3">Entreprise</th>
                   <th className="px-4 py-3">Apprenants</th>
+                  <th className="px-4 py-3 text-right">
+                    <span className="inline-flex items-center gap-1.5">
+                      Montant HT
+                      <span
+                        title="Montant HT calculé pour cette société (tarif cascade R7). À vérifier avant de générer la convention."
+                        className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-zinc-200 text-zinc-600 text-[10px] font-bold cursor-help normal-case hover:bg-zinc-300"
+                      >
+                        ?
+                      </span>
+                    </span>
+                  </th>
+                  <th className="px-4 py-3 leading-tight">
+                    Source
+                    <br />
+                    d&apos;inscription
+                  </th>
                   <th className="px-4 py-3">
                     <span className="inline-flex items-center gap-1.5">
                       Référent Pédagogique
@@ -472,6 +634,61 @@ export default async function ConventionsPage({
                           </ul>
                         </div>
                       </td>
+
+                      {/* === Montant HT (Gilles 2026-05-22) === */}
+                      <td className="px-4 py-3 align-top text-right">
+                        {(() => {
+                          const computed = computedByCompany.get(c.companyId);
+                          if (!computed) return <span className="text-zinc-300">—</span>;
+                          const conv = conventionByCompany.get(c.companyId);
+                          const persisted = conv?.amount_ht_total ?? null;
+                          // Warning si une convention existe et a un montant
+                          // figé qui diffère du calcul (ex: montant 0 par
+                          // bug historique).
+                          const persistedZero =
+                            persisted !== null && persisted === 0 && computed.totalHt > 0;
+                          return (
+                            <div className="space-y-0.5 inline-block">
+                              <div className="text-sm font-bold text-zinc-900 tabular-nums">
+                                {formatEur(computed.totalHt)}
+                              </div>
+                              <div className="text-[10px] text-zinc-500 tabular-nums">
+                                {formatEur(computed.unitHt)} ×{" "}
+                                {computed.nbApprenants}
+                              </div>
+                              {persistedZero && (
+                                <div className="text-[10px] text-rose-700 font-bold">
+                                  ⚠ Conv. figée à 0
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </td>
+
+                      {/* === Source d'inscription (Gilles 2026-05-22) === */}
+                      <td className="px-4 py-3 align-top text-xs">
+                        {(() => {
+                          const computed = computedByCompany.get(c.companyId);
+                          const channels = computed?.channels ?? ["direct"];
+                          return (
+                            <div className="space-y-1">
+                              {channels.map((ch) => (
+                                <span
+                                  key={ch}
+                                  className={cn(
+                                    "inline-block px-1.5 py-0.5 rounded text-[10px] font-bold border whitespace-nowrap",
+                                    channelClass(ch),
+                                  )}
+                                >
+                                  {channelLabel(ch)}
+                                </span>
+                              ))}
+                            </div>
+                          );
+                        })()}
+                      </td>
+
                       <td className="px-4 py-3 text-xs align-top">
                         {(() => {
                           const referents =
