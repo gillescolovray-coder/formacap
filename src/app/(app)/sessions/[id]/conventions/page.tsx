@@ -431,6 +431,26 @@ export default async function ConventionsPage({
       channels,
       nbApprenants: nbCompany,
     });
+
+    // Auto-fix silencieux : si une convention existe avec un montant
+    // figé à 0 et que le calcul donne un montant > 0, on met à jour la
+    // BDD pour faire disparaître le warning (Gilles 2026-05-22).
+    const conv = conventionByCompany.get(c.companyId);
+    if (
+      conv &&
+      (conv.amount_ht_total === null ||
+        conv.amount_ht_total === 0) &&
+      unitHt > 0 &&
+      totalHt > 0
+    ) {
+      await supabase
+        .from("session_conventions")
+        .update({ amount_ht_unit: unitHt, amount_ht_total: totalHt })
+        .eq("id", conv.id);
+      // Mise à jour locale pour cohérence d'affichage immédiate
+      conv.amount_ht_unit = unitHt;
+      conv.amount_ht_total = totalHt;
+    }
   }
 
   function formatEur(n: number): string {
@@ -843,15 +863,21 @@ export default async function ConventionsPage({
                             💳 {formatFinancingMode(conv.financing_mode)}
                           </div>
                         )}
-                        {conv?.amount_ht_total != null && (
-                          <div className="text-[10px] text-zinc-500">
-                            {Number(conv.amount_ht_total).toLocaleString(
-                              "fr-FR",
-                              { minimumFractionDigits: 2 },
-                            )}{" "}
-                            € HT
-                          </div>
-                        )}
+                        {/* On affiche le montant figé sur la convention
+                            UNIQUEMENT s'il est > 0 — la colonne Montant HT
+                            à gauche montre déjà le calculé, donc afficher
+                            "0,00 € HT" ici serait juste un doublon
+                            anxiogène (Gilles 2026-05-22). */}
+                        {conv?.amount_ht_total != null &&
+                          conv.amount_ht_total > 0 && (
+                            <div className="text-[10px] text-zinc-500">
+                              {Number(conv.amount_ht_total).toLocaleString(
+                                "fr-FR",
+                                { minimumFractionDigits: 2 },
+                              )}{" "}
+                              € HT
+                            </div>
+                          )}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex flex-wrap items-center justify-end gap-1.5">

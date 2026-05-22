@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { Loader2, Send, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useRouter } from "next/navigation";
 import { cancelConvention, ensureConvention, sendConvention } from "./actions";
 
 /**
@@ -21,6 +22,7 @@ export function CancelConventionButton({
   conventionId: string;
   isSigned: boolean;
 }) {
+  const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -32,7 +34,14 @@ export function CancelConventionButton({
     setError(null);
     startTransition(async () => {
       const res = await cancelConvention(sessionId, conventionId);
-      if (!res.ok) setError(res.error);
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+      // Fix Gilles 2026-05-22 : sans router.refresh, le tableau gardait
+      // l'ancien statut Brouillon (le revalidatePath côté serveur ne
+      // suffisait pas à invalider le rendu côté client).
+      router.refresh();
     });
   };
 
