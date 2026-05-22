@@ -1066,7 +1066,7 @@ export default async function ConventionsPage({
                             {partnerOfNameByCompany.get(c.companyId)}
                           </span>
                         ) : (
-                        <div className="flex flex-wrap items-center justify-end gap-1.5">
+                        <div className="flex flex-col items-stretch gap-1.5 min-w-[180px] max-w-[220px] ml-auto">
                           {conv && (
                             <Button
                               variant="outline"

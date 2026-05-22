@@ -119,24 +119,24 @@ export function EmailStatusTimeline(props: Props) {
   ] as const;
 
   return (
-    <div className="inline-flex items-center gap-0.5">
+    <div className="inline-flex flex-wrap items-center gap-0.5 max-w-full">
       {preNotifiedAt && (
         <span
-          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-cyan-100 text-cyan-700 border border-cyan-200 mr-1"
+          className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-bold bg-cyan-100 text-cyan-700 border border-cyan-200 mr-0.5"
           title={`Pré-notifié·e par Gmail le ${formatDate(preNotifiedAt)}`}
         >
           <Check className="h-2.5 w-2.5" />
           Prév.
         </span>
       )}
-      {steps.map((step, idx) => {
+      {steps.map((step) => {
         const Icon = step.icon;
         const reached = Boolean(step.time);
         return (
           <span
             key={step.key}
             className={cn(
-              "inline-flex items-center justify-center h-5 w-5 rounded-full text-[10px] font-bold transition-colors",
+              "inline-flex items-center justify-center h-4 w-4 rounded-full transition-colors",
               reached
                 ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300"
                 : "bg-zinc-100 text-zinc-300 dark:bg-zinc-800 dark:text-zinc-600",
@@ -148,13 +148,10 @@ export function EmailStatusTimeline(props: Props) {
             }
             aria-label={`${step.label} ${reached ? "✓" : "✗"}`}
           >
-            <Icon className="h-3 w-3" />
+            <Icon className="h-2.5 w-2.5" />
             <span className="sr-only">
               {step.label} {reached ? "✓" : ""}
             </span>
-            {idx < steps.length - 1 && (
-              <span aria-hidden className="hidden" />
-            )}
           </span>
         );
       })}
