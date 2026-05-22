@@ -975,14 +975,14 @@ export default async function ConventionsPage({
           </div>
         )}
 
-        <p className="text-xs text-zinc-500 px-1">
+        <div className="pt-2">
           <Link
             href={`/sessions/${id}`}
-            className="underline hover:text-zinc-900"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-white border-2 border-cyan-300 text-cyan-700 text-sm font-bold hover:bg-cyan-50 hover:border-cyan-400 transition-colors shadow-sm"
           >
             ← Retour à la fiche de session
           </Link>
-        </p>
+        </div>
       </div>
     </>
   );

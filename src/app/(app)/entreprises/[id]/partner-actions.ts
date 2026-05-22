@@ -67,7 +67,19 @@ export async function savePartnerGeneralRate(
     dailyRatePresentielHt?: number | null;
   },
 ): Promise<{ ok: boolean; error?: string }> {
-  const supabase = await createClient();
+  // FIX Gilles 2026-05-22 : auth check user pour la securite, puis
+  // utilisation de createAdminClient pour bypasser RLS sur l'UPDATE.
+  // Cause : les policies RLS de la table companies sur les champs
+  // partner_* peuvent bloquer silencieusement l'UPDATE quand l'utilisateur
+  // n'a pas le bon role, et l'ancienne version retournait { ok: true }
+  // meme si 0 ligne avait ete modifiee → le tarif n'etait pas sauve.
+  const userSupabase = await createClient();
+  const {
+    data: { user },
+  } = await userSupabase.auth.getUser();
+  if (!user) return { ok: false, error: "Non authentifié" };
+
+  const supabase = createAdminClient();
   const { data: company } = await supabase
     .from("companies")
     .select("type")
@@ -104,11 +116,19 @@ export async function savePartnerGeneralRate(
     return { ok: true };
   }
 
-  const { error } = await supabase
+  // .select() pour verifier que l'UPDATE a touche au moins 1 ligne.
+  const { data: updated, error } = await supabase
     .from("companies")
     .update(patch)
-    .eq("id", companyId);
+    .eq("id", companyId)
+    .select("id");
   if (error) return { ok: false, error: error.message };
+  if (!updated || updated.length === 0) {
+    return {
+      ok: false,
+      error: "Aucune ligne modifiée — vérifiez que la société existe.",
+    };
+  }
   revalidatePath(`/entreprises/${companyId}`);
   return { ok: true };
 }
