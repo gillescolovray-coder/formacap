@@ -159,7 +159,9 @@ export async function submitPartnerEnrollment(formData: FormData): Promise<
   }
   const unitPriceHt = effective.price;
 
-  // 3) Learner : on cherche par email + organization
+  // 3) Learner : on cherche par TRIPLET (email + first_name + last_name)
+  // pour autoriser plusieurs apprenants avec la meme adresse generique
+  // (`contact@boite.fr` partagee — fix Gilles 2026-05-22).
   let learnerId: string | null = null;
   if (email) {
     const { data: existingLearner } = await supabase
@@ -167,6 +169,8 @@ export async function submitPartnerEnrollment(formData: FormData): Promise<
       .select("id")
       .eq("organization_id", ctx.company.organization_id)
       .ilike("email", email)
+      .ilike("first_name", firstName)
+      .ilike("last_name", lastName)
       .maybeSingle<{ id: string }>();
     if (existingLearner) learnerId = existingLearner.id;
   }
@@ -633,13 +637,21 @@ export async function submitPartnerBatchEnrollmentForm(formData: FormData) {
     const civility =
       civilityRaw === "M." || civilityRaw === "Mme" ? civilityRaw : null;
 
-    // Trouve/cree learner par email
+    // Trouve/cree learner — Gilles 2026-05-22 : on matche sur le
+    // TRIPLET (email + first_name + last_name) au lieu de l'email seul.
+    // Cas typique PME : plusieurs personnes utilisent la meme adresse
+    // entreprise (`contact@boite.fr`, `direction@boite.fr`) — sans ce
+    // fix, le 2e apprenant heritait du learner_id du 1er, ce qui
+    // declenchait une violation de la contrainte unique
+    // uniq_inscription_request_session_learner sur l'INSERT inscription.
     let learnerId: string | null = null;
     const { data: existingLearner } = await supabase
       .from("learners")
       .select("id, civility")
       .eq("organization_id", ctx.company.organization_id)
       .ilike("email", email)
+      .ilike("first_name", firstName)
+      .ilike("last_name", lastName)
       .maybeSingle<{ id: string; civility: string | null }>();
     if (existingLearner) {
       learnerId = existingLearner.id;

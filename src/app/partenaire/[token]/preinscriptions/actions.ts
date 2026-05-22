@@ -144,11 +144,16 @@ export async function validatePreinscription(
   // 3) Trouve ou crée le learner (par email)
   let learnerId: string | null = req.learner_id;
   if (!learnerId && req.prospect_email) {
+    // Triplet (email + first_name + last_name) au lieu de l'email seul
+    // pour autoriser plusieurs apprenants avec la meme adresse generique
+    // (`contact@boite.fr` partagee). Gilles 2026-05-22.
     const { data: existing } = await supabase
       .from("learners")
       .select("id, company_id")
       .eq("organization_id", req.organization_id)
       .ilike("email", req.prospect_email)
+      .ilike("first_name", req.prospect_first_name ?? "")
+      .ilike("last_name", req.prospect_last_name ?? "")
       .maybeSingle<{ id: string; company_id: string | null }>();
     if (existing) {
       learnerId = existing.id;
