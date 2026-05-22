@@ -62,6 +62,9 @@ export default async function ConvocationsPage({
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
+  // Email de l'utilisateur connecté → passé en `authuser` à Gmail compose
+  // pour ouvrir le compte pro Workspace (Gilles 2026-05-22).
+  const currentUserEmail = user.email ?? "";
 
   const { data: session } = await supabase
     .from("sessions")
@@ -230,7 +233,7 @@ export default async function ConvocationsPage({
         }}
       />
 
-      <div className="p-8 max-w-5xl space-y-4">
+      <div className="p-8 max-w-7xl space-y-4">
         {/* Bandeau d'info / configuration Resend */}
         {resendOn ? (
           <div className="rounded-lg bg-cyan-50/50 dark:bg-cyan-950/20 border border-cyan-200 dark:border-cyan-900 p-3 flex items-start gap-2.5">
@@ -355,12 +358,20 @@ export default async function ConvocationsPage({
                   // le PDF, pas un aperçu intermédiaire).
                   const printUrl = `/api/sessions/${id}/convocations/${r.id}/pdf`;
                   // Pré-remplissage email : on prépare l'URL Gmail compose
-                  // (fonctionne avec Google Workspace, Gilles 2026-05-22)
-                  // ET un fallback mailto: système pour Outlook etc.
+                  // FORCÉE sur le compte de l'utilisateur connecté
+                  // (authuser=email) pour ouvrir le bon compte pro Workspace.
+                  // Gilles 2026-05-22 : le compose Gmail s'ouvrait sur le
+                  // compte par défaut (souvent perso) et pas le compte pro.
                   const mailSubject = `Convocation à la formation : ${title}`;
+                  // Body minimaliste : on laisse la signature Gmail s'ajouter
+                  // automatiquement à l'envoi (la signature n'est PAS
+                  // injectable via les params URL Gmail).
                   const mailBody = `Bonjour,\n\nVous trouverez ci-joint votre convocation à la formation « ${title} » ${dateRange}.\n\nBien cordialement,`;
+                  const authUserParam = currentUserEmail
+                    ? `&authuser=${encodeURIComponent(currentUserEmail)}`
+                    : "";
                   const gmailUrl = email
-                    ? `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(email)}&su=${encodeURIComponent(mailSubject)}&body=${encodeURIComponent(mailBody)}`
+                    ? `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(email)}&su=${encodeURIComponent(mailSubject)}&body=${encodeURIComponent(mailBody)}${authUserParam}`
                     : undefined;
                   const mailto = email
                     ? `mailto:${email}?subject=${encodeURIComponent(mailSubject)}&body=${encodeURIComponent(mailBody)}`
@@ -475,7 +486,10 @@ export default async function ConvocationsPage({
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <div className="inline-flex items-center gap-1.5">
+                        {/* flex-wrap pour que les boutons retombent
+                            sur une 2ème ligne plutôt que de déborder
+                            (Gilles 2026-05-22). */}
+                        <div className="flex flex-wrap items-start justify-end gap-1.5">
                           {!r.partner_of_name && (
                             <Button
                               variant="outline"
@@ -523,39 +537,39 @@ export default async function ConvocationsPage({
                               />
                             );
                           })()}
-                          {/* Lien Gmail compose (fonctionne avec Google
-                              Workspace), avec fallback mailto: système.
-                              Gilles 2026-05-22 : le mailto: échouait
-                              avec Google Workspace. */}
-                          {gmailUrl && !r.partner_of_name && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              nativeButton={false}
-                              render={
+                          {/* Gmail (compte pro force via authuser) +
+                              fallback mailto: en lien discret au-dessous.
+                              Gilles 2026-05-22 : layout vertical compact
+                              pour gagner de la place et eviter l'overflow
+                              de boutons. */}
+                          {!r.partner_of_name && gmailUrl && (
+                            <div className="inline-flex flex-col items-stretch gap-0.5">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                nativeButton={false}
+                                render={
+                                  <a
+                                    href={gmailUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                  />
+                                }
+                                title="Ouvre Gmail (compte pro) avec un brouillon prérempli"
+                              >
+                                <Mail className="h-3.5 w-3.5" />
+                                Gmail
+                              </Button>
+                              {mailto && (
                                 <a
-                                  href={gmailUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                />
-                              }
-                              title="Ouvre Gmail dans un nouvel onglet avec un brouillon prérempli (compatible Google Workspace)"
-                            >
-                              <Mail className="h-3.5 w-3.5" />
-                              Gmail
-                            </Button>
-                          )}
-                          {mailto && !r.partner_of_name && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              nativeButton={false}
-                              render={<a href={mailto} />}
-                              title="Fallback mailto: pour client email système (Outlook, Apple Mail…)"
-                              className="text-zinc-500"
-                            >
-                              Mailto
-                            </Button>
+                                  href={mailto}
+                                  className="text-[10px] text-center text-zinc-400 hover:text-zinc-700 hover:underline"
+                                  title="Fallback mailto: pour client email système"
+                                >
+                                  ou Mailto
+                                </a>
+                              )}
+                            </div>
                           )}
                           {r.partner_of_name ? (
                             <span className="text-[11px] text-zinc-500 italic">
