@@ -257,8 +257,8 @@ export function SignatureGrid({
 
   return (
     <>
-      <div className="rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 overflow-auto">
-        <table className="w-full text-sm">
+      <div className="rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 overflow-x-auto">
+        <table className="w-full text-sm min-w-[700px]">
           <thead className="bg-zinc-50 dark:bg-zinc-950 text-xs font-semibold uppercase tracking-wider text-zinc-500 border-b border-zinc-200 dark:border-zinc-800">
             <tr>
               <th
@@ -472,7 +472,7 @@ export function SignatureGrid({
             if (e.target === e.currentTarget) closeModal();
           }}
         >
-          <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-2xl max-w-md w-full p-5 space-y-4">
+          <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-2xl max-w-sm w-full p-5 space-y-4">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h2 className="text-base font-bold">
@@ -500,10 +500,10 @@ export function SignatureGrid({
 
             <SignaturePad
               ref={padRef}
-              width={380}
+              responsive
+              maxWidth={360}
               height={160}
               onChange={(empty) => setPadFilled(!empty)}
-              className="mx-auto"
             />
 
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">

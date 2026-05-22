@@ -20,7 +20,7 @@ export type SignaturePadHandle = {
 };
 
 type Props = {
-  /** Largeur en pixels CSS. Défaut : 320. */
+  /** Largeur en pixels CSS. Défaut : 320. Ignoré si `responsive` est activé. */
   width?: number;
   /** Hauteur en pixels CSS. Défaut : 140. */
   height?: number;
@@ -31,6 +31,13 @@ type Props = {
   /** Callback appelé après chaque modification (utile pour activer un bouton "Valider"). */
   onChange?: (isEmpty: boolean) => void;
   className?: string;
+  /**
+   * Si activé, la largeur s'adapte à la largeur du conteneur (mobile-first).
+   * Bornée par `maxWidth` (défaut 360px).
+   */
+  responsive?: boolean;
+  /** Largeur max en mode responsive. Défaut : 360. */
+  maxWidth?: number;
 };
 
 /**
@@ -54,22 +61,48 @@ export const SignaturePad = forwardRef<SignaturePadHandle, Props>(
       strokeWidth = 2,
       onChange,
       className,
+      responsive = false,
+      maxWidth = 360,
     },
     ref,
   ) {
+    const wrapperRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const drawingRef = useRef(false);
     const lastPointRef = useRef<{ x: number; y: number } | null>(null);
     const [isEmpty, setIsEmpty] = useState(true);
+    // En mode responsive, la largeur est mesurée et bornée par maxWidth.
+    const [measuredWidth, setMeasuredWidth] = useState<number>(width);
+
+    // Observe la largeur du conteneur en mode responsive.
+    useEffect(() => {
+      if (!responsive) {
+        setMeasuredWidth(width);
+        return;
+      }
+      const wrapper = wrapperRef.current;
+      if (!wrapper) return;
+      const update = () => {
+        const available = wrapper.clientWidth;
+        const next = Math.min(maxWidth, Math.max(220, available));
+        setMeasuredWidth(next);
+      };
+      update();
+      const ro = new ResizeObserver(update);
+      ro.observe(wrapper);
+      return () => ro.disconnect();
+    }, [responsive, maxWidth, width]);
+
+    const effectiveWidth = responsive ? measuredWidth : width;
 
     // Mise à l'échelle pour les écrans haute densité (rétina, mobile).
     useEffect(() => {
       const canvas = canvasRef.current;
       if (!canvas) return;
       const dpr = window.devicePixelRatio || 1;
-      canvas.width = width * dpr;
+      canvas.width = effectiveWidth * dpr;
       canvas.height = height * dpr;
-      canvas.style.width = `${width}px`;
+      canvas.style.width = `${effectiveWidth}px`;
       canvas.style.height = `${height}px`;
       const ctx = canvas.getContext("2d");
       if (ctx) {
@@ -79,7 +112,7 @@ export const SignaturePad = forwardRef<SignaturePadHandle, Props>(
         ctx.strokeStyle = strokeColor;
         ctx.lineWidth = strokeWidth;
       }
-    }, [width, height, strokeColor, strokeWidth]);
+    }, [effectiveWidth, height, strokeColor, strokeWidth]);
 
     function getCoords(
       e: React.PointerEvent<HTMLCanvasElement>,
@@ -152,8 +185,11 @@ export const SignaturePad = forwardRef<SignaturePadHandle, Props>(
 
     return (
       <div
+        ref={wrapperRef}
         className={cn(
-          "inline-flex flex-col items-stretch gap-2",
+          responsive
+            ? "flex flex-col items-stretch gap-2 w-full"
+            : "inline-flex flex-col items-stretch gap-2",
           className,
         )}
       >

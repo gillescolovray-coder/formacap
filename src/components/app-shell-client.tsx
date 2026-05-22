@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, Suspense, useContext, useEffect, useState } from "react";
-import { PanelLeftClose, PanelLeft } from "lucide-react";
+import { Menu, PanelLeftClose, PanelLeft, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NavigationProgress } from "./navigation-progress";
 
@@ -27,12 +27,35 @@ export function AppShellClient({ sidebar, children }: AppShellClientProps) {
   // Initialize from localStorage on first render (client-only)
   const [collapsed, setCollapsed] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+  // Drawer mobile (Gilles 2026-05-22) : sur écrans < md, la sidebar
+  // disparaît complètement et s'ouvre via un drawer overlay.
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored === "1") setCollapsed(true);
     setHydrated(true);
   }, []);
+
+  // Ferme le drawer mobile à chaque navigation (changement d'URL).
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const handlePopState = () => setMobileOpen(false);
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [mobileOpen]);
+
+  // Empêche le scroll body quand le drawer mobile est ouvert.
+  useEffect(() => {
+    if (mobileOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [mobileOpen]);
 
   const toggle = () => {
     setCollapsed((prev) => {
@@ -54,11 +77,12 @@ export function AppShellClient({ sidebar, children }: AppShellClientProps) {
         <NavigationProgress />
       </Suspense>
       <div className="flex min-h-screen bg-slate-50">
-        {/* Sidebar — réduite à 64px en mode collapsed (icônes seules avec
-            tooltip), 288px en mode étendu. */}
+        {/* === SIDEBAR DESKTOP (md:+) ===
+            Réduite à 64px en mode collapsed (icônes seules avec
+            tooltip), 288px en mode étendu. Cachée sur mobile (hidden md:block). */}
         <aside
           className={cn(
-            "shrink-0 sticky top-0 h-screen overflow-hidden transition-[width] duration-300 ease-out",
+            "hidden md:block shrink-0 sticky top-0 h-screen overflow-hidden transition-[width] duration-300 ease-out",
             isCollapsed ? "w-16" : "w-72",
           )}
         >
@@ -72,9 +96,52 @@ export function AppShellClient({ sidebar, children }: AppShellClientProps) {
           </div>
         </aside>
 
+        {/* === DRAWER MOBILE (< md) ===
+            Overlay sombre + sidebar slide-in depuis la gauche.
+            Visible uniquement quand mobileOpen=true. */}
+        {mobileOpen && (
+          <div
+            className="md:hidden fixed inset-0 z-40 bg-black/50"
+            onClick={() => setMobileOpen(false)}
+            aria-hidden
+          />
+        )}
+        <aside
+          className={cn(
+            "md:hidden fixed top-0 left-0 z-50 h-screen w-72 max-w-[85vw] bg-white shadow-xl transition-transform duration-300 ease-out",
+            mobileOpen ? "translate-x-0" : "-translate-x-full",
+          )}
+          aria-hidden={!mobileOpen}
+        >
+          {/* Bouton fermer drawer en haut à droite */}
+          <button
+            type="button"
+            onClick={() => setMobileOpen(false)}
+            aria-label="Fermer le menu"
+            className="absolute top-3 right-3 z-10 h-9 w-9 inline-flex items-center justify-center rounded-full bg-white border border-slate-200 shadow-sm hover:bg-slate-50 text-slate-700"
+          >
+            <X className="h-4 w-4" />
+          </button>
+          <div className="h-full overflow-y-auto" onClick={() => setMobileOpen(false)}>
+            {sidebar}
+          </div>
+        </aside>
+
         {/* Main content */}
         <main className="flex-1 min-w-0 bg-gradient-to-br from-slate-50 via-white to-cyan-50/50 relative">
-          {/* Bouton de bascule sticky en haut à gauche */}
+          {/* Boutons de bascule sticky en haut à gauche :
+              - Mobile (< md) : burger menu qui ouvre le drawer
+              - Desktop (md+) : bouton collapsed/expanded de la sidebar */}
+          <button
+            type="button"
+            onClick={() => setMobileOpen(true)}
+            title="Ouvrir le menu"
+            aria-label="Ouvrir le menu"
+            className="md:hidden sticky top-4 left-4 z-30 ml-4 mt-4 h-11 w-11 inline-flex items-center justify-center rounded-full bg-white border border-slate-200 shadow-md hover:shadow-lg hover:bg-slate-50 transition-all text-slate-700"
+            style={{ float: "left" }}
+          >
+            <Menu className="h-5 w-5" />
+          </button>
           <button
             type="button"
             onClick={toggle}
@@ -82,7 +149,7 @@ export function AppShellClient({ sidebar, children }: AppShellClientProps) {
             aria-label={
               isCollapsed ? "Afficher le menu" : "Masquer le menu"
             }
-            className="sticky top-4 left-4 z-30 ml-4 mt-4 h-9 w-9 inline-flex items-center justify-center rounded-full bg-white border border-slate-200 shadow-md hover:shadow-lg hover:bg-slate-50 transition-all text-slate-700"
+            className="hidden md:inline-flex sticky top-4 left-4 z-30 ml-4 mt-4 h-9 w-9 items-center justify-center rounded-full bg-white border border-slate-200 shadow-md hover:shadow-lg hover:bg-slate-50 transition-all text-slate-700"
             style={{ float: "left" }}
           >
             {isCollapsed ? (
