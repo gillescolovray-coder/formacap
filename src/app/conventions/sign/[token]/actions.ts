@@ -9,6 +9,8 @@ export type SignConventionInput = {
   conventionId: string;
   signerName: string;
   signatureDataUrl: string;
+  /** Mention « Bon pour accord » obligatoire (Gilles 2026-05-22). */
+  goodForAgreement: boolean;
 };
 
 export type SignConventionResult =
@@ -23,6 +25,14 @@ export async function signConvention(
   }
   if (input.signerName.trim().length < 2) {
     return { ok: false, error: "Merci de saisir votre nom complet." };
+  }
+  // Mention « Bon pour accord » obligatoire (Gilles 2026-05-22).
+  if (!input.goodForAgreement) {
+    return {
+      ok: false,
+      error:
+        "Vous devez cocher la case « Bon pour accord » pour engager l'entreprise.",
+    };
   }
 
   const supabase = await createClient();

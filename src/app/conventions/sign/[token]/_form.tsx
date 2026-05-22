@@ -16,6 +16,9 @@ export function ConventionSignForm({
 }) {
   const [name, setName] = useState(defaultName);
   const [hasDrawn, setHasDrawn] = useState(false);
+  // Mention légale française "Bon pour accord" — obligatoire pour engager
+  // l'entreprise (Gilles 2026-05-22, suite retour Mme TORRES).
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [pending, startTransition] = useTransition();
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(
     null,
@@ -32,6 +35,13 @@ export function ConventionSignForm({
       setResult({ ok: false, msg: "Merci de saisir votre nom complet." });
       return;
     }
+    if (!acceptedTerms) {
+      setResult({
+        ok: false,
+        msg: "Vous devez cocher la case « Bon pour accord » pour engager l'entreprise.",
+      });
+      return;
+    }
     setResult(null);
     startTransition(async () => {
       const res = await signConvention({
@@ -39,6 +49,7 @@ export function ConventionSignForm({
         conventionId,
         signerName: name,
         signatureDataUrl: dataUrl,
+        goodForAgreement: acceptedTerms,
       });
       if (res.ok) {
         setResult({ ok: true, msg: "Convention signée avec succès." });
@@ -88,11 +99,33 @@ export function ConventionSignForm({
         />
       </div>
 
-      <p className="text-[11px] text-zinc-500">
-        En signant, vous déclarez avoir pris connaissance des termes de la
-        convention de formation et engagez l&apos;entreprise sur les
-        conditions exposées.
-      </p>
+      {/* Mention légale "Bon pour accord" — case obligatoire qui engage
+          l'entreprise. (Gilles 2026-05-22, mention francaise classique
+          pour les conventions de formation B2B.) */}
+      <label
+        className={`flex items-start gap-2.5 rounded-lg border-2 p-3 cursor-pointer transition-colors ${
+          acceptedTerms
+            ? "border-emerald-400 bg-emerald-50"
+            : "border-amber-300 bg-amber-50"
+        }`}
+      >
+        <input
+          type="checkbox"
+          checked={acceptedTerms}
+          onChange={(e) => setAcceptedTerms(e.target.checked)}
+          className="h-5 w-5 mt-0.5 rounded border-zinc-300 cursor-pointer shrink-0"
+        />
+        <div className="text-sm leading-snug">
+          <span className="font-bold text-zinc-900">
+            ☑ Bon pour accord
+          </span>
+          <span className="block text-[12px] text-zinc-700 mt-0.5">
+            J&apos;ai lu et j&apos;accepte les termes de la convention de
+            formation, et j&apos;engage l&apos;entreprise sur les conditions
+            exposées.
+          </span>
+        </div>
+      </label>
 
       {result && !result.ok && (
         <div className="rounded-lg bg-rose-50 border border-rose-200 p-3 text-sm text-rose-900">
@@ -103,7 +136,7 @@ export function ConventionSignForm({
       <button
         type="button"
         onClick={onSubmit}
-        disabled={pending || !hasDrawn || !name.trim()}
+        disabled={pending || !hasDrawn || !name.trim() || !acceptedTerms}
         className="w-full h-11 rounded-lg bg-blue-700 text-white font-bold flex items-center justify-center gap-2 hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
         {pending ? (

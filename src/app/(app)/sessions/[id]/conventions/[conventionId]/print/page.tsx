@@ -1260,6 +1260,11 @@ export default async function ConventionPrintPage({
             </p>
             {conv.status === "signed" && conv.signature_data ? (
               <div className="mt-2 p-2 bg-emerald-50 rounded">
+                {/* Mention legale "Bon pour accord" obligatoire pour
+                    engager l'entreprise (Gilles 2026-05-22). */}
+                <p className="text-[11px] font-bold text-emerald-800 text-center mb-1">
+                  Bon pour accord
+                </p>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={conv.signature_data}
