@@ -370,6 +370,61 @@ export default async function ParcoursApprenantPage({
     : null;
   const trainerPhone = trainer?.mobile ?? trainer?.phone ?? null;
 
+  // === URLs d'ajout au calendrier (Gilles 2026-05-22) ===
+  // 3 voies au choix : Google Calendar, Outlook, .ics (universel).
+  function pad(n: number) {
+    return n.toString().padStart(2, "0");
+  }
+  function buildDateTime(dateIso: string, time: string | null): Date {
+    const d = new Date(dateIso);
+    const [hh, mm] = (time ?? "09:00").split(":").map((x) => Number(x));
+    d.setHours(hh || 9, mm || 0, 0, 0);
+    return d;
+  }
+  const calStart = buildDateTime(
+    session.start_date,
+    session.default_morning_start ?? "09:00",
+  );
+  const calEnd = buildDateTime(
+    session.end_date,
+    session.default_afternoon_end ?? "17:00",
+  );
+  // Format Google : YYYYMMDDTHHMMSSZ (UTC)
+  const googleDate = (d: Date) =>
+    `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}Z`;
+  // Format Outlook : ISO 8601 (locale browser)
+  const outlookDate = (d: Date) => d.toISOString();
+
+  const calLocation =
+    isDistanciel || isHybride
+      ? (session.video_link ?? "Distanciel")
+      : adresseComplete || "";
+  const calDescription = [
+    `Formation organisée par ${orgName}`,
+    orgPhone ? `Contact : ${orgPhone}` : null,
+    session.organization?.email
+      ? `Email : ${session.organization.email}`
+      : null,
+    session.video_link ? `Lien visio : ${session.video_link}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const googleCalUrl =
+    `https://calendar.google.com/calendar/render?action=TEMPLATE` +
+    `&text=${encodeURIComponent(formationTitle)}` +
+    `&dates=${googleDate(calStart)}/${googleDate(calEnd)}` +
+    `&details=${encodeURIComponent(calDescription)}` +
+    `&location=${encodeURIComponent(calLocation)}`;
+  const outlookCalUrl =
+    `https://outlook.office.com/calendar/0/deeplink/compose` +
+    `?path=%2Fcalendar%2Faction%2Fcompose&rru=addevent` +
+    `&subject=${encodeURIComponent(formationTitle)}` +
+    `&body=${encodeURIComponent(calDescription)}` +
+    `&location=${encodeURIComponent(calLocation)}` +
+    `&startdt=${encodeURIComponent(outlookDate(calStart))}` +
+    `&enddt=${encodeURIComponent(outlookDate(calEnd))}`;
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
       <div className="max-w-2xl mx-auto p-4 md:p-8 space-y-4">
@@ -498,26 +553,58 @@ export default async function ParcoursApprenantPage({
             )}
           </div>
 
-          {/* Boutons d'action : agenda + convocation */}
-          <div className="flex flex-wrap gap-2 pt-2 border-t border-zinc-100">
-            <a
-              href={`/api/public/parcours/${token}/calendar.ics`}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-cyan-600 text-white text-xs font-bold hover:bg-cyan-700 transition-colors"
-              title="Télécharger le fichier .ics pour Google Calendar / Apple Calendar / Outlook"
-            >
-              <CalendarIcon className="h-3.5 w-3.5" />
-              Ajouter à mon agenda
-            </a>
-            <a
-              href={`/api/public/convocations/${token}/pdf`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-white border border-cyan-300 text-cyan-700 text-xs font-bold hover:bg-cyan-50 transition-colors"
-              title="Télécharger ma convocation en PDF"
-            >
-              <FileText className="h-3.5 w-3.5" />
-              Voir ma convocation
-            </a>
+          {/* Boutons d'action : ajout calendrier (3 voies) + convocation.
+              Gilles 2026-05-22 — 3 boutons distincts pour Google, Outlook
+              et .ics universel selon ce qu'utilise l'apprenant. */}
+          <div className="pt-2 border-t border-zinc-100 space-y-2">
+            <div className="space-y-1.5">
+              <p className="text-[11px] uppercase tracking-wider font-bold text-zinc-500 inline-flex items-center gap-1.5">
+                <CalendarIcon className="h-3 w-3" />
+                Ajouter à mon agenda
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <a
+                  href={googleCalUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-white border-2 border-zinc-300 text-zinc-800 text-xs font-bold hover:bg-zinc-50 hover:border-blue-400 transition-colors"
+                  title="Ouvre Google Calendar dans un nouvel onglet avec l'événement pré-rempli"
+                >
+                  <span className="text-base leading-none">📅</span>
+                  Google Calendar
+                </a>
+                <a
+                  href={outlookCalUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-white border-2 border-zinc-300 text-zinc-800 text-xs font-bold hover:bg-zinc-50 hover:border-blue-400 transition-colors"
+                  title="Ouvre Outlook (Office 365) avec l'événement pré-rempli"
+                >
+                  <span className="text-base leading-none">📨</span>
+                  Outlook
+                </a>
+                <a
+                  href={`/api/public/parcours/${token}/calendar.ics`}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-white border-2 border-zinc-300 text-zinc-800 text-xs font-bold hover:bg-zinc-50 hover:border-blue-400 transition-colors"
+                  title="Télécharge un fichier .ics universel (Apple Calendar, Outlook desktop, Thunderbird…)"
+                >
+                  <span className="text-base leading-none">💾</span>
+                  Fichier .ics
+                </a>
+              </div>
+            </div>
+            <div>
+              <a
+                href={`/api/public/convocations/${token}/pdf`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-cyan-600 text-white text-xs font-bold hover:bg-cyan-700 transition-colors"
+                title="Télécharger ma convocation en PDF"
+              >
+                <FileText className="h-3.5 w-3.5" />
+                Voir ma convocation
+              </a>
+            </div>
           </div>
         </div>
 
