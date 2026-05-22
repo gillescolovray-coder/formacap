@@ -52,6 +52,7 @@ export function PartnerInscribeForm({
   sessionId,
   unitPriceHt,
   partnerType,
+  prefill,
 }: {
   token: string;
   sessionId: string;
@@ -60,14 +61,29 @@ export function PartnerInscribeForm({
    *  Pour les OF : pas de convention → contact référent facultatif
    *  et masqué par défaut. Pour les prescripteurs : obligatoire. */
   partnerType: "of" | "prescripteur";
+  /** Pré-remplissage entreprise + contact référent (Gilles 2026-05-22) —
+   *  utilisé quand le partenaire clique "+ Ajouter un apprenant" depuis
+   *  Mes inscriptions pour une entreprise déjà inscrite. */
+  prefill?: {
+    company: CompanyForm;
+    contactReferent: {
+      firstName: string;
+      lastName: string;
+      email: string;
+      phone: string;
+      role: string;
+    } | null;
+  } | null;
 }) {
-  const [company, setCompany] = useState<CompanyForm>({
-    siret: "",
-    name: "",
-    address: "",
-    postalCode: "",
-    city: "",
-  });
+  const [company, setCompany] = useState<CompanyForm>(
+    prefill?.company ?? {
+      siret: "",
+      name: "",
+      address: "",
+      postalCode: "",
+      city: "",
+    },
+  );
   const [learners, setLearners] = useState<LearnerForm[]>([emptyLearner()]);
   // Financement : Employeur direct / OPCO sans subro / OPCO avec subro.
   // Qualiopi indic. 9 — info à tracer côté inscription_request.
@@ -77,13 +93,15 @@ export function PartnerInscribeForm({
   const [opcoName, setOpcoName] = useState("");
   // Contact référent pédagogique (RH / responsable formation côté
   // entreprise) — distinct des apprenants, recevra la convention.
-  const [contact, setContact] = useState({
-    firstName: "",
-    lastName: "",
-    email: "",
-    phone: "",
-    role: "",
-  });
+  const [contact, setContact] = useState(
+    prefill?.contactReferent ?? {
+      firstName: "",
+      lastName: "",
+      email: "",
+      phone: "",
+      role: "",
+    },
+  );
   // Toggle "Renseigner un référent pédagogique ?" (prescripteur uniquement).
   // - Coché (défaut)   : bloc référent visible + obligatoire
   // - Décoché          : pas de référent. Le PREMIER apprenant recevra

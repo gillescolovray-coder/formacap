@@ -174,6 +174,8 @@ export default async function PartnerInscriptionsPage({
         learnerPhone: learner?.phone ?? r.prospect_phone ?? null,
         companyName: company?.name ?? r.company_name_freetext ?? null,
         companyCity: company?.city ?? null,
+        companyId: company?.id ?? null,
+        sessionId: session?.id ?? null,
         contact_referent: referent,
         sessionRef: session?.internal_code ?? null,
         startDate: session?.start_date ?? null,

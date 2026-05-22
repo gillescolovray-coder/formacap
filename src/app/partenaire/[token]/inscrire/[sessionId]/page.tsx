@@ -31,10 +31,10 @@ export default async function PartnerInscribePage({
   searchParams,
 }: {
   params: Promise<Params>;
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; prefillCompanyId?: string }>;
 }) {
   const { token, sessionId } = await params;
-  const { error } = await searchParams;
+  const { error, prefillCompanyId } = await searchParams;
   const ctx = await resolvePartnerContext(token);
   if (!ctx) notFound();
 
@@ -141,6 +141,77 @@ export default async function PartnerInscribePage({
   }
   const unitPriceHt = effective.price;
 
+  // Pré-remplissage de l'entreprise (Gilles 2026-05-22) — quand le
+  // partenaire clique sur "+ Ajouter un apprenant" depuis Mes inscriptions,
+  // on charge les infos de l'entreprise + son contact référent principal
+  // pour qu'il n'ait qu'à saisir le nouvel apprenant.
+  type PrefillData = {
+    company: {
+      siret: string;
+      name: string;
+      address: string;
+      postalCode: string;
+      city: string;
+    };
+    contactReferent: {
+      firstName: string;
+      lastName: string;
+      email: string;
+      phone: string;
+      role: string;
+    } | null;
+  } | null;
+  let prefillData: PrefillData = null;
+  if (prefillCompanyId) {
+    const { data: prefillCompany } = await supabase
+      .from("companies")
+      .select("id, siret, name, address, postal_code, city")
+      .eq("id", prefillCompanyId)
+      .eq("organization_id", ctx.company.organization_id)
+      .maybeSingle<{
+        id: string;
+        siret: string | null;
+        name: string;
+        address: string | null;
+        postal_code: string | null;
+        city: string | null;
+      }>();
+    if (prefillCompany) {
+      // Contact principal de l'entreprise (= contact référent par défaut)
+      const { data: primaryContact } = await supabase
+        .from("company_contacts")
+        .select("first_name, last_name, email, phone, job_title")
+        .eq("company_id", prefillCompanyId)
+        .eq("is_primary", true)
+        .limit(1)
+        .maybeSingle<{
+          first_name: string | null;
+          last_name: string | null;
+          email: string | null;
+          phone: string | null;
+          job_title: string | null;
+        }>();
+      prefillData = {
+        company: {
+          siret: prefillCompany.siret ?? "",
+          name: prefillCompany.name,
+          address: prefillCompany.address ?? "",
+          postalCode: prefillCompany.postal_code ?? "",
+          city: prefillCompany.city ?? "",
+        },
+        contactReferent: primaryContact
+          ? {
+              firstName: primaryContact.first_name ?? "",
+              lastName: primaryContact.last_name ?? "",
+              email: primaryContact.email ?? "",
+              phone: primaryContact.phone ?? "",
+              role: primaryContact.job_title ?? "",
+            }
+          : null,
+      };
+    }
+  }
+
   return (
     <div className="space-y-5 max-w-3xl">
       <Link
@@ -221,6 +292,7 @@ export default async function PartnerInscribePage({
         sessionId={sessionId}
         unitPriceHt={unitPriceHt}
         partnerType={ctx.company.type as "of" | "prescripteur"}
+        prefill={prefillData}
       />
 
       <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-xs text-emerald-800 inline-flex items-start gap-2">

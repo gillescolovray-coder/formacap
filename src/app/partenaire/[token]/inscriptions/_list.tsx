@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   Building2,
   Calendar,
@@ -12,6 +13,7 @@ import {
   Search,
   Trash2,
   UserCheck,
+  UserPlus,
   X,
 } from "lucide-react";
 import { deleteInscription, updateInscription } from "./actions";
@@ -28,6 +30,9 @@ export type InscriptionRow = {
   learnerPhone: string | null;
   companyName: string | null;
   companyCity: string | null;
+  /** Pour le bouton "+ Ajouter un apprenant" (Gilles 2026-05-22). */
+  companyId: string | null;
+  sessionId: string | null;
   contact_referent: {
     first_name: string | null;
     last_name: string | null;
@@ -337,25 +342,39 @@ export function InscriptionsList({
                   )}
                 </div>
                 {/* Actions Modifier / Supprimer en bas de carte */}
-                <div className="flex gap-2 pt-2 border-t border-zinc-100">
-                  <button
-                    type="button"
-                    onClick={() => setEditingId(r.id)}
-                    disabled={pending}
-                    className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-md border border-zinc-300 bg-white text-zinc-700 text-xs font-medium hover:bg-cyan-50 hover:border-cyan-300 hover:text-cyan-700 disabled:opacity-50"
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                    Modifier
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => doDelete(r)}
-                    disabled={pending}
-                    className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-md border border-zinc-300 bg-white text-zinc-700 text-xs font-medium hover:bg-rose-50 hover:border-rose-300 hover:text-rose-700 disabled:opacity-50"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    Supprimer
-                  </button>
+                <div className="flex flex-col gap-2 pt-2 border-t border-zinc-100">
+                  {/* Bouton "+ Ajouter un apprenant pour cette entreprise"
+                      (Gilles 2026-05-22). Redirige vers le formulaire
+                      d'inscription pré-rempli avec SIRET + référent. */}
+                  {r.companyId && r.sessionId && (
+                    <Link
+                      href={`/partenaire/${token}/inscrire/${r.sessionId}?prefillCompanyId=${r.companyId}`}
+                      className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-md border border-emerald-300 bg-emerald-50 text-emerald-700 text-xs font-bold hover:bg-emerald-100"
+                    >
+                      <UserPlus className="h-3.5 w-3.5" />
+                      Ajouter un apprenant pour {r.companyName ?? "cette entreprise"}
+                    </Link>
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditingId(r.id)}
+                      disabled={pending}
+                      className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-md border border-zinc-300 bg-white text-zinc-700 text-xs font-medium hover:bg-cyan-50 hover:border-cyan-300 hover:text-cyan-700 disabled:opacity-50"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                      Modifier
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => doDelete(r)}
+                      disabled={pending}
+                      className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-md border border-zinc-300 bg-white text-zinc-700 text-xs font-medium hover:bg-rose-50 hover:border-rose-300 hover:text-rose-700 disabled:opacity-50"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Supprimer
+                    </button>
+                  </div>
                 </div>
               </article>
             );
@@ -538,9 +557,20 @@ export function InscriptionsList({
                       </span>
                     </td>
 
-                    {/* Actions Modifier / Supprimer */}
+                    {/* Actions Ajouter / Modifier / Supprimer */}
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-1">
+                        {/* Bouton "+ Ajouter apprenant pour entreprise"
+                            (Gilles 2026-05-22) */}
+                        {r.companyId && r.sessionId && (
+                          <Link
+                            href={`/partenaire/${token}/inscrire/${r.sessionId}?prefillCompanyId=${r.companyId}`}
+                            className="inline-flex items-center justify-center h-7 w-7 rounded-md text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50"
+                            title={`Ajouter un autre apprenant pour ${r.companyName ?? "cette entreprise"}`}
+                          >
+                            <UserPlus className="h-3.5 w-3.5" />
+                          </Link>
+                        )}
                         <button
                           type="button"
                           onClick={() => setEditingId(r.id)}
