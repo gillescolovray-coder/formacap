@@ -154,6 +154,16 @@ export default async function SessionsListPage({
   if (periodFilter === "upcoming") query = query.gt("start_date", today);
   if (periodFilter === "current")
     query = query.lte("start_date", today).gte("end_date", today);
+  // Gilles 2026-05-22 : par défaut (pas de filtre période ni recherche),
+  // on masque les sessions terminées depuis plus de 30 jours pour
+  // alléger l'affichage. L'utilisateur peut toujours cliquer sur le
+  // bouton "Passées" pour voir TOUTES les anciennes sessions.
+  if (periodFilter === "" && !q) {
+    const cutoff = new Date(Date.now() - 30 * 24 * 3600 * 1000)
+      .toISOString()
+      .slice(0, 10);
+    query = query.gte("end_date", cutoff);
+  }
 
   // Phase 1 : tout ce qui ne dépend que de l'utilisateur — en parallèle.
   const [
