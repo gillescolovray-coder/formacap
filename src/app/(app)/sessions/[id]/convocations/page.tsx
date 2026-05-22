@@ -529,19 +529,21 @@ export default async function ConvocationsPage({
                               />
                             );
                           })()}
-                          {/* Bouton Gmail intelligent : ouvre le PDF
-                              dans un onglet + Gmail compose dans un
-                              autre. L'utilisateur glisse-dépose le PDF.
-                              + fallback mailto: en lien discret.
-                              Gilles 2026-05-22. */}
+                          {/* Bouton Gmail (Option B Gilles 2026-05-22) :
+                              ouvre Gmail compose avec un lien public
+                              vers le PDF de la convocation inséré dans
+                              le body. L'email part du compte pro
+                              Workspace, le destinataire clique sur le
+                              lien pour récupérer la convocation. */}
                           {!r.partner_of_name && email && (
                             <div className="inline-flex flex-col items-stretch gap-0.5">
                               <GmailButton
-                                printUrl={printUrl}
+                                enrollmentId={r.id}
                                 toEmail={email}
                                 subject={mailSubject}
-                                body={mailBody}
                                 authUserEmail={currentUserEmail}
+                                formationTitle={title}
+                                dateRange={dateRange}
                               />
                               {mailto && (
                                 <a

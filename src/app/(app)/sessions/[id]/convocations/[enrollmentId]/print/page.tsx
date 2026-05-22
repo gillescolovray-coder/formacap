@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import type { TrainingSession } from "@/lib/sessions/types";
 import { MODALITY_LABELS } from "@/lib/formations/types";
 import { loadConvocationTemplate } from "@/lib/document-templates/loader";
@@ -42,17 +43,41 @@ function formatTimeShort(time: string | null) {
 
 export default async function ConvocationPrintPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string; enrollmentId: string }>;
+  searchParams: Promise<{ token?: string }>;
 }) {
   const { id, enrollmentId } = await params;
+  const query = await searchParams;
   if (!UUID_REGEX.test(id) || !UUID_REGEX.test(enrollmentId)) notFound();
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  // Auth : par défaut on exige un user connecté (route admin).
+  // Mais si un `?token=` valide est fourni, on bypass l'auth admin et
+  // on rend la page via service_role. Permet de servir le PDF en mode
+  // public (lien envoyé par email Gmail à l'apprenant ou au RH).
+  // Gilles 2026-05-22 — Option B délivrabilité Gmail.
+  const supabase = query.token
+    ? createAdminClient()
+    : await createClient();
+  if (!query.token) {
+    const userSupabase = await createClient();
+    const {
+      data: { user },
+    } = await userSupabase.auth.getUser();
+    if (!user) redirect("/login");
+  } else {
+    // Vérification du token : doit correspondre à un
+    // enrollment_portal_token actif pour ce enrollmentId.
+    const { data: tokenRow } = await supabase
+      .from("enrollment_portal_tokens")
+      .select("enrollment_id")
+      .eq("token", query.token)
+      .maybeSingle<{ enrollment_id: string }>();
+    if (!tokenRow || tokenRow.enrollment_id !== enrollmentId) {
+      notFound();
+    }
+  }
 
   const { data: session } = await supabase
     .from("sessions")
@@ -98,23 +123,31 @@ export default async function ConvocationPrintPage({
     .eq("session_id", id)
     .order("day_date", { ascending: true });
 
-  const { data: membership } = await supabase
-    .from("organization_members")
-    .select(
-      "organization_id, organization:organizations(name, logo_url, legal_mentions, signature_stamp_path)",
-    )
-    .eq("profile_id", user.id)
-    .eq("is_active", true)
-    .limit(1)
-    .maybeSingle();
-  const organization = membership?.organization as unknown as {
-    name: string;
-    logo_url: string | null;
-    legal_mentions: string | null;
-    signature_stamp_path: string | null;
-  } | null;
-  const organizationId = (membership as { organization_id?: string } | null)
-    ?.organization_id;
+  // Récupération de l'organisation : via la session (qui porte
+  // organization_id) plutôt que via le user — pour fonctionner aussi
+  // en mode token public (où il n'y a pas de user.id).
+  const sessionOrgId = (session as unknown as { organization_id: string })
+    .organization_id;
+  const { data: orgRow } = await supabase
+    .from("organizations")
+    .select("id, name, logo_url, legal_mentions, signature_stamp_path")
+    .eq("id", sessionOrgId)
+    .maybeSingle<{
+      id: string;
+      name: string;
+      logo_url: string | null;
+      legal_mentions: string | null;
+      signature_stamp_path: string | null;
+    }>();
+  const organization = orgRow
+    ? {
+        name: orgRow.name,
+        logo_url: orgRow.logo_url,
+        legal_mentions: orgRow.legal_mentions,
+        signature_stamp_path: orgRow.signature_stamp_path,
+      }
+    : null;
+  const organizationId = orgRow?.id;
   const orgName = organization?.name ?? "CAP NUMÉRIQUE";
   // logo_url + legal_mentions ne sont plus rendus dans le corps : ils
   // sont injectés par Puppeteer via headerTemplate (titre + date) et
