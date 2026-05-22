@@ -602,7 +602,7 @@ export default async function ConventionsPage({
 
       <SessionTabs sessionId={id} counts={{ conventions: signedCount }} />
 
-      <div className="p-8 max-w-6xl space-y-4">
+      <div className="p-8 space-y-4">
         {!resendOn && (
           <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 flex items-start gap-2.5">
             <AlertTriangle className="h-4 w-4 text-amber-700 shrink-0 mt-0.5" />
