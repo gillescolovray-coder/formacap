@@ -306,9 +306,12 @@ export default async function ConventionsPage({
 
   // Inscriptions de la session (par société) — utilisé pour Montant HT
   // (fallback enrollment vide → bug constaté) ET pour la source d'inscription.
+  // On charge aussi quote_amount_ht : c'est le montant saisi explicitement
+  // à l'inscription, utilisé en fallback final si la cascade R7 ne donne
+  // rien (cas des sessions sans pricing_mode défini — Gilles 2026-05-22).
   const { data: companyInscriptions } = await supabase
     .from("inscription_requests")
-    .select("company_id, inscription_channel")
+    .select("company_id, inscription_channel, quote_amount_ht")
     .eq("target_session_id", id)
     .in(
       "company_id",
@@ -331,11 +334,18 @@ export default async function ConventionsPage({
   const nbApprenantsTotal = Math.max(totalEnroll ?? 0, totalReq ?? 0);
 
   // Compte des apprenants par société (via inscriptions, plus fiable)
+  // + somme des quote_amount_ht (fallback Montant HT explicite si la
+  // cascade R7 ne donne rien).
   const inscriptionsByCompany = new Map<string, string[]>();
   const channelsByCompany = new Map<string, Set<string>>();
+  const quoteAmountByCompany = new Map<
+    string,
+    { total: number; nbWithQuote: number }
+  >();
   for (const row of (companyInscriptions ?? []) as Array<{
     company_id: string | null;
     inscription_channel: string | null;
+    quote_amount_ht: number | null;
   }>) {
     if (!row.company_id) continue;
     const list = inscriptionsByCompany.get(row.company_id) ?? [];
@@ -344,6 +354,15 @@ export default async function ConventionsPage({
     const channels = channelsByCompany.get(row.company_id) ?? new Set<string>();
     channels.add(row.inscription_channel ?? "direct");
     channelsByCompany.set(row.company_id, channels);
+    if (row.quote_amount_ht !== null && row.quote_amount_ht !== undefined) {
+      const cur = quoteAmountByCompany.get(row.company_id) ?? {
+        total: 0,
+        nbWithQuote: 0,
+      };
+      cur.total += Number(row.quote_amount_ht);
+      cur.nbWithQuote += 1;
+      quoteAmountByCompany.set(row.company_id, cur);
+    }
   }
 
   const cfg: SessionPricingConfig | null = session.pricing_mode
@@ -382,15 +401,27 @@ export default async function ConventionsPage({
       );
       unitHt = r.unitHt;
       totalHt = r.totalHt;
-    } else {
-      // Fallback legacy
+    }
+    if (unitHt === 0 || totalHt === 0) {
+      // Fallback legacy : prix session ou prix formation
       const legacyUnit =
         session.amount_ht ??
         session.formation?.price_company ??
         session.formation?.public_price_excl_tax ??
         0;
-      unitHt = Number(legacyUnit);
-      totalHt = unitHt * nbCompany;
+      if (Number(legacyUnit) > 0) {
+        unitHt = Number(legacyUnit);
+        totalHt = unitHt * nbCompany;
+      }
+    }
+    if (unitHt === 0 || totalHt === 0) {
+      // Dernier recours : moyenne des quote_amount_ht des inscriptions
+      // (montant saisi explicitement à l'inscription — Gilles 2026-05-22).
+      const q = quoteAmountByCompany.get(c.companyId);
+      if (q && q.nbWithQuote > 0) {
+        unitHt = q.total / q.nbWithQuote;
+        totalHt = unitHt * nbCompany;
+      }
     }
     const channelsSet = channelsByCompany.get(c.companyId);
     const channels = channelsSet ? Array.from(channelsSet).sort() : ["direct"];

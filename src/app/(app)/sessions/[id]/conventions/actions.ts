@@ -127,10 +127,38 @@ async function computeConventionPricing(
     sessionRow?.formation?.price_company ??
     sessionRow?.formation?.public_price_excl_tax ??
     0;
-  return {
-    unitPrice: Number(legacyUnit),
-    totalHt: Number(legacyUnit) * nbApprenantsCompany,
-  };
+  if (Number(legacyUnit) > 0) {
+    return {
+      unitPrice: Number(legacyUnit),
+      totalHt: Number(legacyUnit) * nbApprenantsCompany,
+    };
+  }
+
+  // Dernier recours : moyenne des quote_amount_ht des inscriptions de
+  // cette société pour cette session (Gilles 2026-05-22 — fix conventions
+  // à 0 € quand la session n'a pas de pricing cascade R7 ni prix legacy).
+  const { data: quotes } = await supabase
+    .from("inscription_requests")
+    .select("quote_amount_ht")
+    .eq("target_session_id", sessionId)
+    .eq("company_id", companyId)
+    .not("quote_amount_ht", "is", null);
+  const quoteRows = (quotes ?? []) as Array<{ quote_amount_ht: number | null }>;
+  if (quoteRows.length > 0) {
+    const sum = quoteRows.reduce(
+      (acc, r) => acc + Number(r.quote_amount_ht ?? 0),
+      0,
+    );
+    const avg = sum / quoteRows.length;
+    if (avg > 0) {
+      return {
+        unitPrice: avg,
+        totalHt: avg * Math.max(nbApprenantsCompany, quoteRows.length),
+      };
+    }
+  }
+
+  return { unitPrice: 0, totalHt: 0 };
 }
 
 async function getAppOrigin(): Promise<string> {
