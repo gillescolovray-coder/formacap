@@ -17,6 +17,7 @@ import { submitPartnerBatchEnrollmentForm } from "../../actions";
 
 type LearnerForm = {
   uid: string; // clé interne React
+  civility: string; // "M." | "Mme" | "" (Gilles 2026-05-22)
   firstName: string;
   lastName: string;
   email: string;
@@ -36,6 +37,7 @@ type CompanyForm = {
 function emptyLearner(): LearnerForm {
   return {
     uid: Math.random().toString(36).slice(2, 11),
+    civility: "",
     firstName: "",
     lastName: "",
     email: "",
@@ -167,6 +169,7 @@ export function PartnerInscribeForm({
         name="learners"
         value={JSON.stringify(
           learners.map((l) => ({
+            civility: l.civility,
             firstName: l.firstName,
             lastName: l.lastName,
             email: l.email,
@@ -506,7 +509,23 @@ export function PartnerInscribeForm({
               )}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-[110px_1fr_1fr] gap-3">
+              <div>
+                <label className="block text-xs font-bold text-zinc-700 mb-1">
+                  Civilité
+                </label>
+                <select
+                  value={l.civility}
+                  onChange={(e) =>
+                    updateLearner(l.uid, "civility", e.target.value)
+                  }
+                  className="w-full h-9 rounded-md border border-zinc-300 px-2 text-sm bg-white"
+                >
+                  <option value="">—</option>
+                  <option value="M.">M.</option>
+                  <option value="Mme">Mme</option>
+                </select>
+              </div>
               <div>
                 <label className="block text-xs font-bold text-zinc-700 mb-1">
                   Prénom <span className="text-rose-500">*</span>
@@ -535,7 +554,7 @@ export function PartnerInscribeForm({
                   className="w-full h-9 rounded-md border border-zinc-300 px-3 text-sm bg-white"
                 />
               </div>
-              <div className="sm:col-span-2">
+              <div className="sm:col-span-3">
                 <label className="block text-xs font-bold text-zinc-700 mb-1">
                   Email <span className="text-rose-500">*</span>
                 </label>

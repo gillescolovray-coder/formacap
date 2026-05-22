@@ -20,6 +20,7 @@ import { submitPreinscription } from "./actions";
 
 type LearnerForm = {
   uid: string; // identifiant local pour le rendu
+  civility: string; // "M." | "Mme" | "" (Gilles 2026-05-22)
   firstName: string;
   lastName: string;
   email: string;
@@ -30,6 +31,7 @@ type LearnerForm = {
 function newLearner(): LearnerForm {
   return {
     uid: `l-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    civility: "",
     firstName: "",
     lastName: "",
     email: "",
@@ -196,6 +198,7 @@ export function PreinscriptionClient({
         token,
         sessionId: selectedId,
         learners: learners.map((l) => ({
+          civility: l.civility?.trim() || null,
           first_name: l.firstName.trim(),
           last_name: l.lastName.trim(),
           email: l.email.trim(),
@@ -378,6 +381,45 @@ export function PreinscriptionClient({
                 )}
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-bold text-zinc-700 mb-1">
+                    Civilité
+                  </label>
+                  <div className="flex gap-2">
+                    {[
+                      { v: "M.", label: "M." },
+                      { v: "Mme", label: "Mme" },
+                    ].map((opt) => (
+                      <label
+                        key={opt.v}
+                        className={
+                          l.civility === opt.v
+                            ? "inline-flex items-center gap-1.5 px-3 h-9 rounded-md border-2 border-cyan-500 bg-cyan-50 text-cyan-800 text-sm font-bold cursor-pointer"
+                            : "inline-flex items-center gap-1.5 px-3 h-9 rounded-md border border-zinc-300 bg-white text-zinc-700 text-sm cursor-pointer hover:border-cyan-300"
+                        }
+                      >
+                        <input
+                          type="radio"
+                          checked={l.civility === opt.v}
+                          onChange={() =>
+                            updateLearner(l.uid, { civility: opt.v })
+                          }
+                          className="sr-only"
+                        />
+                        {opt.label}
+                      </label>
+                    ))}
+                    {l.civility && (
+                      <button
+                        type="button"
+                        onClick={() => updateLearner(l.uid, { civility: "" })}
+                        className="text-xs text-zinc-500 hover:text-zinc-700 underline"
+                      >
+                        effacer
+                      </button>
+                    )}
+                  </div>
+                </div>
                 <Field
                   label="Prénom"
                   required

@@ -348,6 +348,7 @@ export async function submitPartnerEnrollmentForm(formData: FormData) {
 // =====================================================================
 
 type LearnerInput = {
+  civility?: string; // "M." | "Mme" | "" (Gilles 2026-05-22)
   firstName: string;
   lastName: string;
   email: string;
@@ -624,22 +625,34 @@ export async function submitPartnerBatchEnrollmentForm(formData: FormData) {
     const birthYear = l.birthYear?.trim();
     const birthDate =
       birthYear && /^\d{4}$/.test(birthYear) ? `${birthYear}-01-01` : null;
+    // Civilité (Gilles 2026-05-22) : on accepte "M." ou "Mme", sinon null.
+    const civilityRaw = l.civility?.trim() ?? "";
+    const civility =
+      civilityRaw === "M." || civilityRaw === "Mme" ? civilityRaw : null;
 
     // Trouve/cree learner par email
     let learnerId: string | null = null;
     const { data: existingLearner } = await supabase
       .from("learners")
-      .select("id")
+      .select("id, civility")
       .eq("organization_id", ctx.company.organization_id)
       .ilike("email", email)
-      .maybeSingle<{ id: string }>();
+      .maybeSingle<{ id: string; civility: string | null }>();
     if (existingLearner) {
       learnerId = existingLearner.id;
+      // Si le learner existe sans civilité et qu'on en a une, on enrichit
+      if (!existingLearner.civility && civility) {
+        await supabase
+          .from("learners")
+          .update({ civility })
+          .eq("id", existingLearner.id);
+      }
     } else {
       const { data: created } = await supabase
         .from("learners")
         .insert({
           organization_id: ctx.company.organization_id,
+          civility,
           first_name: firstName,
           last_name: lastName,
           email,

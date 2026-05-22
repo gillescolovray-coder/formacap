@@ -40,7 +40,7 @@ export async function validatePreinscription(
     supabase
       .from("inscription_requests")
       .select(
-        "id, organization_id, referrer_company_id, target_session_id, prospect_first_name, prospect_last_name, prospect_email, prospect_phone, company_name_freetext, learner_id",
+        "id, organization_id, referrer_company_id, target_session_id, prospect_civility, prospect_first_name, prospect_last_name, prospect_email, prospect_phone, company_name_freetext, learner_id",
       )
       .eq("id", requestId)
       .eq("referrer_company_id", ctx.company.id)
@@ -50,6 +50,7 @@ export async function validatePreinscription(
         organization_id: string;
         referrer_company_id: string;
         target_session_id: string | null;
+        prospect_civility: string | null;
         prospect_first_name: string | null;
         prospect_last_name: string | null;
         prospect_email: string | null;
@@ -164,6 +165,12 @@ export async function validatePreinscription(
         .from("learners")
         .insert({
           organization_id: req.organization_id,
+          // Civilité (Gilles 2026-05-22 — migration 0098) reportée depuis
+          // la pré-inscription publique
+          civility:
+            req.prospect_civility === "M." || req.prospect_civility === "Mme"
+              ? req.prospect_civility
+              : null,
           first_name: req.prospect_first_name ?? "",
           last_name: req.prospect_last_name ?? "",
           email: req.prospect_email,

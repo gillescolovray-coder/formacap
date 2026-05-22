@@ -6,6 +6,7 @@ import { findStageIdByKey } from "@/lib/inscriptions/sync";
 import { isResendConfigured, sendEmail } from "@/lib/email/resend";
 
 type LearnerInput = {
+  civility?: string | null; // "M." | "Mme" | null (Gilles 2026-05-22)
   first_name: string;
   last_name: string;
   email: string;
@@ -190,6 +191,12 @@ export async function submitPreinscription(input: {
         via_partner_portal: true,
         financing_mode: financingMode,
         financing_details: financingDetails,
+        // Civilité (Gilles 2026-05-22 — migration 0098). Reportée sur
+        // le learner lors de la validation par le partenaire.
+        prospect_civility:
+          learner.civility === "M." || learner.civility === "Mme"
+            ? learner.civility
+            : null,
         prospect_first_name: learner.first_name.trim(),
         prospect_last_name: learner.last_name.trim(),
         prospect_email: learner.email.trim(),
