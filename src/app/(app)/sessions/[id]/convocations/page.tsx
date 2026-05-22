@@ -16,6 +16,7 @@ import {
 } from "./actions";
 import { BulkSendButton, SendOneButton } from "./_send-buttons";
 import { GmailButton } from "./_gmail-button";
+import { ConfirmInscriptionGmailButton } from "./_confirm-of-gmail-button";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -69,6 +70,30 @@ export default async function ConvocationsPage({
   // Email de l'utilisateur connecté → passé en `authuser` à Gmail compose
   // pour ouvrir le compte pro Workspace (Gilles 2026-05-22).
   const currentUserEmail = user.email ?? "";
+
+  // Téléphone de l'organisation pour la signature des emails Gmail
+  // (bouton "Confirmer via Gmail" pour les apprenants OF — Gilles 2026-05-22).
+  let trainerPhone: string | null = null;
+  try {
+    const { data: membership } = await supabase
+      .from("organization_members")
+      .select("organization:organizations(phone)")
+      .eq("profile_id", user.id)
+      .eq("is_active", true)
+      .limit(1)
+      .maybeSingle<{
+        organization:
+          | { phone: string | null }
+          | Array<{ phone: string | null }>
+          | null;
+      }>();
+    const org = Array.isArray(membership?.organization)
+      ? membership?.organization[0]
+      : membership?.organization;
+    trainerPhone = org?.phone ?? null;
+  } catch {
+    trainerPhone = null;
+  }
 
   const { data: session } = await supabase
     .from("sessions")
@@ -578,9 +603,27 @@ export default async function ConvocationsPage({
                             </div>
                           )}
                           {r.partner_of_name ? (
-                            <span className="text-[11px] text-zinc-500 italic">
-                              Convocation à la charge de l&apos;OF partenaire
-                            </span>
+                            <div className="inline-flex flex-col items-stretch gap-1">
+                              {/* Bouton confirmation d'inscription via Gmail —
+                                  réservé aux apprenants OF partenaires
+                                  (Gilles 2026-05-22). */}
+                              {email && (
+                                <ConfirmInscriptionGmailButton
+                                  toEmail={email}
+                                  learnerCivility={r.learner?.civility ?? null}
+                                  learnerName={base}
+                                  formationTitle={title}
+                                  dateRange={dateRange}
+                                  authUserEmail={currentUserEmail}
+                                  trainerPhone={trainerPhone}
+                                  partnerOfName={r.partner_of_name}
+                                />
+                              )}
+                              <span className="text-[10px] text-zinc-500 italic text-center max-w-[180px]">
+                                Convocation à la charge de l&apos;OF.
+                                Connexion auto envoyée 48h avant.
+                              </span>
+                            </div>
                           ) : isSent ? (
                             <form action={unmarkSentBound}>
                               <Button

@@ -38,8 +38,10 @@ export function FinancingSection({
   opcos,
   isCreate,
 }: Props) {
+  // Défaut : "employeur" (Gilles 2026-05-22 — le cas le plus fréquent
+  // pour CAP NUMERIQUE, formations payées par l'entreprise du salarié).
   const [mode, setMode] = useState<FinancingMode>(
-    defaultFinancingMode ?? "autofinancement",
+    defaultFinancingMode ?? "employeur",
   );
   const [opcoId, setOpcoId] = useState(defaultOpcoId ?? "");
 

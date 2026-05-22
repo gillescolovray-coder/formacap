@@ -101,12 +101,13 @@ export default async function ConvocationPrintPage({
   const { data: enrollment } = await supabase
     .from("session_enrollments")
     .select(
-      "id, learner:learners(first_name, last_name, email, civility, company:companies(name))",
+      "id, inscription_request_id, learner:learners(first_name, last_name, email, civility, company:companies(name))",
     )
     .eq("id", enrollmentId)
     .eq("session_id", id)
     .maybeSingle<{
       id: string;
+      inscription_request_id: string | null;
       learner: {
         first_name: string | null;
         last_name: string | null;
@@ -116,6 +117,30 @@ export default async function ConvocationPrintPage({
       } | null;
     }>();
   if (!enrollment) notFound();
+
+  // Détection OF partenaire : si l'apprenant est inscrit via un OF,
+  // la convocation est LIGHT (sans bloc Espace apprenant — l'OF gère
+  // son propre portail). Gilles 2026-05-22.
+  let isPartnerOfLearner = false;
+  if (enrollment.inscription_request_id) {
+    const { data: req } = await supabase
+      .from("inscription_requests")
+      .select(
+        "inscription_channel, referrer:companies!inscription_channel_company_id(type)",
+      )
+      .eq("id", enrollment.inscription_request_id)
+      .maybeSingle<{
+        inscription_channel: string | null;
+        referrer:
+          | { type: string | null }
+          | Array<{ type: string | null }>
+          | null;
+      }>();
+    const ref = Array.isArray(req?.referrer) ? req?.referrer[0] : req?.referrer;
+    if (req?.inscription_channel === "of" && ref?.type === "of") {
+      isPartnerOfLearner = true;
+    }
+  }
 
   const { data: sessionDays } = await supabase
     .from("session_days")
@@ -457,8 +482,10 @@ export default async function ConvocationPrintPage({
 
         {/* Bloc portail apprenant : QR code + lien cliquable.
             Force le saut de page AVANT (Gilles 2026-05-22) pour que le
-            bloc ne soit jamais coupe entre 2 pages. Il occupe ainsi
-            toujours la totalite de la page 2. */}
+            bloc ne soit jamais coupe entre 2 pages.
+            Masqué pour les apprenants inscrits via un OF partenaire —
+            l'OF gère son propre suivi (Gilles 2026-05-22). */}
+        {!isPartnerOfLearner && (
         <div
           className="rounded-lg ring-1 ring-blue-200 bg-blue-50/60 p-4 mb-8 flex items-center gap-4 avoid-break"
           style={{ pageBreakBefore: "always", breakBefore: "page" }}
@@ -491,6 +518,7 @@ export default async function ConvocationPrintPage({
             </p>
           </div>
         </div>
+        )}
 
         {/* Recommandations — texte personnalisable */}
         {template.blocks.recommendations_html && (
