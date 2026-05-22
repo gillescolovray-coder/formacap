@@ -27,6 +27,7 @@ import { RecomputeAmountButton } from "./_recompute-button";
 import { PreNotifyGmailButton } from "./_pre-notify-gmail";
 import { BulkPreNotifyGmailButton } from "./_pre-notify-bulk";
 import { EmailStatusTimeline } from "./_email-status-timeline";
+import { ConfirmInscriptionGmailButton } from "../convocations/_confirm-of-gmail-button";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -1058,13 +1059,37 @@ export default async function ConventionsPage({
                             la convention est à sa charge — CAP NUMERIQUE
                             n'a aucun bouton à proposer (Gilles 2026-05-22). */}
                         {partnerOfNameByCompany.has(c.companyId) ? (
-                          <span
-                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-zinc-100 text-zinc-600 border border-zinc-200"
-                            title={`La convention est à la charge de l'OF partenaire ${partnerOfNameByCompany.get(c.companyId)} — CAP NUMERIQUE n'édite pas de convention dans ce cas.`}
-                          >
-                            À la charge de l&apos;OF{" "}
-                            {partnerOfNameByCompany.get(c.companyId)}
-                          </span>
+                          <div className="flex flex-col items-stretch gap-1.5 min-w-[180px] max-w-[240px] ml-auto">
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium bg-zinc-100 text-zinc-600 border border-zinc-200 text-center justify-center"
+                              title={`La convention est à la charge de l'OF partenaire ${partnerOfNameByCompany.get(c.companyId)} — CAP NUMERIQUE n'édite pas de convention dans ce cas.`}
+                            >
+                              À la charge de l&apos;OF{" "}
+                              {partnerOfNameByCompany.get(c.companyId)}
+                            </span>
+                            {/* Bouton "Confirmer via Gmail" par apprenant
+                                de la société OF (Gilles 2026-05-22) :
+                                ouvre Gmail avec l'email de confirmation
+                                d'inscription + promesse connexion 48h
+                                avant. Un bouton par apprenant. */}
+                            {c.learners.map((l) =>
+                              l.email ? (
+                                <ConfirmInscriptionGmailButton
+                                  key={l.id}
+                                  toEmail={l.email}
+                                  learnerCivility={l.civility}
+                                  learnerName={l.name}
+                                  formationTitle={title}
+                                  dateRange={dateRange}
+                                  authUserEmail={currentUserEmail}
+                                  trainerPhone={trainerPhone}
+                                  partnerOfName={
+                                    partnerOfNameByCompany.get(c.companyId) ?? ""
+                                  }
+                                />
+                              ) : null,
+                            )}
+                          </div>
                         ) : (
                         <div className="flex flex-col items-stretch gap-1.5 min-w-[180px] max-w-[220px] ml-auto">
                           {conv && (
