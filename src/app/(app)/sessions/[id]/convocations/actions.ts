@@ -113,7 +113,7 @@ export async function sendConvocationEmail(
   const { data: enrollment, error: fetchError } = await supabase
     .from("session_enrollments")
     .select(
-      "id, learner:learners(first_name, last_name, email, civility, company_id, company:companies(name)), session:sessions(id, organization_id, formation:formations(title, duration_hours, duration_days), start_date, end_date, modality, location, location_ref:formation_locations!location_id(name, address, postal_code, city))",
+      "id, learner:learners(first_name, last_name, email, civility, company_id, company:companies(name)), session:sessions(id, organization_id, formation:formations(title, duration_hours, duration_days), start_date, end_date, modality, location, video_link, video_app, location_ref:formation_locations!location_id(name, address, postal_code, city))",
     )
     .eq("id", enrollmentId)
     .maybeSingle<{
@@ -138,6 +138,8 @@ export async function sendConvocationEmail(
         end_date: string;
         modality: "presentiel" | "distanciel" | "hybride" | null;
         location: string | null;
+        video_link: string | null;
+        video_app: string | null;
         location_ref: {
           name: string | null;
           address: string | null;
@@ -155,6 +157,23 @@ export async function sendConvocationEmail(
       enrollmentId,
       ok: false,
       error: "L'apprenant n'a pas d'adresse email renseignée.",
+    };
+  }
+
+  // Blocage envoi convocation distanciel/hybride sans lien de connexion
+  // (Gilles 2026-05-22). L'apprenant doit absolument recevoir le lien.
+  const modality = enrollment.session?.modality;
+  if (
+    (modality === "distanciel" || modality === "hybride") &&
+    !enrollment.session?.video_link
+  ) {
+    return {
+      enrollmentId,
+      ok: false,
+      error:
+        "Lien de connexion manquant : la session est en " +
+        (modality === "distanciel" ? "distanciel" : "hybride") +
+        " mais aucun lien (Zoom/Teams/Meet) n'est renseigné sur la fiche session. Complétez le lien avant d'envoyer les convocations.",
     };
   }
 

@@ -29,7 +29,13 @@ type EnrollmentRow = {
     first_name: string | null;
     last_name: string | null;
     email: string | null;
+    phone: string | null;
+    mobile: string | null;
+    company_id: string | null;
   } | null;
+  // Enrichissements ajoutés au mapping (Gilles 2026-05-22)
+  channel?: string;
+  referents?: Array<{ name: string; email: string | null }>;
   /** Nom de l'OF partenaire qui a inscrit cet apprenant (si applicable).
    *  Quand non null, l'OF gère lui-même la convocation/convention. */
   partner_of_name?: string | null;
@@ -60,7 +66,7 @@ export default async function ConvocationsPage({
   const { data: session } = await supabase
     .from("sessions")
     .select(
-      "id, start_date, end_date, modality, formation:formations(id, title)",
+      "id, start_date, end_date, modality, video_link, video_app, formation:formations(id, title)",
     )
     .eq("id", id)
     .maybeSingle<{
@@ -68,6 +74,8 @@ export default async function ConvocationsPage({
       start_date: string;
       end_date: string;
       modality: string | null;
+      video_link: string | null;
+      video_app: string | null;
       formation: { id: string; title: string } | null;
     }>();
   if (!session) notFound();
@@ -87,7 +95,7 @@ export default async function ConvocationsPage({
   const { data: enrollments } = await supabase
     .from("session_enrollments")
     .select(
-      "id, convocation_sent_at, inscription_request_id, learner:learners(id, civility, first_name, last_name, email)",
+      "id, convocation_sent_at, inscription_request_id, learner:learners(id, civility, first_name, last_name, email, phone, mobile, company_id)",
     )
     .eq("session_id", id)
     .order("enrolled_at", { ascending: true });
@@ -104,13 +112,19 @@ export default async function ConvocationsPage({
     ),
   );
   const partnerOfByRequestId = new Map<string, string>();
+  // Source d'inscription (canal) par request → affichée dans le tableau
+  // (Gilles 2026-05-22).
+  const channelByRequestId = new Map<string, string>();
   if (requestIds.length > 0) {
     const { data: reqs } = await supabase
       .from("inscription_requests")
-      .select("id, referrer_company_id, referrer:companies!referrer_company_id(name, type)")
+      .select(
+        "id, inscription_channel, referrer_company_id, referrer:companies!referrer_company_id(name, type)",
+      )
       .in("id", requestIds);
     for (const r of (reqs ?? []) as Array<{
       id: string;
+      inscription_channel: string | null;
       referrer_company_id: string | null;
       referrer:
         | { name: string; type: string }
@@ -121,13 +135,60 @@ export default async function ConvocationsPage({
       if (r.referrer_company_id && ref?.type === "of") {
         partnerOfByRequestId.set(r.id, ref.name);
       }
+      channelByRequestId.set(r.id, r.inscription_channel ?? "direct");
     }
   }
+
+  // Référents pédagogiques par société pour cette session (Gilles 2026-05-22).
+  // On lit inscription_referent_contacts directement (dédoublonnage cote
+  // BDD via une contrainte d'unicite session × societe × contact).
+  const learnerCompanyIds = Array.from(
+    new Set(
+      rawRows
+        .map((r) => r.learner?.company_id as string | null)
+        .filter((x): x is string => Boolean(x)),
+    ),
+  );
+  const referentsByCompany = new Map<
+    string,
+    Array<{ name: string; email: string | null }>
+  >();
+  if (learnerCompanyIds.length > 0) {
+    const { data: refRows } = await supabase
+      .from("inscription_referent_contacts")
+      .select(
+        "company_id, contact:company_contacts(first_name, last_name, email)",
+      )
+      .eq("session_id", id)
+      .in("company_id", learnerCompanyIds);
+    for (const row of (refRows ?? []) as Array<{
+      company_id: string;
+      contact:
+        | { first_name: string | null; last_name: string | null; email: string | null }
+        | Array<{ first_name: string | null; last_name: string | null; email: string | null }>
+        | null;
+    }>) {
+      const c = Array.isArray(row.contact) ? row.contact[0] : row.contact;
+      if (!c) continue;
+      const name =
+        [c.first_name, c.last_name].filter(Boolean).join(" ") || "Référent";
+      const list = referentsByCompany.get(row.company_id) ?? [];
+      list.push({ name, email: c.email });
+      referentsByCompany.set(row.company_id, list);
+    }
+  }
+
   const rows: EnrollmentRow[] = rawRows.map((r) => ({
     ...r,
     partner_of_name: r.inscription_request_id
       ? (partnerOfByRequestId.get(r.inscription_request_id) ?? null)
       : null,
+    channel: r.inscription_request_id
+      ? (channelByRequestId.get(r.inscription_request_id) ?? "direct")
+      : "direct",
+    referents: r.learner?.company_id
+      ? (referentsByCompany.get(r.learner.company_id) ?? [])
+      : [],
   }));
   const sentCount = rows.filter((r) => r.convocation_sent_at).length;
   // Les apprenants inscrits via un OF partenaire sont exclus du bulk
@@ -193,6 +254,42 @@ export default async function ConvocationsPage({
           </div>
         )}
 
+        {/* Bandeau d'erreur si session distancielle/hybride sans lien
+            de connexion (Gilles 2026-05-22). Bloque l'envoi des
+            convocations tant que le lien n'est pas renseigné. */}
+        {(session.modality === "distanciel" ||
+          session.modality === "hybride") &&
+          !session.video_link && (
+            <div className="rounded-xl bg-rose-50 border-2 border-rose-300 p-4 space-y-2">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="h-5 w-5 text-rose-700 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sm font-bold text-rose-900">
+                    ⚠ Lien de connexion manquant
+                  </p>
+                  <p className="text-xs text-rose-800 mt-1">
+                    Cette session est en{" "}
+                    <strong>
+                      {session.modality === "distanciel"
+                        ? "distanciel"
+                        : "hybride"}
+                    </strong>{" "}
+                    mais le lien de connexion ({session.video_app ?? "Zoom/Teams/Meet…"})
+                    n&apos;est pas renseigné. L&apos;envoi des convocations
+                    est bloqué pour éviter d&apos;envoyer une convocation
+                    sans le lien d&apos;accès à la session.
+                  </p>
+                  <Link
+                    href={`/sessions/${id}`}
+                    className="inline-block mt-2 text-xs font-bold text-rose-700 underline hover:text-rose-900"
+                  >
+                    → Compléter le lien sur la fiche session
+                  </Link>
+                </div>
+              </div>
+            </div>
+          )}
+
         {/* Action groupée */}
         {rows.length > 0 && (
           <div className="rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 flex items-center justify-between gap-3">
@@ -204,7 +301,14 @@ export default async function ConvocationsPage({
             <BulkSendButton
               sessionId={id}
               pendingCount={pendingWithEmailCount}
-              resendConfigured={resendOn}
+              resendConfigured={
+                resendOn &&
+                !(
+                  (session.modality === "distanciel" ||
+                    session.modality === "hybride") &&
+                  !session.video_link
+                )
+              }
             />
           </div>
         )}
@@ -220,7 +324,12 @@ export default async function ConvocationsPage({
               <thead className="bg-zinc-50 dark:bg-zinc-950 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500 border-b border-zinc-200 dark:border-zinc-800">
                 <tr>
                   <th className="px-4 py-3">Apprenant</th>
-                  <th className="px-4 py-3">Email</th>
+                  <th className="px-4 py-3 leading-tight">
+                    Source
+                    <br />
+                    d&apos;inscription
+                  </th>
+                  <th className="px-4 py-3">Référent pédagogique</th>
                   <th className="px-4 py-3">Statut</th>
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
@@ -245,12 +354,31 @@ export default async function ConvocationsPage({
                   // pour cohérence des actions ("Aperçu PDF" ouvre toujours
                   // le PDF, pas un aperçu intermédiaire).
                   const printUrl = `/api/sessions/${id}/convocations/${r.id}/pdf`;
-                  // Pré-remplissage du mailto:
+                  // Pré-remplissage email : on prépare l'URL Gmail compose
+                  // (fonctionne avec Google Workspace, Gilles 2026-05-22)
+                  // ET un fallback mailto: système pour Outlook etc.
                   const mailSubject = `Convocation à la formation : ${title}`;
-                  const mailBody = `Bonjour,%0D%0A%0D%0AVous trouverez ci-joint votre convocation à la formation « ${encodeURIComponent(title)} » ${encodeURIComponent(dateRange)}.%0D%0A%0D%0ABien cordialement,`;
-                  const mailto = email
-                    ? `mailto:${email}?subject=${encodeURIComponent(mailSubject)}&body=${mailBody}`
+                  const mailBody = `Bonjour,\n\nVous trouverez ci-joint votre convocation à la formation « ${title} » ${dateRange}.\n\nBien cordialement,`;
+                  const gmailUrl = email
+                    ? `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(email)}&su=${encodeURIComponent(mailSubject)}&body=${encodeURIComponent(mailBody)}`
                     : undefined;
+                  const mailto = email
+                    ? `mailto:${email}?subject=${encodeURIComponent(mailSubject)}&body=${encodeURIComponent(mailBody)}`
+                    : undefined;
+                  const phone = r.learner?.phone ?? null;
+                  const mobile = r.learner?.mobile ?? null;
+                  const channelLabel =
+                    r.channel === "prescripteur"
+                      ? "Prescripteur"
+                      : r.channel === "of"
+                        ? "OF"
+                        : "CAP NUMERIQUE";
+                  const channelCls =
+                    r.channel === "prescripteur"
+                      ? "bg-blue-100 text-blue-800 border-blue-200"
+                      : r.channel === "of"
+                        ? "bg-violet-100 text-violet-800 border-violet-200"
+                        : "bg-emerald-100 text-emerald-800 border-emerald-200";
                   const markSentBound = markConvocationSent.bind(
                     null,
                     id,
@@ -270,19 +398,61 @@ export default async function ConvocationsPage({
                           "bg-emerald-50/30 dark:bg-emerald-950/10 hover:bg-emerald-50 dark:hover:bg-emerald-950/30",
                       )}
                     >
-                      <td className="px-4 py-3 font-medium">{fullName}</td>
-                      <td className="px-4 py-3 text-xs">
-                        {email ? (
-                          <a
-                            href={`mailto:${email}`}
-                            className="text-zinc-700 dark:text-zinc-300 hover:text-cyan-700 hover:underline"
-                          >
-                            {email}
-                          </a>
-                        ) : (
-                          <span className="text-zinc-400 italic">
+                      <td className="px-4 py-3 align-top">
+                        <div className="font-bold text-zinc-900">
+                          {fullName}
+                        </div>
+                        {email && (
+                          <div className="text-xs text-zinc-700 mt-0.5">
+                            ✉ {email}
+                          </div>
+                        )}
+                        {!email && (
+                          <div className="text-xs text-zinc-400 italic mt-0.5">
                             Email non renseigné
-                          </span>
+                          </div>
+                        )}
+                        {mobile && (
+                          <div className="text-xs text-zinc-700 font-mono">
+                            📱 {mobile}
+                          </div>
+                        )}
+                        {phone && !mobile && (
+                          <div className="text-xs text-zinc-700 font-mono">
+                            ☎ {phone}
+                          </div>
+                        )}
+                      </td>
+                      {/* Source d'inscription (canal) */}
+                      <td className="px-4 py-3 align-top text-xs">
+                        <span
+                          className={cn(
+                            "inline-block px-1.5 py-0.5 rounded text-[10px] font-bold border whitespace-nowrap",
+                            channelCls,
+                          )}
+                        >
+                          {channelLabel}
+                        </span>
+                      </td>
+                      {/* Référents pédagogiques */}
+                      <td className="px-4 py-3 align-top text-xs">
+                        {r.referents && r.referents.length > 0 ? (
+                          <ul className="space-y-0.5">
+                            {r.referents.map((ref, i) => (
+                              <li key={i} className="leading-tight">
+                                <div className="font-semibold text-zinc-800">
+                                  {ref.name}
+                                </div>
+                                {ref.email && (
+                                  <div className="text-[11px] text-zinc-500">
+                                    {ref.email}
+                                  </div>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <span className="text-zinc-400 italic">—</span>
                         )}
                       </td>
                       <td className="px-4 py-3">
@@ -325,31 +495,65 @@ export default async function ConvocationsPage({
                           )}
                           {/* Envoi automatique via Resend si configuré.
                               Désactivé pour les inscriptions via OF
-                              partenaire (l'OF gère sa convocation). */}
-                          {!r.partner_of_name && (
-                            <SendOneButton
-                              sessionId={id}
-                              enrollmentId={r.id}
-                              disabled={!resendOn || !email}
-                              disabledReason={
-                                !resendOn
-                                  ? "Resend non configuré"
-                                  : !email
-                                    ? "Pas d'email"
-                                    : undefined
-                              }
-                            />
-                          )}
-                          {/* Mailto manuel toujours disponible en secours */}
-                          {mailto && !r.partner_of_name && (
+                              partenaire (l'OF gère sa convocation).
+                              Désactivé aussi si la session est en
+                              distanciel/hybride sans lien de connexion
+                              (Gilles 2026-05-22). */}
+                          {!r.partner_of_name && (() => {
+                            const remoteWithoutLink =
+                              (session.modality === "distanciel" ||
+                                session.modality === "hybride") &&
+                              !session.video_link;
+                            return (
+                              <SendOneButton
+                                sessionId={id}
+                                enrollmentId={r.id}
+                                disabled={
+                                  !resendOn || !email || remoteWithoutLink
+                                }
+                                disabledReason={
+                                  !resendOn
+                                    ? "Resend non configuré"
+                                    : !email
+                                      ? "Pas d'email"
+                                      : remoteWithoutLink
+                                        ? "Lien de connexion manquant sur la fiche session"
+                                        : undefined
+                                }
+                              />
+                            );
+                          })()}
+                          {/* Lien Gmail compose (fonctionne avec Google
+                              Workspace), avec fallback mailto: système.
+                              Gilles 2026-05-22 : le mailto: échouait
+                              avec Google Workspace. */}
+                          {gmailUrl && !r.partner_of_name && (
                             <Button
                               variant="outline"
                               size="sm"
                               nativeButton={false}
-                              render={<a href={mailto} />}
-                              title="Ouvre votre client mail avec un brouillon prérempli (envoi manuel)"
+                              render={
+                                <a
+                                  href={gmailUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                />
+                              }
+                              title="Ouvre Gmail dans un nouvel onglet avec un brouillon prérempli (compatible Google Workspace)"
                             >
                               <Mail className="h-3.5 w-3.5" />
+                              Gmail
+                            </Button>
+                          )}
+                          {mailto && !r.partner_of_name && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              nativeButton={false}
+                              render={<a href={mailto} />}
+                              title="Fallback mailto: pour client email système (Outlook, Apple Mail…)"
+                              className="text-zinc-500"
+                            >
                               Mailto
                             </Button>
                           )}

@@ -423,11 +423,13 @@ export default async function ConvocationPrintPage({
           })()}
 
         {/* Bloc portail apprenant : QR code + lien cliquable.
-            Placé APRÈS les consignes pour que l'apprenant puisse passer
-            à l'action (scan ou clic) une fois informé.
-            L'apprenant scanne avec son téléphone OU clique directement
-            sur le lien dans le PDF pour accéder à son espace personnel. */}
-        <div className="rounded-lg ring-1 ring-blue-200 bg-blue-50/60 p-4 mb-8 flex items-center gap-4 avoid-break">
+            Force le saut de page AVANT (Gilles 2026-05-22) pour que le
+            bloc ne soit jamais coupe entre 2 pages. Il occupe ainsi
+            toujours la totalite de la page 2. */}
+        <div
+          className="rounded-lg ring-1 ring-blue-200 bg-blue-50/60 p-4 mb-8 flex items-center gap-4 avoid-break"
+          style={{ pageBreakBefore: "always", breakBefore: "page" }}
+        >
           <div className="shrink-0 bg-white p-2 rounded-md border border-blue-200">
             <QRCodeSVG value={portalUrl} size={96} level="M" marginSize={0} />
           </div>
