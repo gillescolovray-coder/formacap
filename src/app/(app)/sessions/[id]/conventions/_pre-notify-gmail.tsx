@@ -38,7 +38,7 @@ type Props = {
 };
 
 function buildSubject(formationTitle: string): string {
-  return `Votre convention de formation arrive — merci de vérifier vos spams si besoin`;
+  return `CAP NUMÉRIQUE — Votre convention de formation arrive — merci de vérifier vos spams si besoin`;
 }
 
 function buildBody({
@@ -52,7 +52,7 @@ function buildBody({
   dateRange: string;
   trainerPhone?: string | null;
 }): string {
-  const phoneLine = trainerPhone ? `\n📞 ${trainerPhone}` : "";
+  const phoneInline = trainerPhone ? ` — 📞 ${trainerPhone}` : "";
   return `Bonjour ${contactName},
 
 Je vous informe que vous allez recevoir d'ici quelques minutes votre convention de formation pour la formation « ${formationTitle} » (${dateRange}).
@@ -71,10 +71,21 @@ Cela évitera que vos prochains documents (convocation, attestation, etc.) finis
 Si vous ne le recevez pas du tout, répondez simplement à cet email — je vous renverrai le lien directement.
 
 Bien cordialement,
-Gilles Colovray
-Dirigeant — CAP NUMÉRIQUE
-Organisme de formation Qualiopi${phoneLine}
-✉️ gilles.colovray@capnumerique.com`;
+Gilles Colovray${phoneInline} — ✉️ gilles.colovray@capnumerique.com
+Dirigeant — CAP NUMÉRIQUE — Organisme de formation Qualiopi
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🚀 Découvrez aussi nos solutions 100 % BTP — testez gratuitement :
+
+📋 BTPBOX — Le pointage chantier sans papier
+Pointez vos équipes en 30 secondes depuis smartphone, tablette ou PC.
+Heures, absences, tâches, chantiers — tout centralisé, export paie instantané.
+✅ 2 mois offerts, sans engagement 👉 www.btpbox.fr
+
+🚧 SUIVI DE CHANTIER — Le planning visuel pour les pros
+Reprenez le contrôle de vos plannings : qui fait quoi, où, quand.
+Fini les SMS et les tableaux Excel.
+✅ Essai gratuit immédiat 👉 suividechantier.capnumerique.com`;
 }
 
 export function PreNotifyGmailButton(props: Props) {
