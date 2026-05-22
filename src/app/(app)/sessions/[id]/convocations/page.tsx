@@ -590,6 +590,9 @@ export default async function ConvocationsPage({
                                 authUserEmail={currentUserEmail}
                                 formationTitle={title}
                                 dateRange={dateRange}
+                                learnerCivility={r.learner?.civility ?? null}
+                                learnerName={base}
+                                trainerPhone={trainerPhone}
                               />
                               {mailto && (
                                 <a
