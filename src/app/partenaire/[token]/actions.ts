@@ -1,8 +1,10 @@
 "use server";
 
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { logInscriptionAttempt } from "@/lib/inscriptions/audit-log";
 import {
   computeEffectivePartnerPrice,
   loadOrgPartnerDefaults,
@@ -615,6 +617,7 @@ export async function submitPartnerBatchEnrollmentForm(formData: FormData) {
 
   // Pour chaque apprenant : trouve/cree learner + inscription + enrollment + email
   const errors: string[] = [];
+  const createdRequestIds: string[] = [];
   let successCount = 0;
   for (const l of learners) {
     const firstName = l.firstName.trim();
@@ -725,6 +728,7 @@ export async function submitPartnerBatchEnrollmentForm(formData: FormData) {
       );
       continue;
     }
+    createdRequestIds.push(request.id);
     await createMirroredEnrollmentForRequest(supabase, {
       id: request.id,
       target_session_id: sessionId,
@@ -781,6 +785,24 @@ export async function submitPartnerBatchEnrollmentForm(formData: FormData) {
   revalidatePath(`/partenaire/${token}/inscriptions`);
   revalidatePath("/inscriptions");
   revalidatePath(`/sessions/${sessionId}`);
+
+  // Audit log (Gilles 2026-05-22 — migration 0099)
+  const h = await headers();
+  const clientIp =
+    h.get("x-forwarded-for")?.split(",")[0].trim() ?? h.get("x-real-ip") ?? null;
+  const userAgent = h.get("user-agent") ?? null;
+  await logInscriptionAttempt({
+    source: "portail_partenaire_batch",
+    referrerCompanyId: ctx.company.id,
+    organizationId: ctx.company.organization_id,
+    targetSessionId: sessionId,
+    payload: { company, learners, financing, contactReferent, message },
+    success: successCount > 0,
+    createdRequestIds,
+    errorMessage: errors.length > 0 ? errors.join(" | ") : null,
+    clientIp,
+    userAgent,
+  });
 
   if (successCount === 0) {
     return redirectError(

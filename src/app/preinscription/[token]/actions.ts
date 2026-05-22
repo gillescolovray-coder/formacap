@@ -1,9 +1,11 @@
 "use server";
 
+import { headers } from "next/headers";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolvePartnerContext } from "@/app/partenaire/[token]/_resolve";
 import { findStageIdByKey } from "@/lib/inscriptions/sync";
 import { isResendConfigured, sendEmail } from "@/lib/email/resend";
+import { logInscriptionAttempt } from "@/lib/inscriptions/audit-log";
 
 type LearnerInput = {
   civility?: string | null; // "M." | "Mme" | null (Gilles 2026-05-22)
@@ -57,44 +59,113 @@ export async function submitPreinscription(input: {
   financing: FinancingInput;
   message: string | null;
 }): Promise<
-  | { ok: true; created: number }
+  | {
+      ok: true;
+      created: number;
+      learners: Array<{ name: string; email: string }>;
+    }
   | { ok: false; error: string }
 > {
+  // Audit log (Gilles 2026-05-22) : on capture l'IP/UA pour traçabilité
+  // et on logge le résultat final (succès ou échec) avec le payload reçu.
+  const h = await headers();
+  const clientIp =
+    h.get("x-forwarded-for")?.split(",")[0].trim() ?? h.get("x-real-ip") ?? null;
+  const userAgent = h.get("user-agent") ?? null;
+  // Helper qui logge et retourne le résultat formaté.
+  const logAndReturn = async (
+    args:
+      | {
+          ok: true;
+          createdIds: string[];
+          referrerId: string | null;
+          orgId: string | null;
+        }
+      | {
+          ok: false;
+          error: string;
+          referrerId?: string | null;
+          orgId?: string | null;
+        },
+  ): Promise<
+    | {
+        ok: true;
+        created: number;
+        learners: Array<{ name: string; email: string }>;
+      }
+    | { ok: false; error: string }
+  > => {
+    await logInscriptionAttempt({
+      source: "preinscription_publique",
+      referrerCompanyId: args.referrerId ?? null,
+      organizationId: args.orgId ?? null,
+      targetSessionId: input.sessionId ?? null,
+      payload: {
+        company: input.company,
+        learners: input.learners,
+        contact_referent: input.contact_referent,
+        financing: input.financing,
+        message: input.message,
+      },
+      success: args.ok,
+      createdRequestIds: args.ok ? args.createdIds : undefined,
+      errorMessage: !args.ok ? args.error : undefined,
+      clientIp,
+      userAgent,
+    });
+    if (args.ok) {
+      return {
+        ok: true,
+        created: args.createdIds.length,
+        learners: input.learners.map((l) => ({
+          name: `${l.first_name} ${l.last_name}`.trim(),
+          email: l.email,
+        })),
+      };
+    }
+    return { ok: false, error: args.error };
+  };
+
   if (!input.company.name?.trim()) {
-    return { ok: false, error: "Raison sociale entreprise obligatoire." };
+    return logAndReturn({ ok: false, error: "Raison sociale entreprise obligatoire." });
   }
   if (input.financing.mode === "opco" && !input.financing.opco_name?.trim()) {
-    return { ok: false, error: "Nom de l'OPCO obligatoire." };
+    return logAndReturn({ ok: false, error: "Nom de l'OPCO obligatoire." });
   }
   if (
     !input.contact_referent.first_name?.trim() ||
     !input.contact_referent.last_name?.trim()
   ) {
-    return {
+    return logAndReturn({
       ok: false,
       error: "Contact référent (prénom et nom) obligatoire.",
-    };
+    });
   }
   if (!/^\S+@\S+\.\S+$/.test(input.contact_referent.email ?? "")) {
-    return { ok: false, error: "Email du contact référent invalide." };
+    return logAndReturn({ ok: false, error: "Email du contact référent invalide." });
   }
   if (!Array.isArray(input.learners) || input.learners.length === 0) {
-    return { ok: false, error: "Ajoutez au moins un apprenant." };
+    return logAndReturn({ ok: false, error: "Ajoutez au moins un apprenant." });
   }
   for (const l of input.learners) {
     if (!l.first_name?.trim() || !l.last_name?.trim()) {
-      return { ok: false, error: "Prénom et nom obligatoires pour chaque apprenant." };
+      return logAndReturn({
+        ok: false,
+        error: "Prénom et nom obligatoires pour chaque apprenant.",
+      });
     }
     if (!/^\S+@\S+\.\S+$/.test(l.email ?? "")) {
-      return {
+      return logAndReturn({
         ok: false,
         error: `Email invalide pour ${l.first_name} ${l.last_name}.`,
-      };
+      });
     }
   }
 
   const ctx = await resolvePartnerContext(input.token);
-  if (!ctx) return { ok: false, error: "Lien invalide ou expiré." };
+  if (!ctx) return logAndReturn({ ok: false, error: "Lien invalide ou expiré." });
+  const referrerId = ctx.company.id;
+  const orgId = ctx.company.organization_id;
 
   const supabase = createAdminClient();
 
@@ -111,7 +182,12 @@ export async function submitPreinscription(input: {
       prescriber_company_id: string | null;
     }>();
   if (!session) {
-    return { ok: false, error: "Session introuvable." };
+    return logAndReturn({
+      ok: false,
+      error: "Session introuvable.",
+      referrerId,
+      orgId,
+    });
   }
 
   const stageId = await findStageIdByKey(
@@ -120,11 +196,13 @@ export async function submitPreinscription(input: {
     "partner_preinscription",
   );
   if (!stageId) {
-    return {
+    return logAndReturn({
       ok: false,
       error:
         "Stage 'partner_preinscription' manquant. Veuillez appliquer la migration 0090.",
-    };
+      referrerId,
+      orgId,
+    });
   }
 
   // Détection préventive de doublons d'email pour cette session :
@@ -151,10 +229,12 @@ export async function submitPreinscription(input: {
         ),
     );
     if (collision) {
-      return {
+      return logAndReturn({
         ok: false,
         error: `L'email « ${collision.prospect_email} » est déjà inscrit sur cette session${collision.prospect_first_name ? ` (${collision.prospect_first_name} ${collision.prospect_last_name ?? ""})` : ""}. Modifiez l'email avant de soumettre, ou contactez ${ctx.company.name} si vous pensez qu'il s'agit d'une erreur.`,
-      };
+        referrerId,
+        orgId,
+      });
     }
   }
 
@@ -220,10 +300,12 @@ export async function submitPreinscription(input: {
           .delete()
           .in("id", createdIds);
       }
-      return {
+      return logAndReturn({
         ok: false,
-        error: `Enregistrement impossible : ${reqErr?.message ?? "inconnu"}`,
-      };
+        error: `Enregistrement impossible pour ${learner.first_name} ${learner.last_name} : ${reqErr?.message ?? "inconnu"}. Aucune inscription n'a été créée (annulation des précédentes).`,
+        referrerId,
+        orgId,
+      });
     }
     createdIds.push(req.id);
     await supabase.from("inscription_events").insert({
@@ -289,5 +371,10 @@ export async function submitPreinscription(input: {
     }
   }
 
-  return { ok: true, created: createdIds.length };
+  return logAndReturn({
+    ok: true,
+    createdIds,
+    referrerId,
+    orgId,
+  });
 }

@@ -18,10 +18,10 @@ export default async function PartnerInscriptionsPage({
   searchParams,
 }: {
   params: Promise<Params>;
-  searchParams: Promise<{ ok?: string }>;
+  searchParams: Promise<{ ok?: string; errors?: string }>;
 }) {
   const { token } = await params;
-  const { ok } = await searchParams;
+  const { ok, errors: errorsParam } = await searchParams;
   const ctx = await resolvePartnerContext(token);
   if (!ctx) notFound();
 
@@ -207,10 +207,48 @@ export default async function PartnerInscriptionsPage({
         </p>
       </header>
 
-      {ok && (
+      {ok && !errorsParam && (
         <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-800 inline-flex items-start gap-2">
           <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5 text-emerald-600" />
-          <span>Inscription enregistrée et confirmée.</span>
+          <span>
+            {Number(ok) > 1
+              ? `${ok} inscriptions enregistrées et confirmées.`
+              : "Inscription enregistrée et confirmée."}
+          </span>
+        </div>
+      )}
+
+      {/* Bandeau d'erreur partielle (Gilles 2026-05-22) : si certaines
+          inscriptions ont échoué silencieusement dans le batch, on
+          alerte visiblement le partenaire pour qu'il ne croie pas avoir
+          réussi alors qu'il a perdu des apprenants. */}
+      {errorsParam && (
+        <div className="rounded-xl bg-red-50 border-2 border-red-400 p-4 shadow-md">
+          <div className="flex items-start gap-3">
+            <span className="text-2xl shrink-0" aria-hidden>
+              ⚠️
+            </span>
+            <div className="flex-1">
+              <h3 className="font-bold text-red-900 text-base mb-1">
+                {ok
+                  ? `${ok} inscription${Number(ok) > 1 ? "s" : ""} enregistrée${Number(ok) > 1 ? "s" : ""}, mais certaines ont échoué`
+                  : "Aucune inscription enregistrée"}
+              </h3>
+              <p className="text-sm text-red-800 leading-relaxed">
+                Détail des échecs :
+              </p>
+              <ul className="text-sm text-red-800 list-disc pl-5 mt-1 space-y-0.5">
+                {errorsParam.split(", ").map((e, i) => (
+                  <li key={i}>{e}</li>
+                ))}
+              </ul>
+              <p className="text-xs text-red-700 italic mt-3">
+                Resoumettez les apprenants en échec (corrigez l&apos;erreur
+                indiquée), ou contactez {ctx.organization.name} si vous ne
+                comprenez pas le message d&apos;erreur.
+              </p>
+            </div>
+          </div>
         </div>
       )}
 

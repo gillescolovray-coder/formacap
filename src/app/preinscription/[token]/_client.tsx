@@ -102,6 +102,12 @@ export function PreinscriptionClient({
   const [pending, startTransition] = useTransition();
   const [done, setDone] = useState(false);
   const [doneCount, setDoneCount] = useState(0);
+  // Liste détaillée des apprenants effectivement créés (Gilles 2026-05-22)
+  // — sert à afficher un bloc vert explicite après soumission, et à
+  // dissiper tout doute pour le partenaire ("j'ai bien inscrit X, Y, Z").
+  const [doneLearners, setDoneLearners] = useState<
+    Array<{ name: string; email: string }>
+  >([]);
   const [error, setError] = useState<string | null>(null);
 
   // Entreprise (en premier — un seul bloc)
@@ -232,22 +238,51 @@ export function PreinscriptionClient({
         return;
       }
       setDoneCount(res.created);
+      setDoneLearners(res.learners ?? []);
       setDone(true);
     });
   }
 
   if (done) {
     return (
-      <div className="rounded-2xl bg-emerald-50 border-2 border-emerald-300 p-8 text-center">
-        <CheckCircle2 className="h-12 w-12 text-emerald-600 mx-auto mb-3" />
-        <h2 className="text-lg font-bold text-emerald-900">
-          {doneCount > 1
-            ? `${doneCount} pré-inscriptions enregistrées !`
-            : "Pré-inscription enregistrée !"}
-        </h2>
-        <p className="text-sm text-emerald-800 mt-2">
-          {partnerName} va valider {doneCount > 1 ? "ces demandes" : "votre demande"} et reviendra vers vous rapidement avec les modalités définitives.
-        </p>
+      <div className="rounded-2xl bg-emerald-50 border-2 border-emerald-300 p-8">
+        <div className="text-center">
+          <CheckCircle2 className="h-12 w-12 text-emerald-600 mx-auto mb-3" />
+          <h2 className="text-lg font-bold text-emerald-900">
+            {doneCount > 1
+              ? `${doneCount} pré-inscriptions enregistrées !`
+              : "Pré-inscription enregistrée !"}
+          </h2>
+          <p className="text-sm text-emerald-800 mt-2">
+            {partnerName} va valider {doneCount > 1 ? "ces demandes" : "votre demande"} et reviendra vers vous rapidement avec les modalités définitives.
+          </p>
+        </div>
+        {/* Liste détaillée des apprenants effectivement enregistrés
+            (Gilles 2026-05-22) — dissipe tout doute pour le partenaire,
+            qui voit en clair les noms et emails des inscrits. */}
+        {doneLearners.length > 0 && (
+          <div className="mt-5 rounded-lg bg-white border border-emerald-200 p-4">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-emerald-700 mb-2">
+              Apprenants effectivement enregistrés ({doneLearners.length})
+            </h3>
+            <ul className="space-y-1.5">
+              {doneLearners.map((l, i) => (
+                <li
+                  key={`${l.email}-${i}`}
+                  className="text-sm text-emerald-900 flex items-center gap-2"
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                  <strong>{l.name}</strong>
+                  <span className="text-emerald-700">— {l.email}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="text-[11px] text-emerald-700 mt-3 italic">
+              Si un apprenant manque dans cette liste, contactez{" "}
+              {partnerName} pour signaler le problème.
+            </p>
+          </div>
+        )}
       </div>
     );
   }
@@ -539,8 +574,28 @@ export function PreinscriptionClient({
       </div>
 
       {error && (
-        <div className="rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">
-          {error}
+        <div
+          className="rounded-xl bg-red-50 border-2 border-red-400 p-4 shadow-md"
+          role="alert"
+        >
+          <div className="flex items-start gap-3">
+            <span className="text-2xl shrink-0" aria-hidden>
+              ⚠️
+            </span>
+            <div className="flex-1">
+              <h3 className="font-bold text-red-900 text-base mb-1">
+                Inscription non enregistrée
+              </h3>
+              <p className="text-sm text-red-800 leading-relaxed whitespace-pre-wrap">
+                {error}
+              </p>
+              <p className="text-xs text-red-700 italic mt-2">
+                Aucun apprenant n&apos;a été créé. Corrigez l&apos;erreur
+                ci-dessus puis cliquez à nouveau sur « Envoyer ». Si le
+                problème persiste, contactez {partnerName}.
+              </p>
+            </div>
+          </div>
         </div>
       )}
 
