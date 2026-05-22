@@ -137,27 +137,71 @@ async function computeConventionPricing(
   // Dernier recours : moyenne des quote_amount_ht des inscriptions de
   // cette société pour cette session (Gilles 2026-05-22 — fix conventions
   // à 0 € quand la session n'a pas de pricing cascade R7 ni prix legacy).
-  const { data: quotes } = await supabase
+  //
+  // FIX 2026-05-22 (Gilles bug Mme TORRES) : on cherche les quotes par
+  // 2 voies différentes pour être robuste :
+  //   • inscription_requests.company_id (cas habituel)
+  //   • via enrollments → learner.company_id (cas inscriptions miroirs
+  //     réparées où inscription.company_id peut être différent)
+  const quotesFound: number[] = [];
+
+  // Voie 1 : par inscription_requests.company_id
+  const { data: quotes1 } = await supabase
     .from("inscription_requests")
     .select("quote_amount_ht")
     .eq("target_session_id", sessionId)
     .eq("company_id", companyId)
     .not("quote_amount_ht", "is", null);
-  const quoteRows = (quotes ?? []) as Array<{ quote_amount_ht: number | null }>;
-  if (quoteRows.length > 0) {
-    const sum = quoteRows.reduce(
-      (acc, r) => acc + Number(r.quote_amount_ht ?? 0),
-      0,
-    );
-    const avg = sum / quoteRows.length;
+  for (const r of (quotes1 ?? []) as Array<{ quote_amount_ht: number | null }>) {
+    if (r.quote_amount_ht) quotesFound.push(Number(r.quote_amount_ht));
+  }
+
+  // Voie 2 : par learner.company_id via enrollments + leur inscription_request
+  if (quotesFound.length === 0) {
+    const { data: enrollWithReq } = await supabase
+      .from("session_enrollments")
+      .select(
+        "inscription_request_id, learner:learners!inner(company_id), request:inscription_requests(quote_amount_ht)",
+      )
+      .eq("session_id", sessionId);
+    for (const row of (enrollWithReq ?? []) as unknown as Array<{
+      learner:
+        | { company_id: string | null }
+        | Array<{ company_id: string | null }>
+        | null;
+      request:
+        | { quote_amount_ht: number | null }
+        | Array<{ quote_amount_ht: number | null }>
+        | null;
+    }>) {
+      const l = Array.isArray(row.learner) ? row.learner[0] : row.learner;
+      if (l?.company_id !== companyId) continue;
+      const req = Array.isArray(row.request) ? row.request[0] : row.request;
+      if (req?.quote_amount_ht) quotesFound.push(Number(req.quote_amount_ht));
+    }
+  }
+
+  if (quotesFound.length > 0) {
+    const sum = quotesFound.reduce((acc, n) => acc + n, 0);
+    const avg = sum / quotesFound.length;
     if (avg > 0) {
       return {
         unitPrice: avg,
-        totalHt: avg * Math.max(nbApprenantsCompany, quoteRows.length),
+        totalHt: avg * Math.max(nbApprenantsCompany, quotesFound.length),
       };
     }
   }
 
+  console.warn(
+    "[computeConventionPricing] aucun montant trouvé — retour 0",
+    {
+      sessionId,
+      companyId,
+      nbApprenantsCompany,
+      pricingMode: sessionRow?.pricing_mode,
+      legacyUnit,
+    },
+  );
   return { unitPrice: 0, totalHt: 0 };
 }
 

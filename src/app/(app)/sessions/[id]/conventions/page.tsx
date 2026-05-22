@@ -440,17 +440,24 @@ export default async function ConventionsPage({
     if (
       conv &&
       (conv.amount_ht_total === null ||
-        conv.amount_ht_total === 0) &&
+        Number(conv.amount_ht_total) === 0) &&
       unitHt > 0 &&
       totalHt > 0
     ) {
-      await supabase
+      const { error: updErr } = await supabase
         .from("session_conventions")
         .update({ amount_ht_unit: unitHt, amount_ht_total: totalHt })
         .eq("id", conv.id);
-      // Mise à jour locale pour cohérence d'affichage immédiate
-      conv.amount_ht_unit = unitHt;
-      conv.amount_ht_total = totalHt;
+      if (updErr) {
+        console.warn(
+          "[conventions/page] auto-fix montant a échoué",
+          { conventionId: conv.id, error: updErr.message },
+        );
+      } else {
+        // Mise à jour locale pour cohérence d'affichage immédiate
+        conv.amount_ht_unit = unitHt;
+        conv.amount_ht_total = totalHt;
+      }
     }
   }
 
