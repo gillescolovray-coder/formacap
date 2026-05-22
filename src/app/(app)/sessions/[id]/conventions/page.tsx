@@ -688,8 +688,8 @@ export default async function ConventionsPage({
             </p>
           </div>
         ) : (
-          <div className="rounded-xl bg-white border border-zinc-200 overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="rounded-xl bg-white border border-zinc-200 overflow-x-auto">
+            <table className="w-full text-sm min-w-[1100px]">
               <thead className="bg-zinc-50 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500 border-b border-zinc-200">
                 <tr>
                   <th className="px-4 py-3">Entreprise</th>
