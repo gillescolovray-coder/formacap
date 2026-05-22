@@ -114,7 +114,7 @@ export default async function ParticipantsPage({
     supabase
       .from("inscription_requests")
       .select(
-        "*, company:companies!inscription_requests_company_id_fkey(id, name, postal_code, city), learner:learners(first_name, last_name, email, phone, job_title, postal_code, city, company:companies(id, name, postal_code, city))",
+        "*, company:companies!inscription_requests_company_id_fkey(id, name, postal_code, city), learner:learners(first_name, last_name, email, phone, civility, job_title, postal_code, city, company:companies(id, name, postal_code, city))",
       )
       .eq("target_session_id", id)
       .order("received_at", { ascending: false }),

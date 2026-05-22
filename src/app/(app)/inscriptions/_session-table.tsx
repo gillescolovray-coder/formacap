@@ -16,6 +16,7 @@ import {
   type InscriptionStage,
 } from "@/lib/inscriptions/types";
 import { computeSessionPrice } from "@/lib/pricing/compute";
+import { formatLearnerName } from "@/lib/learners/format";
 
 type SessionForCard = {
   formation: { public_price_excl_tax: number | null } | null;
@@ -211,6 +212,7 @@ export function SessionInscriptionsTable({
                 last_name: string | null;
                 email: string | null;
                 phone: string | null;
+                civility: string | null;
                 postal_code: string | null;
                 city: string | null;
                 company?: {
@@ -223,23 +225,23 @@ export function SessionInscriptionsTable({
             };
             // Nom affiché : règle 2026-05-13 — quand un apprenant est
             // identifié (learner_id), sa fiche apprenant est la source
-            // de vérité. Le snapshot prospect_* n'est utilisé qu'en
-            // l'absence d'apprenant lié (prospects anonymes).
-            //
-            // Sans cette règle, un snapshot stale (ex : ancien nom de
-            // test "fffff FFFFF" saisi avant d'avoir lié la fiche
-            // apprenant définitive) continuerait à s'afficher alors que
-            // la fiche apprenant a été corrigée depuis.
+            // de vérité (y compris pour la civilité). Le snapshot
+            // prospect_* n'est utilisé qu'en l'absence d'apprenant lié
+            // (prospects anonymes).
             const hasLearner = Boolean(joined.learner);
-            const fullName = hasLearner
-              ? [joined.learner?.first_name, joined.learner?.last_name]
-                  .filter(Boolean)
-                  .join(" ")
-                  .trim() || "—"
-              : [r.prospect_first_name, r.prospect_last_name]
-                  .filter(Boolean)
-                  .join(" ")
-                  .trim() || "—";
+            const prospectCivility = (r as unknown as { prospect_civility?: string | null }).prospect_civility ?? null;
+            const formattedName = hasLearner
+              ? formatLearnerName(
+                  joined.learner?.civility,
+                  joined.learner?.first_name,
+                  joined.learner?.last_name,
+                )
+              : formatLearnerName(
+                  prospectCivility,
+                  r.prospect_first_name,
+                  r.prospect_last_name,
+                );
+            const fullName = formattedName || "—";
             // L'entreprise peut être rattachée à la demande directement,
             // ou via l'apprenant. On remonte l'ID dans les deux cas pour
             // que le lien fonctionne.

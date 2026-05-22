@@ -46,7 +46,7 @@ export default async function AttestationsPage({
   const { data: enrollments } = await supabase
     .from("session_enrollments")
     .select(
-      "id, status, attestation_sent_at, learner:learners(id, first_name, last_name, email)",
+      "id, status, attestation_sent_at, learner:learners(id, civility, first_name, last_name, email)",
     )
     .eq("session_id", id)
     .order("enrolled_at", { ascending: true });
@@ -57,6 +57,7 @@ export default async function AttestationsPage({
     attestation_sent_at: string | null;
     learner: {
       id: string;
+      civility: string | null;
       first_name: string | null;
       last_name: string | null;
       email: string | null;
@@ -181,11 +182,17 @@ export default async function AttestationsPage({
               </thead>
               <tbody className="divide-y divide-zinc-200">
                 {rows.map((r) => {
-                  const fullName = r.learner
+                  // Préfixer le nom par la civilité si renseignée
+                  // (Gilles 2026-05-22).
+                  const base = r.learner
                     ? [r.learner.first_name, r.learner.last_name]
                         .filter(Boolean)
                         .join(" ")
-                    : "—";
+                    : "";
+                  const civ = (r.learner?.civility ?? "").trim();
+                  const prefix =
+                    civ === "M." || civ === "Mme" ? `${civ} ` : "";
+                  const fullName = base ? `${prefix}${base}` : "—";
                   const stats = attendanceByEnrollment.get(r.id);
                   const rate =
                     stats && stats.total > 0

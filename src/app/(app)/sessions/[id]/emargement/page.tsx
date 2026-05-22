@@ -46,6 +46,7 @@ const MOMENTS: AttendanceMoment[] = ["morning", "afternoon"];
 type EnrollmentRow = {
   id: string;
   learner: {
+    civility: string | null;
     first_name: string | null;
     last_name: string | null;
     email?: string | null;
@@ -112,7 +113,7 @@ export default async function EmargementPage({
     supabase
       .from("session_enrollments")
       .select(
-        "id, learner:learners(first_name, last_name, email, company:companies(name))",
+        "id, learner:learners(civility, first_name, last_name, email, company:companies(name))",
       )
       .eq("session_id", id)
       .order("enrolled_at", { ascending: true }),
@@ -210,9 +211,13 @@ export default async function EmargementPage({
   const rows = (enrollments ?? []).map((e) => {
     const enrollment = e as unknown as EnrollmentRow;
     const l = enrollment.learner;
-    const name = l
+    // Préfixer le nom par la civilité si renseignée (Gilles 2026-05-22).
+    const base = l
       ? [l.first_name, l.last_name].filter(Boolean).join(" ")
-      : "Apprenant inconnu";
+      : "";
+    const civ = (l?.civility ?? "").trim();
+    const prefix = civ === "M." || civ === "Mme" ? `${civ} ` : "";
+    const name = base ? `${prefix}${base}` : "Apprenant inconnu";
     const company = l?.company?.name ?? null;
     const keyMap = attendanceIndex.get(enrollment.id) ?? new Map();
     const attendancesByKey: Record<string, AttendanceStatus> = {};

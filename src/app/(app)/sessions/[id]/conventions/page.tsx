@@ -117,9 +117,15 @@ export default async function ConventionsPage({
   for (const r of rows) {
     const cid = r.learner?.company_id;
     const cname = r.learner?.company?.name;
-    const lname = [r.learner?.first_name, r.learner?.last_name]
-      .filter(Boolean)
-      .join(" ") || "Apprenant inconnu";
+    // Préfixer le nom par la civilité (Mme/M.) si renseignée
+    // (Gilles 2026-05-22).
+    const baseName =
+      [r.learner?.first_name, r.learner?.last_name]
+        .filter(Boolean)
+        .join(" ") || "Apprenant inconnu";
+    const civ = (r.learner?.civility ?? "").trim();
+    const lname =
+      civ === "M." || civ === "Mme" ? `${civ} ${baseName}` : baseName;
     if (!cid || !cname || !r.learner) {
       orphans.push(lname);
       continue;

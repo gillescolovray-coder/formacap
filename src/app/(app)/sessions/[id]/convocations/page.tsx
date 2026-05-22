@@ -25,6 +25,7 @@ type EnrollmentRow = {
   inscription_request_id: string | null;
   learner: {
     id: string;
+    civility: string | null;
     first_name: string | null;
     last_name: string | null;
     email: string | null;
@@ -86,7 +87,7 @@ export default async function ConvocationsPage({
   const { data: enrollments } = await supabase
     .from("session_enrollments")
     .select(
-      "id, convocation_sent_at, inscription_request_id, learner:learners(id, first_name, last_name, email)",
+      "id, convocation_sent_at, inscription_request_id, learner:learners(id, civility, first_name, last_name, email)",
     )
     .eq("session_id", id)
     .order("enrolled_at", { ascending: true });
@@ -226,11 +227,17 @@ export default async function ConvocationsPage({
               </thead>
               <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
                 {rows.map((r) => {
-                  const fullName = r.learner
+                  // Préfixer le nom par la civilité si renseignée
+                  // (Gilles 2026-05-22).
+                  const base = r.learner
                     ? [r.learner.first_name, r.learner.last_name]
                         .filter(Boolean)
                         .join(" ")
-                    : "—";
+                    : "";
+                  const civ = (r.learner?.civility ?? "").trim();
+                  const prefix =
+                    civ === "M." || civ === "Mme" ? `${civ} ` : "";
+                  const fullName = base ? `${prefix}${base}` : "—";
                   const email = r.learner?.email ?? null;
                   const isSent = !!r.convocation_sent_at;
                   // Lien direct vers le PDF généré par Puppeteer (header +
