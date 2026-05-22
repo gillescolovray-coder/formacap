@@ -3,14 +3,19 @@ import Link from "next/link";
 import {
   Award,
   Brain,
+  Calendar as CalendarIcon,
   CheckCircle2,
   ClipboardList,
   Clock,
+  ExternalLink,
   FileText,
   Folder,
   Lock,
+  MapPin,
   PenTool,
+  Phone,
   Target,
+  Video,
 } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { checkCertificateEligibility } from "@/lib/portal/realization-certificate";
@@ -67,10 +72,11 @@ export default async function ParcoursApprenantPage({
   }
 
   // 2. Enrollment + apprenant + session + formation + organisme
+  // (enrichi 2026-05-22 Gilles : durée, horaires, lieu, contact OF)
   const { data: enrollment } = await supabase
     .from("session_enrollments")
     .select(
-      "id, session_id, learner:learners(id, civility, first_name, last_name), session:sessions(id, start_date, end_date, modality, location, quiz_template_id, formation:formations(title, quiz_template_id), organization:organizations(name, logo_url, realization_certificate_threshold_percent))",
+      "id, session_id, learner:learners(id, civility, first_name, last_name), session:sessions(id, start_date, end_date, modality, location, video_link, video_app, quiz_template_id, default_morning_start, default_morning_end, default_afternoon_start, default_afternoon_end, trainer:trainers!trainer_id(first_name, last_name, phone, mobile, email), location_ref:formation_locations!location_id(name, address, postal_code, city), formation:formations(title, duration_hours, duration_days, quiz_template_id), organization:organizations(name, logo_url, phone, email, realization_certificate_threshold_percent))",
     )
     .eq("id", tokenRow.enrollment_id)
     .maybeSingle<{
@@ -88,14 +94,37 @@ export default async function ParcoursApprenantPage({
         end_date: string;
         modality: string | null;
         location: string | null;
+        video_link: string | null;
+        video_app: string | null;
         quiz_template_id: string | null;
+        default_morning_start: string | null;
+        default_morning_end: string | null;
+        default_afternoon_start: string | null;
+        default_afternoon_end: string | null;
+        trainer: {
+          first_name: string | null;
+          last_name: string | null;
+          phone: string | null;
+          mobile: string | null;
+          email: string | null;
+        } | null;
+        location_ref: {
+          name: string | null;
+          address: string | null;
+          postal_code: string | null;
+          city: string | null;
+        } | null;
         formation: {
           title: string;
+          duration_hours: number | null;
+          duration_days: number | null;
           quiz_template_id: string | null;
         } | null;
         organization: {
           name: string;
           logo_url: string | null;
+          phone: string | null;
+          email: string | null;
           realization_certificate_threshold_percent: number | null;
         } | null;
       } | null;
@@ -300,6 +329,47 @@ export default async function ParcoursApprenantPage({
   // Render
   // ============================================================
 
+  // === Détails session enrichis (Gilles 2026-05-22) ===
+  const durationHours = session.formation?.duration_hours ?? null;
+  const durationDays = session.formation?.duration_days ?? null;
+  const durationText =
+    durationDays && durationHours
+      ? `${durationDays} jour${durationDays > 1 ? "s" : ""} soit ${durationHours} heures`
+      : durationHours
+        ? `${durationHours} heures`
+        : durationDays
+          ? `${durationDays} jour${durationDays > 1 ? "s" : ""}`
+          : null;
+
+  const horaires = [
+    session.default_morning_start && session.default_morning_end
+      ? `${session.default_morning_start.slice(0, 5)} - ${session.default_morning_end.slice(0, 5)}`
+      : null,
+    session.default_afternoon_start && session.default_afternoon_end
+      ? `${session.default_afternoon_start.slice(0, 5)} - ${session.default_afternoon_end.slice(0, 5)}`
+      : null,
+  ].filter(Boolean);
+
+  const isDistanciel = session.modality === "distanciel";
+  const isHybride = session.modality === "hybride";
+
+  const adresseComplete = [
+    session.location_ref?.name,
+    session.location_ref?.address,
+    [session.location_ref?.postal_code, session.location_ref?.city]
+      .filter(Boolean)
+      .join(" "),
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+  const orgPhone = session.organization?.phone ?? null;
+  const trainer = session.trainer;
+  const trainerName = trainer
+    ? [trainer.first_name, trainer.last_name].filter(Boolean).join(" ")
+    : null;
+  const trainerPhone = trainer?.mobile ?? trainer?.phone ?? null;
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
       <div className="max-w-2xl mx-auto p-4 md:p-8 space-y-4">
@@ -319,12 +389,137 @@ export default async function ParcoursApprenantPage({
           <h1 className="text-xl md:text-2xl font-bold text-zinc-900">
             {fullName}
           </h1>
-          <p className="text-sm text-zinc-600">{formationTitle}</p>
+          {/* Titre formation EN GRAS (Gilles 2026-05-22) */}
+          <p className="text-base md:text-lg font-extrabold text-zinc-900 leading-tight px-4">
+            {formationTitle}
+          </p>
           <p className="text-xs text-zinc-500">
             {formatDateRange(session.start_date, session.end_date)}
             {orgName && ` · ${orgName}`}
           </p>
         </header>
+
+        {/* Carte « Détails de la session » : durée + horaires + lieu +
+            contact + boutons agenda et convocation. Gilles 2026-05-22. */}
+        <div className="rounded-xl bg-white border-2 border-cyan-200 p-4 space-y-3 shadow-sm">
+          <div className="grid gap-2 text-sm">
+            {durationText && (
+              <div className="flex items-start gap-2">
+                <Clock className="h-4 w-4 text-cyan-600 mt-0.5 shrink-0" />
+                <div>
+                  <span className="font-bold text-zinc-900">Durée :</span>{" "}
+                  <span className="text-zinc-700">{durationText}</span>
+                </div>
+              </div>
+            )}
+            {horaires.length > 0 && (
+              <div className="flex items-start gap-2">
+                <Clock className="h-4 w-4 text-cyan-600 mt-0.5 shrink-0" />
+                <div>
+                  <span className="font-bold text-zinc-900">Horaires :</span>{" "}
+                  <span className="text-zinc-700">{horaires.join(" · ")}</span>
+                </div>
+              </div>
+            )}
+            {/* Lieu : adresse pour présentiel, lien visio pour distanciel */}
+            {isDistanciel || isHybride ? (
+              <div className="flex items-start gap-2">
+                <Video className="h-4 w-4 text-cyan-600 mt-0.5 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <div>
+                    <span className="font-bold text-zinc-900">
+                      {isHybride ? "Hybride" : "Distanciel"} :
+                    </span>{" "}
+                    {session.video_app && (
+                      <span className="text-zinc-700">{session.video_app}</span>
+                    )}
+                  </div>
+                  {session.video_link && (
+                    <a
+                      href={session.video_link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-cyan-700 hover:text-cyan-900 hover:underline text-xs break-all mt-1"
+                    >
+                      <ExternalLink className="h-3 w-3 shrink-0" />
+                      {session.video_link}
+                    </a>
+                  )}
+                  {isHybride && adresseComplete && (
+                    <p className="text-xs text-zinc-600 mt-1">
+                      <strong>Lieu présentiel :</strong> {adresseComplete}
+                    </p>
+                  )}
+                </div>
+              </div>
+            ) : (
+              adresseComplete && (
+                <div className="flex items-start gap-2">
+                  <MapPin className="h-4 w-4 text-cyan-600 mt-0.5 shrink-0" />
+                  <div>
+                    <span className="font-bold text-zinc-900">Lieu :</span>{" "}
+                    <span className="text-zinc-700">{adresseComplete}</span>
+                  </div>
+                </div>
+              )
+            )}
+            {/* Contact en cas de problème */}
+            {(orgPhone || trainerPhone) && (
+              <div className="flex items-start gap-2 pt-1 border-t border-zinc-100">
+                <Phone className="h-4 w-4 text-cyan-600 mt-0.5 shrink-0" />
+                <div className="text-xs">
+                  <span className="font-bold text-zinc-900">
+                    En cas de problème :
+                  </span>
+                  {orgPhone && (
+                    <div className="text-zinc-700 mt-0.5">
+                      {orgName} —{" "}
+                      <a
+                        href={`tel:${orgPhone.replace(/\s/g, "")}`}
+                        className="font-mono font-semibold text-cyan-700 hover:underline"
+                      >
+                        {orgPhone}
+                      </a>
+                    </div>
+                  )}
+                  {trainerPhone && trainerName && (
+                    <div className="text-zinc-700 mt-0.5">
+                      Formateur {trainerName} —{" "}
+                      <a
+                        href={`tel:${trainerPhone.replace(/\s/g, "")}`}
+                        className="font-mono font-semibold text-cyan-700 hover:underline"
+                      >
+                        {trainerPhone}
+                      </a>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Boutons d'action : agenda + convocation */}
+          <div className="flex flex-wrap gap-2 pt-2 border-t border-zinc-100">
+            <a
+              href={`/api/public/parcours/${token}/calendar.ics`}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-cyan-600 text-white text-xs font-bold hover:bg-cyan-700 transition-colors"
+              title="Télécharger le fichier .ics pour Google Calendar / Apple Calendar / Outlook"
+            >
+              <CalendarIcon className="h-3.5 w-3.5" />
+              Ajouter à mon agenda
+            </a>
+            <a
+              href={`/api/public/convocations/${token}/pdf`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-white border border-cyan-300 text-cyan-700 text-xs font-bold hover:bg-cyan-50 transition-colors"
+              title="Télécharger ma convocation en PDF"
+            >
+              <FileText className="h-3.5 w-3.5" />
+              Voir ma convocation
+            </a>
+          </div>
+        </div>
 
         {/* Bandeau d'introduction spécifique aux apprenants d'un OF partenaire :
             CAP NUMÉRIQUE ne fournit QUE les quiz, le reste (convocation,

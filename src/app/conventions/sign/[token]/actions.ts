@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export type SignConventionInput = {
   token: string;
@@ -35,7 +35,12 @@ export async function signConvention(
     };
   }
 
-  const supabase = await createClient();
+  // FIX 2026-05-22 (bug Mme TORRES) : on utilise l'admin client (RLS bypass)
+  // car cette server action est appelée depuis une page publique sans user
+  // authentifié. Sans ça, les policies RLS de session_conventions bloquaient
+  // l'UPDATE silencieusement → le statut restait Brouillon. Le token de
+  // signature reste l'authentification effective (vérifié juste après).
+  const supabase = createAdminClient();
 
   // Vérifier le token
   const { data: link } = await supabase
@@ -75,6 +80,10 @@ export async function signConvention(
     .eq("id", input.conventionId);
 
   if (convError) {
+    console.error("[signConvention] update échec", {
+      conventionId: input.conventionId,
+      error: convError.message,
+    });
     return { ok: false, error: convError.message };
   }
 
@@ -89,6 +98,17 @@ export async function signConvention(
     .eq("id", link.id)
     .is("used_at", null);
 
+  // Récupérer le session_id de la convention pour revalider la page admin
+  // (sans ça le tableau Conventions garde le statut Brouillon en cache).
+  const { data: conv } = await supabase
+    .from("session_conventions")
+    .select("session_id")
+    .eq("id", input.conventionId)
+    .maybeSingle<{ session_id: string }>();
+
   revalidatePath(`/conventions/sign/${input.token}`);
+  if (conv?.session_id) {
+    revalidatePath(`/sessions/${conv.session_id}/conventions`);
+  }
   return { ok: true };
 }
