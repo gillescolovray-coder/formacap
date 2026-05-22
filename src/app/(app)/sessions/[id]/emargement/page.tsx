@@ -17,6 +17,7 @@ import { RemoteSignSection } from "./_remote-sign-section";
 import { SignaturesDashboard } from "./_signatures-dashboard";
 import { SessionTabs } from "../_session-tabs";
 import { isResendConfigured } from "@/lib/email/resend";
+import { healEnrollmentsForSession } from "@/lib/inscriptions/sync";
 import type { SessionDay, TrainingSession } from "@/lib/sessions/types";
 import type {
   AttendanceMoment,
@@ -91,52 +92,17 @@ export default async function EmargementPage({
   if (error) throw error;
   if (!session) notFound();
 
-  // Auto-conversion : pour chaque inscription au stage gagnant (is_won=true)
-  // qui pointe vers un apprenant existant et qui n'a pas encore d'enrollment
-  // correspondant pour cette session, on crée automatiquement l'enrollment.
-  // Cela permet à l'émargement de voir tous les apprenants "confirmés" sans
-  // que l'utilisateur ait à cliquer un bouton supplémentaire.
-  const [
-    { data: existingEnrollmentsRaw },
-    { data: wonStages },
-  ] = await Promise.all([
-    supabase
-      .from("session_enrollments")
-      .select("learner_id")
-      .eq("session_id", id),
-    supabase
-      .from("inscription_stages")
-      .select("id")
-      .eq("is_active", true)
-      .eq("is_won", true),
-  ]);
-  const enrolledLearnerIds = new Set(
-    (existingEnrollmentsRaw ?? [])
-      .map((e) => e.learner_id as string | null)
-      .filter((x): x is string => Boolean(x)),
-  );
-  const wonStageIds = (wonStages ?? []).map((s) => s.id as string);
-  if (wonStageIds.length > 0) {
-    const { data: wonInscriptions } = await supabase
-      .from("inscription_requests")
-      .select("learner_id, stage_id")
-      .eq("target_session_id", id)
-      .in("stage_id", wonStageIds);
-    const toEnroll = (wonInscriptions ?? [])
-      .map((r) => r.learner_id as string | null)
-      .filter((lid): lid is string => Boolean(lid))
-      .filter((lid) => !enrolledLearnerIds.has(lid));
-    // Dédup côté client (au cas où plusieurs inscriptions pour le même learner)
-    const uniqueToEnroll = Array.from(new Set(toEnroll));
-    if (uniqueToEnroll.length > 0) {
-      await supabase.from("session_enrollments").insert(
-        uniqueToEnroll.map((learner_id) => ({
-          session_id: id,
-          learner_id,
-          status: "confirmed" as const,
-        })),
-      );
-    }
+  // Self-healing : remplace l'ancienne auto-conversion ad hoc par
+  // l'appel centralisé à healEnrollmentsForSession (Gilles 2026-05-22).
+  // L'ancienne version créait des enrollments orphelins (sans
+  // inscription_request_id) ce qui cassait la sync bidirectionnelle.
+  try {
+    await healEnrollmentsForSession(supabase, id);
+  } catch (e) {
+    console.warn(
+      "[emargement/page] healEnrollmentsForSession failed",
+      (e as Error).message,
+    );
   }
 
   const [

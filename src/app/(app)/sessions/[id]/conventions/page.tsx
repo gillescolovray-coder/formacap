@@ -7,6 +7,7 @@ import { BackButton } from "@/components/back-button";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { isResendConfigured } from "@/lib/email/resend";
+import { healEnrollmentsForSession } from "@/lib/inscriptions/sync";
 import { SessionTabs } from "../_session-tabs";
 import { SessionHeaderMeta } from "../_session-header-meta";
 import {
@@ -46,6 +47,18 @@ export default async function ConventionsPage({
       formation: { id: string; title: string } | null;
     }>();
   if (!session) notFound();
+
+  // Self-healing : répare automatiquement les enrollments manquants
+  // avant de lister (Gilles 2026-05-22 : fix bug 3 inscriptions confirmées
+  // mais 1 seul participant visible dans Conventions). Silencieux.
+  try {
+    await healEnrollmentsForSession(supabase, id);
+  } catch (e) {
+    console.warn(
+      "[conventions/page] healEnrollmentsForSession failed",
+      (e as Error).message,
+    );
+  }
 
   // Inscriptions + entreprises distinctes
   const { data: enrollments } = await supabase

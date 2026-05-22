@@ -7,6 +7,7 @@ import { BackButton } from "@/components/back-button";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { isResendConfigured } from "@/lib/email/resend";
+import { healEnrollmentsForSession } from "@/lib/inscriptions/sync";
 import { SessionTabs } from "../_session-tabs";
 import { SessionHeaderMeta } from "../_session-header-meta";
 import {
@@ -69,6 +70,18 @@ export default async function ConvocationsPage({
       formation: { id: string; title: string } | null;
     }>();
   if (!session) notFound();
+
+  // Self-healing : répare les enrollments manquants avant de lister
+  // (Gilles 2026-05-22 : fix bug 3 inscriptions confirmées mais 1 seul
+  // participant visible dans Convocations). Silencieux.
+  try {
+    await healEnrollmentsForSession(supabase, id);
+  } catch (e) {
+    console.warn(
+      "[convocations/page] healEnrollmentsForSession failed",
+      (e as Error).message,
+    );
+  }
 
   const { data: enrollments } = await supabase
     .from("session_enrollments")

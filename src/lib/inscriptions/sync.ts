@@ -306,72 +306,64 @@ export async function createMirroredEnrollmentForRequest(
 
 /**
  * Self-healing : pour une session donnée, détecte les inscription_requests
- * qui sont au stage `confirmed` (= won, terminal positif) MAIS qui n'ont
- * pas d'enrollment correspondant. Recrée ou re-rattache automatiquement
- * les enrollments manquants pour réparer les désynchronisations.
+ * qui ciblent cette session ET qui ont un learner_id, mais qui n'ont pas
+ * d'enrollment correspondant. Recrée ou re-rattache automatiquement les
+ * enrollments manquants pour réparer les désynchronisations.
  *
- * Appelé au chargement de la page Participants — silencieux, pas
- * d'erreur côté UI. Renvoie le nombre d'enrollments réparés.
+ * v2 (Gilles 2026-05-22) : on ne filtre plus uniquement sur le stage
+ * "confirmed" — on traite TOUTES les inscriptions avec learner_id pour
+ * couvrir aussi les cas "convoké", "devis envoyé", etc. Le bug observé :
+ * 3 inscriptions confirmées en multi-apprenants → 1 seul enrollment visible
+ * dans Conventions / Convocations, car le healing ne couvrait pas tous
+ * les cas. Le statut de l'enrollment est dérivé du stage de la request.
+ *
+ * Appelé au chargement de la page Participants ET des onglets dépendants
+ * (Conventions, Convocations, Émargement, Documents, etc.) — silencieux,
+ * pas d'erreur côté UI. Renvoie le nombre d'enrollments réparés.
  */
 export async function healEnrollmentsForSession(
   supabase: SupabaseClient,
   sessionId: string,
 ): Promise<{ healed: number; checked: number }> {
-  // 1) Trouve l'ID du stage "confirmed" pour cette orga via la session
-  const { data: session } = await supabase
-    .from("sessions")
-    .select("organization_id")
-    .eq("id", sessionId)
-    .maybeSingle<{ organization_id: string }>();
-  if (!session) return { healed: 0, checked: 0 };
-
-  const { data: stage } = await supabase
-    .from("inscription_stages")
-    .select("id")
-    .eq("organization_id", session.organization_id)
-    .eq("key", "confirmed")
-    .maybeSingle<{ id: string }>();
-  if (!stage) return { healed: 0, checked: 0 };
-
-  // 2) Récupère toutes les requests `confirmed` pour cette session avec
-  //    un learner_id renseigné.
+  // 1) Récupère toutes les inscriptions de la session avec un learner_id
+  //    et leur stage (pour calculer le statut enrollment cible).
   const { data: requests } = await supabase
     .from("inscription_requests")
-    .select("id, learner_id, target_session_id")
+    .select(
+      "id, learner_id, target_session_id, stage:inscription_stages(key)",
+    )
     .eq("target_session_id", sessionId)
-    .eq("stage_id", stage.id)
     .not("learner_id", "is", null);
-  const confirmedReqs = (requests ?? []) as Array<{
+  const reqs = (requests ?? []) as unknown as Array<{
     id: string;
     learner_id: string;
     target_session_id: string;
+    stage: { key: string | null } | null;
   }>;
-  if (confirmedReqs.length === 0) return { healed: 0, checked: 0 };
+  if (reqs.length === 0) return { healed: 0, checked: 0 };
 
-  // 3) Pour chaque request, vérifie qu'un enrollment existe et est lié.
-  //    Sinon, appelle createMirroredEnrollmentForRequest (qui gère le
-  //    cas existant / création).
+  // 2) Pour chaque request, vérifie qu'un enrollment existe et est lié.
+  //    Sinon, appelle createMirroredEnrollmentForRequest qui gère
+  //    création / re-rattachement.
   let healed = 0;
-  for (const r of confirmedReqs) {
+  for (const r of reqs) {
     const { data: enrollment } = await supabase
       .from("session_enrollments")
       .select("id, inscription_request_id")
       .eq("session_id", sessionId)
       .eq("learner_id", r.learner_id)
       .maybeSingle();
-    // Si pas d'enrollment OU enrollment lié à une autre request → on
-    // appelle la fonction de sync qui va re-rattacher.
     if (!enrollment || enrollment.inscription_request_id !== r.id) {
       await createMirroredEnrollmentForRequest(supabase, {
         id: r.id,
         target_session_id: r.target_session_id,
         learner_id: r.learner_id,
-        stage_key: "confirmed",
+        stage_key: r.stage?.key ?? null,
       });
       healed++;
     }
   }
-  return { healed, checked: confirmedReqs.length };
+  return { healed, checked: reqs.length };
 }
 
 /**
