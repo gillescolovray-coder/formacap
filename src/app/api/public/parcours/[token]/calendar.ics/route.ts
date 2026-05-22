@@ -105,11 +105,17 @@ export async function GET(
     location = parts.length > 0 ? parts.join(", ") : (s.location ?? "");
   }
 
+  // Lien vers l'espace apprenant — affiché dans la description du
+  // calendrier (Gilles 2026-05-22). On retire le lien visio car il
+  // est déjà dans le champ Lieu.
+  const portalUrl =
+    (process.env.NEXT_PUBLIC_APP_URL ?? "https://app.capnumerique.com") +
+    `/mon-parcours/${token}`;
   const description = [
     `Formation organisée par ${orgName}`,
     s.organization?.phone ? `Contact : ${s.organization.phone}` : null,
     s.organization?.email ? `Email : ${s.organization.email}` : null,
-    s.video_link ? `Lien visio : ${s.video_link}` : null,
+    `Mon espace apprenant (test de positionnement, émargement, supports, convocation, certificat) : ${portalUrl}`,
   ]
     .filter(Boolean)
     .join("\n");

@@ -413,13 +413,20 @@ export default async function ParcoursApprenantPage({
     isDistanciel || isHybride
       ? (session.video_link ?? "Distanciel")
       : adresseComplete || "";
+  // Lien vers l'espace apprenant — affiché dans la description du
+  // calendrier pour que l'apprenant retrouve toutes ses ressources
+  // (Gilles 2026-05-22). On retire le lien visio car il est déjà
+  // dans le champ Lieu.
+  const portalUrl =
+    (process.env.NEXT_PUBLIC_APP_URL ?? "https://app.capnumerique.com") +
+    `/mon-parcours/${token}`;
   const calDescription = [
     `Formation organisée par ${orgName}`,
     orgPhone ? `Contact : ${orgPhone}` : null,
     session.organization?.email
       ? `Email : ${session.organization.email}`
       : null,
-    session.video_link ? `Lien visio : ${session.video_link}` : null,
+    `Mon espace apprenant (test de positionnement, émargement, supports, convocation, certificat) : ${portalUrl}`,
   ]
     .filter(Boolean)
     .join("\n");
