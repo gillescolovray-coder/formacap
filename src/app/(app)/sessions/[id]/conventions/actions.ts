@@ -731,35 +731,58 @@ export async function sendConvention(
   }
 
   // Bloquer l'envoi si le montant est 0 € HT (Gilles 2026-05-22).
-  // Tente d'abord un auto-recalc avant de bloquer (cas du bug historique
-  // où la convention a été créée avant que les enrollments miroirs
-  // n'existent → montant figé à 0).
-  let unitForCheck = convention.amount_ht_unit;
-  let totalForCheck = convention.amount_ht_total;
-  if (!unitForCheck || unitForCheck === 0 || !totalForCheck || totalForCheck === 0) {
-    const recalc = await computeConventionPricing(
-      supabase,
-      sessionId,
-      convention.company_id,
-    );
-    if (recalc.unitPrice > 0 && recalc.totalHt > 0) {
-      await supabase
-        .from("session_conventions")
-        .update({
-          amount_ht_unit: recalc.unitPrice,
-          amount_ht_total: recalc.totalHt,
-        })
-        .eq("id", conventionId);
-      unitForCheck = recalc.unitPrice;
-      totalForCheck = recalc.totalHt;
-    }
-  }
-  if (!unitForCheck || unitForCheck === 0 || !totalForCheck || totalForCheck === 0) {
+  // FIX 2026-05-22 v3 (bug TORRES persistant) : on FORCE le recalc
+  // a chaque envoi et on prend le MAX entre la valeur persistee et
+  // le recalcul. Couvre :
+  //   • BDD a 0/null mais recalc OK → on prend le recalc
+  //   • BDD a 305 et recalc 0 → on garde 305
+  //   • BDD a 305 mais cast string Supabase → Number() les convertit
+  const persistedUnit = Number(convention.amount_ht_unit ?? 0);
+  const persistedTotal = Number(convention.amount_ht_total ?? 0);
+  const recalc = await computeConventionPricing(
+    supabase,
+    sessionId,
+    convention.company_id,
+  );
+  const finalUnit = Math.max(persistedUnit, recalc.unitPrice);
+  const finalTotal = Math.max(persistedTotal, recalc.totalHt);
+
+  console.log("[sendConvention] check montant", {
+    conventionId,
+    persistedUnit,
+    persistedTotal,
+    recalcUnit: recalc.unitPrice,
+    recalcTotal: recalc.totalHt,
+    finalUnit,
+    finalTotal,
+  });
+
+  if (finalUnit <= 0 || finalTotal <= 0) {
     return {
       ok: false,
       error:
         "Impossible d'envoyer une convention avec un montant à 0 € HT. Vérifie la tarification de la session (Fiche session → Tarification) et le rattachement des apprenants à l'entreprise.",
     };
+  }
+
+  // Si le persisté différait du final, on UPDATE la BDD (force sync)
+  if (
+    persistedUnit !== finalUnit ||
+    persistedTotal !== finalTotal
+  ) {
+    const { error: updErr } = await supabase
+      .from("session_conventions")
+      .update({
+        amount_ht_unit: finalUnit,
+        amount_ht_total: finalTotal,
+      })
+      .eq("id", conventionId);
+    if (updErr) {
+      console.warn(
+        "[sendConvention] update montant échec (continue quand même)",
+        { conventionId, error: updErr.message },
+      );
+    }
   }
 
   // Récupérer toutes les infos organisation pour le PDF (en-tête + pied)
