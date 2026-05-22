@@ -177,20 +177,74 @@ export default async function PartnerInscribePage({
         city: string | null;
       }>();
     if (prefillCompany) {
-      // Contact principal de l'entreprise (= contact référent par défaut)
-      const { data: primaryContact } = await supabase
-        .from("company_contacts")
-        .select("first_name, last_name, email, phone, job_title")
+      // Contact référent (Gilles 2026-05-22, fix v2) — cascade :
+      //   1. Dernière inscription_request du partenaire pour cette
+      //      entreprise avec un contact_referent_email rempli
+      //      (= la donnée réellement saisie par le partenaire lors d'une
+      //      inscription précédente — c'est ce qui apparait sur Mes
+      //      inscriptions sous "RÉFÉRENT").
+      //   2. Sinon : company_contacts.is_primary (contact admin).
+      //   3. Sinon : null.
+      let contactReferent: {
+        firstName: string;
+        lastName: string;
+        email: string;
+        phone: string;
+        role: string;
+      } | null = null;
+
+      const { data: lastReq } = await supabase
+        .from("inscription_requests")
+        .select(
+          "contact_referent_first_name, contact_referent_last_name, contact_referent_email, contact_referent_phone, contact_referent_role",
+        )
+        .eq("organization_id", ctx.company.organization_id)
+        .eq("referrer_company_id", ctx.company.id)
         .eq("company_id", prefillCompanyId)
-        .eq("is_primary", true)
+        .not("contact_referent_email", "is", null)
+        .order("received_at", { ascending: false })
         .limit(1)
         .maybeSingle<{
-          first_name: string | null;
-          last_name: string | null;
-          email: string | null;
-          phone: string | null;
-          job_title: string | null;
+          contact_referent_first_name: string | null;
+          contact_referent_last_name: string | null;
+          contact_referent_email: string | null;
+          contact_referent_phone: string | null;
+          contact_referent_role: string | null;
         }>();
+      if (lastReq && lastReq.contact_referent_email) {
+        contactReferent = {
+          firstName: lastReq.contact_referent_first_name ?? "",
+          lastName: lastReq.contact_referent_last_name ?? "",
+          email: lastReq.contact_referent_email,
+          phone: lastReq.contact_referent_phone ?? "",
+          role: lastReq.contact_referent_role ?? "",
+        };
+      } else {
+        // Fallback : contact principal de l'entreprise
+        const { data: primaryContact } = await supabase
+          .from("company_contacts")
+          .select("first_name, last_name, email, phone, job_title")
+          .eq("company_id", prefillCompanyId)
+          .eq("is_primary", true)
+          .limit(1)
+          .maybeSingle<{
+            first_name: string | null;
+            last_name: string | null;
+            email: string | null;
+            phone: string | null;
+            job_title: string | null;
+          }>();
+        if (primaryContact?.email) {
+          contactReferent = {
+            firstName: primaryContact.first_name ?? "",
+            lastName: primaryContact.last_name ?? "",
+            email: primaryContact.email,
+            phone: primaryContact.phone ?? "",
+            role: primaryContact.job_title ?? "",
+          };
+        }
+      }
+
       prefillData = {
         company: {
           siret: prefillCompany.siret ?? "",
@@ -199,15 +253,7 @@ export default async function PartnerInscribePage({
           postalCode: prefillCompany.postal_code ?? "",
           city: prefillCompany.city ?? "",
         },
-        contactReferent: primaryContact
-          ? {
-              firstName: primaryContact.first_name ?? "",
-              lastName: primaryContact.last_name ?? "",
-              email: primaryContact.email ?? "",
-              phone: primaryContact.phone ?? "",
-              role: primaryContact.job_title ?? "",
-            }
-          : null,
+        contactReferent,
       };
     }
   }
