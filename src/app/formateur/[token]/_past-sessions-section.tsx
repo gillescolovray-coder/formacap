@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Hourglass, Search, X } from "lucide-react";
+import { Hourglass, Info, Search, X } from "lucide-react";
 import {
   SessionCard,
   type SessionRow,
@@ -17,6 +17,10 @@ type PastSessionData = {
 type Props = {
   token: string;
   sessions: PastSessionData[];
+  /** Nombre de sessions passées masquées car non confirmées
+   *  (planifiées, brouillon, en cours, annulées, etc.). Affiché
+   *  dans le bandeau info pour transparence formateur. */
+  hiddenCount?: number;
 };
 
 /**
@@ -27,7 +31,11 @@ type Props = {
  *
  * Gilles 2026-05-23.
  */
-export function PastSessionsSection({ token, sessions }: Props) {
+export function PastSessionsSection({
+  token,
+  sessions,
+  hiddenCount = 0,
+}: Props) {
   const [show, setShow] = useState(false);
   const [search, setSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
@@ -69,6 +77,25 @@ export function PastSessionsSection({ token, sessions }: Props) {
 
       {show && (
         <>
+          {/* Message d'info : règle métier sur les sessions affichées */}
+          <div className="rounded-lg bg-cyan-50 border border-cyan-200 p-2.5 flex items-start gap-2 text-xs">
+            <Info className="h-3.5 w-3.5 text-cyan-700 shrink-0 mt-0.5" />
+            <div className="text-cyan-900 leading-relaxed">
+              Seules les sessions au statut <strong>Confirmée</strong> sont
+              affichées ici (les sessions planifiées, brouillon ou annulées
+              ne sont pas retenues dans votre historique).
+              {hiddenCount > 0 && (
+                <>
+                  {" "}
+                  <span className="text-cyan-700">
+                    {hiddenCount} session{hiddenCount > 1 ? "s" : ""} masquée
+                    {hiddenCount > 1 ? "s" : ""} pour cette raison.
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+
           {/* Barre de recherche + filtres date (mobile-first stacké) */}
           <div className="rounded-xl bg-white border border-zinc-200 p-3 space-y-2 shadow-sm">
             <div className="relative">

@@ -128,16 +128,22 @@ export default async function FormateurAgendaPage({
   }
 
   // 5. Tri : future vs passée (par end_date)
+  // Pour les passées, on ne garde que les sessions au statut "confirmée"
+  // (Gilles 2026-05-23) — les sessions "planifiées", "en cours", "brouillon",
+  // "annulées", etc. n'ont pas vocation à apparaître dans l'historique
+  // formateur car elles n'ont pas eu lieu comme prévu.
   const now = new Date();
   const future: SessionRow[] = [];
-  const past: SessionRow[] = [];
+  const pastAll: SessionRow[] = [];
   for (const s of allSessions) {
     const end = new Date(s.end_date);
     end.setHours(23, 59, 59, 999);
-    if (end.getTime() < now.getTime()) past.push(s);
+    if (end.getTime() < now.getTime()) pastAll.push(s);
     else future.push(s);
   }
-  past.reverse(); // plus récentes en haut
+  pastAll.reverse(); // plus récentes en haut
+  const past = pastAll.filter((s) => s.status === "confirmed");
+  const pastHiddenCount = pastAll.length - past.length;
 
   // Données passées formatées pour le composant client
   const pastData = past.map((s) => ({
@@ -209,9 +215,14 @@ export default async function FormateurAgendaPage({
           )}
         </section>
 
-        {/* Section Passées : derrière case à cocher + recherche */}
-        {past.length > 0 && (
-          <PastSessionsSection token={token} sessions={pastData} />
+        {/* Section Passées : derrière case à cocher + recherche
+            (uniquement statut "confirmée", cf. règle métier Gilles 2026-05-23) */}
+        {(past.length > 0 || pastHiddenCount > 0) && (
+          <PastSessionsSection
+            token={token}
+            sessions={pastData}
+            hiddenCount={pastHiddenCount}
+          />
         )}
 
         <footer className="text-center text-[11px] text-zinc-400 mt-8">
