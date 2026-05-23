@@ -24,7 +24,7 @@ import {
   buildGoogleCalendarUrl,
   buildOutlookCalendarUrl,
 } from "@/lib/calendar/event-links";
-import { formatScheduleLine } from "../../_session-card";
+import { AudienceBadge, formatScheduleLine } from "../../_session-card";
 import {
   isReportEmpty,
   labelObjectives,
@@ -96,7 +96,7 @@ export default async function FormateurSessionDetailPage({
   const { data: session } = await supabase
     .from("sessions")
     .select(
-      "id, status, start_date, end_date, modality, location, video_link, video_app, trainer_id, quiz_template_id, default_morning_start, default_morning_end, default_afternoon_start, default_afternoon_end, formation:formations(title, quiz_template_id), location_ref:formation_locations!location_id(name, address, postal_code, city), organization:organizations(name, phone, email)",
+      "id, status, start_date, end_date, modality, location, video_link, video_app, trainer_id, quiz_template_id, is_inter, default_morning_start, default_morning_end, default_afternoon_start, default_afternoon_end, formation:formations(title, quiz_template_id), location_ref:formation_locations!location_id(name, address, postal_code, city), organization:organizations(name, phone, email)",
     )
     .eq("id", sessionId)
     .maybeSingle<{
@@ -110,6 +110,7 @@ export default async function FormateurSessionDetailPage({
       video_app: string | null;
       trainer_id: string | null;
       quiz_template_id: string | null;
+      is_inter: boolean | null;
       default_morning_start: string | null;
       default_morning_end: string | null;
       default_afternoon_start: string | null;
@@ -537,8 +538,14 @@ export default async function FormateurSessionDetailPage({
 
         {/* En-tête session */}
         <header className="rounded-xl bg-white shadow-sm border border-zinc-200 p-4 space-y-2">
-          <div className="text-xs uppercase tracking-widest text-zinc-500 font-bold">
-            {STATUS_LABEL[session.status ?? "draft"] ?? "Statut inconnu"}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs uppercase tracking-widest text-zinc-500 font-bold">
+              {STATUS_LABEL[session.status ?? "draft"] ?? "Statut inconnu"}
+            </span>
+            <AudienceBadge
+              modality={session.modality}
+              isInter={session.is_inter}
+            />
           </div>
           <h1 className="text-lg md:text-xl font-bold text-zinc-900">
             {formationTitle}

@@ -5,7 +5,6 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { isResendConfigured } from "@/lib/email/resend";
 import { healEnrollmentsForSession } from "@/lib/inscriptions/sync";
 import { SignaturesDashboard } from "@/app/(app)/sessions/[id]/emargement/_signatures-dashboard";
-import { EmargementGrid } from "./_grid";
 import { EmargementTabs } from "./_emargement-tabs";
 import { TrainerSignatureGrid } from "./_trainer-signature-grid";
 import { TrainerQrButton } from "./_trainer-qr-button";
@@ -224,15 +223,6 @@ export default async function FormateurEmargementPage({
     }
   }
 
-  // Comptes pour signature collective (raccourci historique)
-  const trainerSignedBySlot = new Map<string, number>();
-  for (const s of signatures) {
-    if (s.signer_role === "trainer") {
-      const key = `${s.period_date}|${s.moment}`;
-      trainerSignedBySlot.set(key, (trainerSignedBySlot.get(key) ?? 0) + 1);
-    }
-  }
-
   // Périodes pour les grilles (uniquement session_days réels)
   const periods = sessionDaysTyped.map((d) => ({
     date: d.day_date,
@@ -342,36 +332,6 @@ export default async function FormateurEmargementPage({
             )}
           </p>
         </header>
-
-        {/* === Bandeau Action rapide : signature collective formateur === */}
-        <details className="group rounded-xl bg-cyan-50/40 border border-cyan-200 overflow-hidden">
-          <summary className="cursor-pointer list-none flex items-center justify-between gap-2 px-4 py-3 text-sm font-semibold text-cyan-900 hover:bg-cyan-50/70">
-            <span className="inline-flex items-center gap-2">
-              ⚡ Signature collective rapide (1 clic = tous les apprenants)
-            </span>
-            <span className="text-[10px] text-cyan-700 uppercase tracking-wider font-bold group-open:hidden">
-              Ouvrir
-            </span>
-            <span className="text-[10px] text-cyan-700 uppercase tracking-wider font-bold hidden group-open:inline">
-              Replier
-            </span>
-          </summary>
-          <div className="border-t border-cyan-200 bg-white p-3">
-            <p className="text-xs text-zinc-600 mb-3">
-              Raccourci : vous signez une fois la demi-journée et la même
-              signature est enregistrée pour tous les apprenants inscrits
-              (R9 Qualiopi : signature tracée en direct).
-            </p>
-            <EmargementGrid
-              token={token}
-              sessionId={sessionId}
-              trainerName={trainerName}
-              days={sessionDaysTyped}
-              enrollmentCount={enrollmentCount}
-              signedCountBySlot={Object.fromEntries(trainerSignedBySlot)}
-            />
-          </div>
-        </details>
 
         {/* === Onglets : Électronique vs Manuel === */}
         <EmargementTabs

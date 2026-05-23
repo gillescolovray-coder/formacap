@@ -15,6 +15,12 @@ export type SessionRow = {
   end_date: string;
   modality: string | null;
   location: string | null;
+  /** Booléen saisi par l'admin au moment de créer/éditer la session
+   *  (cf. _form.tsx, toggle INTER/INTRA dans le bloc "Type de session").
+   *  true = INTER (apprenants de plusieurs entreprises)
+   *  false = INTRA (1 seule entreprise client)
+   *  null = non renseigné (session ancienne) → pas de badge affiché. */
+  is_inter: boolean | null;
   formation: { title: string } | null;
   location_ref: { name: string; city: string | null } | null;
 };
@@ -79,6 +85,55 @@ const STATUS_STYLES: Record<
     border: "border-slate-200",
   },
 };
+
+/**
+ * Badge "INTER / INTRA / HYBRIDE" affiché à côté du badge statut.
+ *
+ * Règle métier (Gilles 2026-05-23) : 3 valeurs sur la même dimension.
+ *  - HYBRIDE prime si modality === 'hybride' (modalité d'animation)
+ *  - sinon INTER si is_inter === true (audience multi-entreprises)
+ *  - sinon INTRA si is_inter === false (1 entreprise client)
+ *  - sinon null (ancienne session sans is_inter renseigné)
+ */
+export function AudienceBadge({
+  modality,
+  isInter,
+}: {
+  modality: string | null;
+  isInter: boolean | null;
+}) {
+  if (modality === "hybride") {
+    return (
+      <span
+        className="text-[10px] font-bold bg-violet-100 text-violet-800 border border-violet-300 px-2 py-0.5 rounded-full uppercase tracking-wider"
+        title="Session HYBRIDE : présentiel + distanciel"
+      >
+        HYBRIDE
+      </span>
+    );
+  }
+  if (isInter === true) {
+    return (
+      <span
+        className="text-[10px] font-bold bg-sky-100 text-sky-800 border border-sky-300 px-2 py-0.5 rounded-full uppercase tracking-wider"
+        title="Session INTER : apprenants de plusieurs entreprises"
+      >
+        INTER
+      </span>
+    );
+  }
+  if (isInter === false) {
+    return (
+      <span
+        className="text-[10px] font-bold bg-orange-100 text-orange-800 border border-orange-300 px-2 py-0.5 rounded-full uppercase tracking-wider"
+        title="Session INTRA : apprenants d'une seule entreprise"
+      >
+        INTRA
+      </span>
+    );
+  }
+  return null;
+}
 
 export function formatDateRange(start: string, end: string): string {
   if (start === end) {
@@ -187,6 +242,10 @@ export function SessionCard({
             >
               {statusStyle.label}
             </span>
+            <AudienceBadge
+              modality={session.modality}
+              isInter={session.is_inter}
+            />
             {session.status === "confirmed" && (
               <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
             )}

@@ -76,7 +76,7 @@ export default async function FormateurAgendaPage({
   const { data: sessions } = await supabase
     .from("sessions")
     .select(
-      "id, status, start_date, end_date, modality, location, formation:formations(title), location_ref:formation_locations!location_id(name, city)",
+      "id, status, start_date, end_date, modality, location, is_inter, formation:formations(title), location_ref:formation_locations!location_id(name, city)",
     )
     .eq("trainer_id", trainer.id)
     .order("start_date", { ascending: true });
