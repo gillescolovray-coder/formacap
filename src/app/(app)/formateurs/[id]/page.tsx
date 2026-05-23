@@ -1,9 +1,7 @@
 import Link from "next/link";
-import { headers } from "next/headers";
 import {
   Briefcase,
   CheckCircle2,
-  ExternalLink,
   FileDown,
   Mail,
   MapPin,
@@ -13,15 +11,13 @@ import {
 } from "lucide-react";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import {
-  buildTrainerPortalUrl,
-  getOrCreateTrainerPortalToken,
-} from "@/lib/portal/trainer-token";
+import { getTrainerPortalToken } from "@/lib/portal/trainer-token";
 import { TrainerForm } from "../_form";
 import { deleteTrainer, updateTrainer, validateTrainer } from "../actions";
 import { CompetencesSection } from "./_competences-section";
 import { DocumentsSection } from "./_documents-section";
 import { FormationsSection } from "./_formations-section";
+import { TrainerPortalSection } from "./_trainer-portal-section";
 import { BackButton } from "@/components/back-button";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -136,25 +132,12 @@ export default async function TrainerDetailPage({
   const remove = deleteTrainer.bind(null, id);
   const validate = validateTrainer.bind(null, id);
 
-  // Token + URL du portail formateur (idempotent : créé à la 1re visite,
-  // puis stable). Permet à l'admin de partager le lien d'accès.
-  const portal = await getOrCreateTrainerPortalToken(supabase, id);
-  const portalOrigin = process.env.NEXT_PUBLIC_APP_URL ?? (() => {
-    return "";
-  })();
-  let trainerPortalUrl: string;
-  if (portalOrigin) {
-    trainerPortalUrl = buildTrainerPortalUrl(portalOrigin, portal.token);
-  } else {
-    const h = await headers();
-    const proto = h.get("x-forwarded-proto") ?? "http";
-    const host =
-      h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
-    trainerPortalUrl = buildTrainerPortalUrl(
-      `${proto}://${host}`,
-      portal.token,
-    );
-  }
+  // Token portail formateur — lecture seule (Gilles 2026-05-23).
+  // Plus de création automatique : l'admin active explicitement le
+  // portail via TrainerPortalSection ci-dessous. Tant qu'inactif :
+  // token = null, le composant affiche le bouton "Activer".
+  const portal = await getTrainerPortalToken(supabase, id);
+  const trainerPortalToken = portal?.token ?? null;
 
   const notifs = [
     query.created && "Formateur créé avec succès.",
@@ -259,19 +242,6 @@ export default async function TrainerDetailPage({
           <>
             <BackButton fallbackHref="/formateurs" />
             <Button
-              variant="default"
-              size="sm"
-              nativeButton={false}
-              className="bg-cyan-600 hover:bg-cyan-700 text-white"
-              render={
-                <Link href={trainerPortalUrl} target="_blank" rel="noopener noreferrer" />
-              }
-              title="Ouvrir le portail de ce formateur dans un nouvel onglet (URL à partager avec lui)"
-            >
-              <ExternalLink className="h-4 w-4" />
-              Voir le portail
-            </Button>
-            <Button
               variant="outline"
               size="sm"
               nativeButton={false}
@@ -352,6 +322,7 @@ export default async function TrainerDetailPage({
             "domaines-d-intervention",
             "adequation-qualiopi",
             "formations-animables",
+            "trainer-portal",
           ]}
         >
           {/* Barre d'enregistrement HAUT (boutons hors form, associés via form="form-trainer") */}
@@ -398,6 +369,13 @@ export default async function TrainerDetailPage({
           <DocumentsSection
             trainerId={id}
             documents={trainer.documents ?? []}
+          />
+
+          <TrainerPortalSection
+            trainerId={id}
+            trainerName={`${trainer.first_name} ${trainer.last_name}`.trim()}
+            trainerEmail={trainer.email ?? null}
+            token={trainerPortalToken}
           />
 
           <form id="form-trainer" action={update}>
