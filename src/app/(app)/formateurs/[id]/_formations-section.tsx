@@ -21,8 +21,28 @@ import { setTrainerFormations } from "../actions";
 type FormationOption = {
   id: string;
   title: string;
+  /** presentiel / distanciel / hybride — affiché en badge devant le titre. */
+  modality?: string | null;
   /** Joined `formation_categories(id, name)`. */
   category?: { id: string; name: string } | null;
+};
+
+const MODALITY_BADGE: Record<
+  string,
+  { label: string; classes: string }
+> = {
+  presentiel: {
+    label: "PRÉSENTIEL",
+    classes: "bg-emerald-100 text-emerald-800 border-emerald-300",
+  },
+  distanciel: {
+    label: "DISTANCIEL",
+    classes: "bg-cyan-100 text-cyan-800 border-cyan-300",
+  },
+  hybride: {
+    label: "HYBRIDE",
+    classes: "bg-violet-100 text-violet-800 border-violet-300",
+  },
 };
 
 type LinkedFormation = {
@@ -315,6 +335,16 @@ export function FormationsSection({
                             htmlFor={`f-${f.id}`}
                             className="flex-1 min-w-0 cursor-pointer"
                           >
+                            {f.modality && MODALITY_BADGE[f.modality] && (
+                              <span
+                                className={
+                                  "inline-block mr-1.5 text-[9px] font-bold border px-1.5 py-0.5 rounded uppercase tracking-wider align-middle " +
+                                  MODALITY_BADGE[f.modality].classes
+                                }
+                              >
+                                {MODALITY_BADGE[f.modality].label}
+                              </span>
+                            )}
                             <span className="text-sm font-medium text-zinc-800 break-words">
                               {f.title}
                             </span>
