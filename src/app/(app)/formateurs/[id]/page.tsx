@@ -88,7 +88,7 @@ export default async function TrainerDetailPage({
       .maybeSingle<Trainer>(),
     supabase
       .from("formations")
-      .select("id, title, category:formation_categories(id, name)")
+      .select("id, title")
       .eq("status", "published")
       .order("title", { ascending: true })
       .limit(200),
@@ -356,13 +356,7 @@ export default async function TrainerDetailPage({
 
           <FormationsSection
             trainerId={id}
-            allFormations={
-              (allFormations ?? []) as unknown as Array<{
-                id: string;
-                title: string;
-                category: { id: string; name: string } | null;
-              }>
-            }
+            allFormations={allFormations ?? []}
             linked={
               (linkedFormations ?? []) as unknown as Array<{
                 formation_id: string;
