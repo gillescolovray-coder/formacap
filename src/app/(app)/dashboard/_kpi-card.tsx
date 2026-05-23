@@ -1,16 +1,18 @@
 import Link from "next/link";
-import { type LucideIcon } from "lucide-react";
+import { ChevronDown, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { KpiItem } from "./_kpi-queries";
 
 /**
- * Carte KPI compacte du dashboard.
- * - nombre grand au centre
- * - label au-dessus
- * - hint (texte optionnel sous le nombre)
- * - accent couleur (impacte le bord gauche + l'icône)
- * - cliquable si `href` fourni
+ * Carte KPI dépliable du dashboard (Gilles 2026-05-23).
  *
- * Mobile-first : 1 colonne en xs, grilles plus larges au-delà.
+ * Comportement :
+ * - Affiche le compteur et le label en mode replié
+ * - Au clic (<details>), déplie la liste des items concernés
+ *   (chaque item cliquable vers sa fiche)
+ * - Si `items.length === 0` mais `count > 0`, pas de dépliage
+ * - Si `count === 0`, retourne `null` (carte non affichée, économie
+ *   d'espace visuel — Gilles).
  */
 
 type Accent = "red" | "amber" | "cyan" | "emerald" | "violet" | "zinc";
@@ -60,38 +62,40 @@ const ACCENT_STYLES: Record<
 type Props = {
   label: string;
   value: number | string;
+  items?: KpiItem[];
   hint?: string;
   icon?: LucideIcon;
   accent?: Accent;
-  href?: string;
-  /** Affiche un badge "URGENT" / "À TRAITER" / "OK" / etc. */
   pill?: { text: string; tone: "red" | "amber" | "emerald" | "zinc" };
+  /** Si true, la card s'affiche même avec count=0 (ex: CA potentiel,
+   *  Sessions 100% Qualiopi qui restent informatifs même à 0). */
+  showWhenZero?: boolean;
 };
 
 export function KpiCard({
   label,
   value,
+  items = [],
   hint,
   icon: Icon,
   accent = "zinc",
-  href,
   pill,
+  showWhenZero = false,
 }: Props) {
   const s = ACCENT_STYLES[accent];
   const numeric = typeof value === "number" ? value : Number(value);
-  const isZero = Number.isFinite(numeric) && numeric === 0;
+  const isNumericZero = Number.isFinite(numeric) && numeric === 0;
+  const isStringZero =
+    typeof value === "string" && (value === "0 €" || value === "0");
 
-  const content = (
-    <div
-      className={cn(
-        "rounded-xl bg-white border border-zinc-200 border-l-4 p-3.5 shadow-sm h-full flex flex-col gap-2",
-        s.border,
-        href && !isZero
-          ? "hover:bg-zinc-50 hover:shadow-md transition-all cursor-pointer"
-          : "",
-        isZero ? "opacity-70" : "",
-      )}
-    >
+  if ((isNumericZero || isStringZero) && !showWhenZero) {
+    return null;
+  }
+
+  const canExpand = items.length > 0;
+
+  const headerContent = (
+    <div className="flex flex-col gap-2 flex-1 min-w-0">
       <div className="flex items-start justify-between gap-2">
         <span className="text-[10px] uppercase tracking-wider font-bold text-zinc-500 leading-tight">
           {label}
@@ -112,7 +116,7 @@ export function KpiCard({
         <span
           className={cn(
             "text-3xl font-bold tabular-nums leading-none",
-            isZero ? "text-zinc-400" : s.value,
+            s.value,
           )}
         >
           {value}
@@ -143,12 +147,40 @@ export function KpiCard({
     </div>
   );
 
-  if (href && !isZero) {
-    return (
-      <Link href={href} className="block h-full">
-        {content}
-      </Link>
-    );
+  const containerClass = cn(
+    "rounded-xl bg-white border border-zinc-200 border-l-4 p-3.5 shadow-sm h-full",
+    s.border,
+  );
+
+  if (!canExpand) {
+    return <div className={containerClass}>{headerContent}</div>;
   }
-  return content;
+
+  return (
+    <details className={cn("group", containerClass)}>
+      <summary className="cursor-pointer list-none flex items-start gap-2 hover:opacity-90">
+        {headerContent}
+        <ChevronDown className="h-4 w-4 text-zinc-400 shrink-0 mt-1 transition-transform group-open:rotate-180" />
+      </summary>
+      <ul className="mt-3 pt-3 border-t border-zinc-100 space-y-1 max-h-64 overflow-y-auto">
+        {items.map((item, i) => (
+          <li key={`${item.href}-${i}`}>
+            <Link
+              href={item.href}
+              className="block px-2 py-1.5 rounded-md hover:bg-zinc-50 -mx-2"
+            >
+              <div className="text-xs font-medium text-zinc-800 truncate">
+                {item.label}
+              </div>
+              {item.meta && (
+                <div className="text-[10px] text-zinc-500 truncate mt-0.5">
+                  {item.meta}
+                </div>
+              )}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
 }

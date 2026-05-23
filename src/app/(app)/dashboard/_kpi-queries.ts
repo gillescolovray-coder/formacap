@@ -1,13 +1,15 @@
 /**
  * Queries KPI du dashboard refondu (Gilles 2026-05-23).
  *
- * Toutes les queries renvoient un compteur ou un petit résultat utilisé
- * pour les KpiCards. Les calculs complexes (% Qualiopi par session) sont
- * faits ici pour ne pas polluer page.tsx.
+ * V2 (2026-05-23 après-midi) : chaque query renvoie
+ * `{ count, items[] }` au lieu d'un simple count.
+ * - `count` : compteur affiché sur la card
+ * - `items` : liste cliquable (label + href + sub-info) dépliable au clic
+ *   La query ne renvoie que les 10 premiers (LIMIT) pour limiter
+ *   le payload.
  *
- * Performance : on privilégie `count: 'exact', head: true` quand possible.
- * Les jointures lourdes (ex: positionnement par session) sont faites en
- * 1 round-trip via PostgREST + traitement côté code.
+ * Si `count === 0`, la card n'est pas affichée du tout dans le
+ * dashboard (économie d'espace visuel — Gilles 2026-05-23).
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -16,250 +18,397 @@ const today = () => new Date().toISOString().slice(0, 10);
 const inDays = (d: number) =>
   new Date(Date.now() + d * 86_400_000).toISOString().slice(0, 10);
 
+const MAX_ITEMS = 10;
+
+export type KpiItem = {
+  /** Libellé principal cliquable. */
+  label: string;
+  /** Lien vers la fiche de l'élément (session, formateur, etc.). */
+  href: string;
+  /** Info secondaire en gris (date, statut, etc.). Optionnel. */
+  meta?: string;
+};
+
+export type KpiData = {
+  count: number;
+  items: KpiItem[];
+};
+
+const EMPTY: KpiData = { count: 0, items: [] };
+
+function fmtDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("fr-FR", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function fmtDateShort(iso: string): string {
+  return new Date(iso).toLocaleDateString("fr-FR", {
+    day: "2-digit",
+    month: "2-digit",
+  });
+}
+
 // ============================================================
 // 🚨 ALERTES URGENTES
 // ============================================================
 
-/** Sessions confirmées sans formateur assigné (trainer_id IS NULL). */
-export async function countSessionsConfirmedNoTrainer(
+export async function listTrainersDocsExpiring(
   supabase: SupabaseClient,
-): Promise<number> {
-  const { count } = await supabase
-    .from("sessions")
-    .select("id", { count: "exact", head: true })
-    .eq("status", "confirmed")
-    .is("trainer_id", null);
-  return count ?? 0;
+): Promise<KpiData> {
+  const in90 = inDays(90);
+  const { data } = await supabase
+    .from("trainers")
+    .select(
+      "id, first_name, last_name, rc_pro_expires_on, urssaf_expires_on, qualiopi_expires_on, is_qualiopi",
+    )
+    .eq("is_active", true)
+    .or(
+      `rc_pro_expires_on.lte.${in90},urssaf_expires_on.lte.${in90},qualiopi_expires_on.lte.${in90}`,
+    )
+    .limit(MAX_ITEMS * 2);
+
+  type Row = {
+    id: string;
+    first_name: string;
+    last_name: string;
+    rc_pro_expires_on: string | null;
+    urssaf_expires_on: string | null;
+    qualiopi_expires_on: string | null;
+    is_qualiopi: boolean | null;
+  };
+  const rows = (data ?? []) as Row[];
+  const todayIso = today();
+
+  const items: KpiItem[] = [];
+  for (const t of rows) {
+    const alerts: string[] = [];
+    if (t.rc_pro_expires_on && t.rc_pro_expires_on <= in90) {
+      alerts.push(
+        `RC pro ${t.rc_pro_expires_on < todayIso ? "expirée" : "expire"} le ${fmtDateShort(t.rc_pro_expires_on)}`,
+      );
+    }
+    if (t.urssaf_expires_on && t.urssaf_expires_on <= in90) {
+      alerts.push(
+        `URSSAF ${t.urssaf_expires_on < todayIso ? "expirée" : "expire"} le ${fmtDateShort(t.urssaf_expires_on)}`,
+      );
+    }
+    if (
+      t.is_qualiopi &&
+      t.qualiopi_expires_on &&
+      t.qualiopi_expires_on <= in90
+    ) {
+      alerts.push(
+        `Qualiopi ${t.qualiopi_expires_on < todayIso ? "expiré" : "expire"} le ${fmtDateShort(t.qualiopi_expires_on)}`,
+      );
+    }
+    if (alerts.length === 0) continue;
+    items.push({
+      label: `${t.last_name.toUpperCase()} ${t.first_name}`,
+      href: `/formateurs/${t.id}`,
+      meta: alerts.join(" · "),
+    });
+    if (items.length >= MAX_ITEMS) break;
+  }
+  return { count: items.length, items };
 }
 
-/**
- * Sessions confirmées sans quiz pédagogique attaché. Une session a un quiz
- * si soit session.quiz_template_id est défini, soit la formation rattachée
- * en a un par défaut.
- */
-export async function countSessionsConfirmedNoQuiz(
+export async function listSessionsConfirmedNoTrainer(
   supabase: SupabaseClient,
-): Promise<number> {
-  // 1. Récup sessions confirmées sans quiz_template_id propre
-  const { data: sessions } = await supabase
+): Promise<KpiData> {
+  const { data } = await supabase
     .from("sessions")
-    .select("id, formation_id, quiz_template_id")
+    .select("id, start_date, end_date, formation:formations(title)")
     .eq("status", "confirmed")
-    .is("quiz_template_id", null);
-  if (!sessions || sessions.length === 0) return 0;
+    .is("trainer_id", null)
+    .order("start_date", { ascending: true })
+    .limit(MAX_ITEMS);
 
-  // 2. Pour ces sessions, voir lesquelles ont une formation avec quiz par défaut
-  const formationIds = Array.from(
-    new Set(
-      (sessions as Array<{ formation_id: string }>).map((s) => s.formation_id),
-    ),
-  );
-  if (formationIds.length === 0) return sessions.length;
+  type Row = {
+    id: string;
+    start_date: string;
+    end_date: string;
+    formation: { title: string } | Array<{ title: string }> | null;
+  };
+  const rows = (data ?? []) as Row[];
+  const items = rows.map((r) => {
+    const f = Array.isArray(r.formation) ? r.formation[0] : r.formation;
+    return {
+      label: f?.title ?? "Session",
+      href: `/sessions/${r.id}`,
+      meta: `Démarre le ${fmtDate(r.start_date)}`,
+    };
+  });
 
-  const { data: formations } = await supabase
-    .from("formations")
-    .select("id, quiz_template_id")
-    .in("id", formationIds);
-
-  const formationsWithQuiz = new Set(
-    ((formations ?? []) as Array<{
-      id: string;
-      quiz_template_id: string | null;
-    }>)
-      .filter((f) => f.quiz_template_id !== null)
-      .map((f) => f.id),
-  );
-
-  // Compter celles dont la formation N'A PAS de quiz par défaut
-  return (sessions as Array<{ formation_id: string }>).filter(
-    (s) => !formationsWithQuiz.has(s.formation_id),
-  ).length;
+  const exact =
+    items.length < MAX_ITEMS
+      ? items.length
+      : ((
+          await supabase
+            .from("sessions")
+            .select("id", { count: "exact", head: true })
+            .eq("status", "confirmed")
+            .is("trainer_id", null)
+        ).count ?? items.length);
+  return { count: exact, items };
 }
 
-/** Sessions confirmées sans aucun apprenant inscrit. */
-export async function countSessionsConfirmedNoEnrollment(
+export async function listSessionsConfirmedNoQuiz(
   supabase: SupabaseClient,
-): Promise<number> {
-  // 1. Sessions confirmées
+): Promise<KpiData> {
   const { data: sessions } = await supabase
     .from("sessions")
-    .select("id")
-    .eq("status", "confirmed");
-  if (!sessions || sessions.length === 0) return 0;
+    .select(
+      "id, start_date, end_date, formation_id, quiz_template_id, formation:formations(title, quiz_template_id)",
+    )
+    .eq("status", "confirmed")
+    .is("quiz_template_id", null)
+    .order("start_date", { ascending: true });
 
-  // 2. Sessions avec au moins un enrollment
-  const sessionIds = (sessions as Array<{ id: string }>).map((s) => s.id);
+  type Row = {
+    id: string;
+    start_date: string;
+    end_date: string;
+    formation_id: string;
+    quiz_template_id: string | null;
+    formation:
+      | { title: string; quiz_template_id: string | null }
+      | Array<{ title: string; quiz_template_id: string | null }>
+      | null;
+  };
+  const rows = (sessions ?? []) as Row[];
+
+  const withoutQuiz = rows.filter((r) => {
+    const f = Array.isArray(r.formation) ? r.formation[0] : r.formation;
+    return !f?.quiz_template_id;
+  });
+
+  const items = withoutQuiz.slice(0, MAX_ITEMS).map((r) => {
+    const f = Array.isArray(r.formation) ? r.formation[0] : r.formation;
+    return {
+      label: f?.title ?? "Session",
+      href: `/sessions/${r.id}`,
+      meta: `Démarre le ${fmtDate(r.start_date)}`,
+    };
+  });
+  return { count: withoutQuiz.length, items };
+}
+
+export async function listSessionsConfirmedNoEnrollment(
+  supabase: SupabaseClient,
+): Promise<KpiData> {
+  const { data: sessions } = await supabase
+    .from("sessions")
+    .select("id, start_date, formation:formations(title)")
+    .eq("status", "confirmed")
+    .order("start_date", { ascending: true });
+  if (!sessions || sessions.length === 0) return EMPTY;
+
+  type Row = {
+    id: string;
+    start_date: string;
+    formation: { title: string } | Array<{ title: string }> | null;
+  };
+  const rows = sessions as Row[];
+  const sessionIds = rows.map((s) => s.id);
+
   const { data: enrollments } = await supabase
     .from("session_enrollments")
     .select("session_id")
     .in("session_id", sessionIds);
-  const sessionsWithLearners = new Set(
+  const withLearners = new Set(
     ((enrollments ?? []) as Array<{ session_id: string }>).map(
       (e) => e.session_id,
     ),
   );
-  return sessionIds.filter((id) => !sessionsWithLearners.has(id)).length;
+
+  const without = rows.filter((r) => !withLearners.has(r.id));
+  const items = without.slice(0, MAX_ITEMS).map((r) => {
+    const f = Array.isArray(r.formation) ? r.formation[0] : r.formation;
+    return {
+      label: f?.title ?? "Session",
+      href: `/sessions/${r.id}`,
+      meta: `Démarre le ${fmtDate(r.start_date)}`,
+    };
+  });
+  return { count: without.length, items };
 }
 
 // ============================================================
-// 📅 SESSIONS À VENIR / SUIVI
+// 📅 SESSIONS À SUIVRE
 // ============================================================
 
-/** Sessions confirmées à démarrer dans les 7 prochains jours. */
-export async function countSessionsStartingThisWeek(
+export async function listSessionsStartingThisWeek(
   supabase: SupabaseClient,
-): Promise<number> {
-  const { count } = await supabase
+): Promise<KpiData> {
+  const { data } = await supabase
     .from("sessions")
-    .select("id", { count: "exact", head: true })
+    .select("id, start_date, end_date, formation:formations(title)")
     .eq("status", "confirmed")
     .gte("start_date", today())
-    .lte("start_date", inDays(7));
-  return count ?? 0;
+    .lte("start_date", inDays(7))
+    .order("start_date", { ascending: true });
+
+  type Row = {
+    id: string;
+    start_date: string;
+    end_date: string;
+    formation: { title: string } | Array<{ title: string }> | null;
+  };
+  const rows = (data ?? []) as Row[];
+  const items = rows.slice(0, MAX_ITEMS).map((r) => {
+    const f = Array.isArray(r.formation) ? r.formation[0] : r.formation;
+    return {
+      label: f?.title ?? "Session",
+      href: `/sessions/${r.id}`,
+      meta: `Démarre le ${fmtDate(r.start_date)}`,
+    };
+  });
+  return { count: rows.length, items };
 }
 
-/**
- * Sessions confirmées démarrant dans < 7j où tous les apprenants n'ont
- * pas encore rempli leur test de positionnement.
- */
-export async function countSessionsPositionnementIncomplete(
+export async function listSessionsPositionnementIncomplete(
   supabase: SupabaseClient,
-): Promise<number> {
-  // 1. Sessions confirmées proches du démarrage
+): Promise<KpiData> {
   const { data: sessions } = await supabase
     .from("sessions")
-    .select("id")
+    .select("id, start_date, formation:formations(title)")
     .eq("status", "confirmed")
     .gte("start_date", today())
     .lte("start_date", inDays(7));
-  if (!sessions || sessions.length === 0) return 0;
+  if (!sessions || sessions.length === 0) return EMPTY;
 
-  const sessionIds = (sessions as Array<{ id: string }>).map((s) => s.id);
+  type SRow = {
+    id: string;
+    start_date: string;
+    formation: { title: string } | Array<{ title: string }> | null;
+  };
+  const rows = sessions as SRow[];
+  const sessionIds = rows.map((s) => s.id);
 
-  // 2. Enrollments par session (id + session_id)
   const { data: enrollments } = await supabase
     .from("session_enrollments")
     .select("id, session_id")
     .in("session_id", sessionIds);
-  if (!enrollments || enrollments.length === 0) return 0;
+  if (!enrollments || enrollments.length === 0) return EMPTY;
 
-  const enrollmentRows = enrollments as Array<{
-    id: string;
-    session_id: string;
-  }>;
+  const enrollmentRows = enrollments as Array<{ id: string; session_id: string }>;
   const enrollmentIds = enrollmentRows.map((e) => e.id);
 
-  // 3. Positionnement existants pour ces enrollments
   const { data: positioning } = await supabase
     .from("positioning_responses")
     .select("enrollment_id, learner_submitted_at")
     .in("enrollment_id", enrollmentIds)
     .not("learner_submitted_at", "is", null);
-  const filledEnrollments = new Set(
+  const filled = new Set(
     ((positioning ?? []) as Array<{ enrollment_id: string }>).map(
       (p) => p.enrollment_id,
     ),
   );
 
-  // 4. Pour chaque session : total enrollments vs filled
-  const totalsBySession = new Map<string, number>();
-  const filledBySession = new Map<string, number>();
+  const totalsBy = new Map<string, number>();
+  const filledBy = new Map<string, number>();
   for (const e of enrollmentRows) {
-    totalsBySession.set(
-      e.session_id,
-      (totalsBySession.get(e.session_id) ?? 0) + 1,
-    );
-    if (filledEnrollments.has(e.id)) {
-      filledBySession.set(
-        e.session_id,
-        (filledBySession.get(e.session_id) ?? 0) + 1,
-      );
+    totalsBy.set(e.session_id, (totalsBy.get(e.session_id) ?? 0) + 1);
+    if (filled.has(e.id)) {
+      filledBy.set(e.session_id, (filledBy.get(e.session_id) ?? 0) + 1);
     }
   }
 
-  let count = 0;
-  for (const sid of sessionIds) {
-    const tot = totalsBySession.get(sid) ?? 0;
-    const fill = filledBySession.get(sid) ?? 0;
-    if (tot > 0 && fill < tot) count++;
-  }
-  return count;
+  const incomplete = rows.filter((r) => {
+    const tot = totalsBy.get(r.id) ?? 0;
+    const fill = filledBy.get(r.id) ?? 0;
+    return tot > 0 && fill < tot;
+  });
+  const items = incomplete.slice(0, MAX_ITEMS).map((r) => {
+    const f = Array.isArray(r.formation) ? r.formation[0] : r.formation;
+    const tot = totalsBy.get(r.id) ?? 0;
+    const fill = filledBy.get(r.id) ?? 0;
+    return {
+      label: f?.title ?? "Session",
+      href: `/sessions/${r.id}/positionnement`,
+      meta: `Démarre le ${fmtDate(r.start_date)} · ${fill}/${tot} remplis`,
+    };
+  });
+  return { count: incomplete.length, items };
 }
 
-/**
- * Sessions terminées (status=confirmed ou completed, end_date < today)
- * sans émargement complet : on considère qu'une session est "complète"
- * si le ratio (signatures formateur + signatures apprenant) atteint au
- * moins 50% du total attendu (formateur × demi-journées + apprenants ×
- * demi-journées). Heuristique : on compte les sessions qui ont 0
- * signature attendance.
- */
-export async function countSessionsEmargementMissing(
+export async function listSessionsEmargementMissing(
   supabase: SupabaseClient,
-): Promise<number> {
-  // 1. Sessions terminées récentes (90 derniers jours pour limiter le scope)
-  const ninetyDaysAgo = inDays(-90);
+): Promise<KpiData> {
+  const since = inDays(-90);
   const { data: sessions } = await supabase
     .from("sessions")
-    .select("id")
+    .select("id, end_date, formation:formations(title)")
     .in("status", ["confirmed", "completed"])
     .lt("end_date", today())
-    .gte("end_date", ninetyDaysAgo);
-  if (!sessions || sessions.length === 0) return 0;
+    .gte("end_date", since);
+  if (!sessions || sessions.length === 0) return EMPTY;
 
-  const sessionIds = (sessions as Array<{ id: string }>).map((s) => s.id);
+  type Row = {
+    id: string;
+    end_date: string;
+    formation: { title: string } | Array<{ title: string }> | null;
+  };
+  const rows = sessions as Row[];
+  const sessionIds = rows.map((s) => s.id);
 
-  // 2. Récup enrollments → enrollment_ids pour join attendance
   const { data: enrollments } = await supabase
     .from("session_enrollments")
     .select("id, session_id")
     .in("session_id", sessionIds);
-  if (!enrollments || enrollments.length === 0) return 0;
+  if (!enrollments || enrollments.length === 0) return EMPTY;
 
-  const enrollmentRows = enrollments as Array<{
-    id: string;
-    session_id: string;
-  }>;
+  const enrollmentRows = enrollments as Array<{ id: string; session_id: string }>;
   const enrollmentIds = enrollmentRows.map((e) => e.id);
   const sessionByEnrollment = new Map(
     enrollmentRows.map((e) => [e.id, e.session_id]),
   );
 
-  // 3. Compter signatures par session
   const { data: signatures } = await supabase
     .from("attendance_signatures")
     .select("enrollment_id")
     .in("enrollment_id", enrollmentIds);
-  const signaturesBySession = new Map<string, number>();
+  const sigBy = new Map<string, number>();
   for (const s of (signatures ?? []) as Array<{ enrollment_id: string }>) {
     const sid = sessionByEnrollment.get(s.enrollment_id);
     if (!sid) continue;
-    signaturesBySession.set(sid, (signaturesBySession.get(sid) ?? 0) + 1);
+    sigBy.set(sid, (sigBy.get(sid) ?? 0) + 1);
   }
 
-  // 4. Sessions avec 0 signature
-  return sessionIds.filter((sid) => (signaturesBySession.get(sid) ?? 0) === 0)
-    .length;
+  const missing = rows.filter((r) => (sigBy.get(r.id) ?? 0) === 0);
+  const items = missing.slice(0, MAX_ITEMS).map((r) => {
+    const f = Array.isArray(r.formation) ? r.formation[0] : r.formation;
+    return {
+      label: f?.title ?? "Session",
+      href: `/sessions/${r.id}/emargement`,
+      meta: `Terminée le ${fmtDate(r.end_date)}`,
+    };
+  });
+  return { count: missing.length, items };
 }
 
-/**
- * Sessions terminées sans bilan formateur (Module 7 / session_trainer_reports).
- * Fallback silencieux si la table n'existe pas (avant migration 0101).
- */
-export async function countSessionsWithoutTrainerReport(
+export async function listSessionsWithoutTrainerReport(
   supabase: SupabaseClient,
-): Promise<number> {
-  const ninetyDaysAgo = inDays(-90);
-  // Sessions terminées récentes
+): Promise<KpiData> {
+  const since = inDays(-90);
   const { data: sessions } = await supabase
     .from("sessions")
-    .select("id")
+    .select("id, end_date, formation:formations(title)")
     .in("status", ["confirmed", "completed"])
     .lt("end_date", today())
-    .gte("end_date", ninetyDaysAgo);
-  if (!sessions || sessions.length === 0) return 0;
+    .gte("end_date", since);
+  if (!sessions || sessions.length === 0) return EMPTY;
 
-  const sessionIds = (sessions as Array<{ id: string }>).map((s) => s.id);
+  type Row = {
+    id: string;
+    end_date: string;
+    formation: { title: string } | Array<{ title: string }> | null;
+  };
+  const rows = sessions as Row[];
+  const sessionIds = rows.map((s) => s.id);
 
   try {
     const { data: reports, error } = await supabase
@@ -267,15 +416,24 @@ export async function countSessionsWithoutTrainerReport(
       .select("session_id")
       .in("session_id", sessionIds)
       .not("signed_at", "is", null);
-    if (error) return 0; // table absente → on ignore
+    if (error) return EMPTY;
     const withReport = new Set(
       ((reports ?? []) as Array<{ session_id: string }>).map(
         (r) => r.session_id,
       ),
     );
-    return sessionIds.filter((id) => !withReport.has(id)).length;
+    const missing = rows.filter((r) => !withReport.has(r.id));
+    const items = missing.slice(0, MAX_ITEMS).map((r) => {
+      const f = Array.isArray(r.formation) ? r.formation[0] : r.formation;
+      return {
+        label: f?.title ?? "Session",
+        href: `/sessions/${r.id}`,
+        meta: `Terminée le ${fmtDate(r.end_date)}`,
+      };
+    });
+    return { count: missing.length, items };
   } catch {
-    return 0;
+    return EMPTY;
   }
 }
 
@@ -283,82 +441,146 @@ export async function countSessionsWithoutTrainerReport(
 // 💰 PIPELINE COMMERCIAL
 // ============================================================
 
-/** Pré-inscriptions partenaires en attente de validation. */
-export async function countPreinscriptionsPending(
+export async function listPreinscriptionsPending(
   supabase: SupabaseClient,
-): Promise<number> {
-  // Selon le schéma (cf. project_preinscription_publique) : stage='preinscription'
-  // signifie en attente. Fallback : on compte les requests via_partner_portal
-  // sans target_session_id confirmée.
+): Promise<KpiData> {
   try {
-    const { count } = await supabase
+    const { data } = await supabase
       .from("inscription_requests")
-      .select("id", { count: "exact", head: true })
-      .eq("stage", "preinscription");
-    return count ?? 0;
+      .select(
+        "id, learner_first_name, learner_last_name, target_session_id, created_at, referrer:companies!referrer_company_id(name)",
+      )
+      .eq("stage", "preinscription")
+      .order("created_at", { ascending: false })
+      .limit(MAX_ITEMS);
+    type Row = {
+      id: string;
+      learner_first_name: string | null;
+      learner_last_name: string | null;
+      target_session_id: string | null;
+      created_at: string;
+      referrer: { name: string } | Array<{ name: string }> | null;
+    };
+    const rows = (data ?? []) as Row[];
+    const items = rows.map((r) => {
+      const ref = Array.isArray(r.referrer) ? r.referrer[0] : r.referrer;
+      const name = [r.learner_first_name, r.learner_last_name]
+        .filter(Boolean)
+        .join(" ");
+      return {
+        label: name || "Apprenant (sans nom)",
+        href: `/inscriptions/${r.id}`,
+        meta: `Reçue le ${fmtDateShort(r.created_at)}${ref?.name ? ` · via ${ref.name}` : ""}`,
+      };
+    });
+    const exact =
+      items.length < MAX_ITEMS
+        ? items.length
+        : ((
+            await supabase
+              .from("inscription_requests")
+              .select("id", { count: "exact", head: true })
+              .eq("stage", "preinscription")
+          ).count ?? items.length);
+    return { count: exact, items };
   } catch {
-    return 0;
+    return EMPTY;
   }
 }
 
-/** Inscriptions (session_enrollments) dont le learner n'a pas d'email. */
-export async function countEnrollmentsLearnerNoEmail(
+export async function listEnrollmentsLearnerNoEmail(
   supabase: SupabaseClient,
-): Promise<number> {
-  // Approche : récup tous les learner_id distincts des enrollments actifs,
-  // puis compter ceux dont email IS NULL.
+): Promise<KpiData> {
   const { data: enrollments } = await supabase
     .from("session_enrollments")
     .select("learner_id");
-  if (!enrollments || enrollments.length === 0) return 0;
+  if (!enrollments || enrollments.length === 0) return EMPTY;
 
   const learnerIds = Array.from(
     new Set(
       (enrollments as Array<{ learner_id: string | null }>)
         .map((e) => e.learner_id)
-        .filter((id): id is string => Boolean(id)),
+        .filter((x): x is string => !!x),
     ),
   );
-  if (learnerIds.length === 0) return 0;
+  if (learnerIds.length === 0) return EMPTY;
+
+  const { data: learners } = await supabase
+    .from("learners")
+    .select("id, first_name, last_name")
+    .in("id", learnerIds)
+    .is("email", null)
+    .limit(MAX_ITEMS * 2);
+
+  const items: KpiItem[] = [];
+  for (const l of (learners ?? []) as Array<{
+    id: string;
+    first_name: string;
+    last_name: string;
+  }>) {
+    items.push({
+      label: `${l.last_name.toUpperCase()} ${l.first_name}`,
+      href: `/apprenants/${l.id}`,
+      meta: "Pas d'email — convocation impossible",
+    });
+    if (items.length >= MAX_ITEMS) break;
+  }
 
   const { count } = await supabase
     .from("learners")
     .select("id", { count: "exact", head: true })
     .in("id", learnerIds)
     .is("email", null);
-  return count ?? 0;
+  return { count: count ?? items.length, items };
 }
 
-/** Inscriptions dont le learner n'a pas d'entreprise rattachée. */
-export async function countEnrollmentsLearnerNoCompany(
+export async function listEnrollmentsLearnerNoCompany(
   supabase: SupabaseClient,
-): Promise<number> {
+): Promise<KpiData> {
   const { data: enrollments } = await supabase
     .from("session_enrollments")
     .select("learner_id");
-  if (!enrollments || enrollments.length === 0) return 0;
+  if (!enrollments || enrollments.length === 0) return EMPTY;
 
   const learnerIds = Array.from(
     new Set(
       (enrollments as Array<{ learner_id: string | null }>)
         .map((e) => e.learner_id)
-        .filter((id): id is string => Boolean(id)),
+        .filter((x): x is string => !!x),
     ),
   );
-  if (learnerIds.length === 0) return 0;
+  if (learnerIds.length === 0) return EMPTY;
+
+  const { data: learners } = await supabase
+    .from("learners")
+    .select("id, first_name, last_name")
+    .in("id", learnerIds)
+    .is("company_id", null)
+    .limit(MAX_ITEMS * 2);
+
+  const items: KpiItem[] = [];
+  for (const l of (learners ?? []) as Array<{
+    id: string;
+    first_name: string;
+    last_name: string;
+  }>) {
+    items.push({
+      label: `${l.last_name.toUpperCase()} ${l.first_name}`,
+      href: `/apprenants/${l.id}`,
+      meta: "Indépendant ou rattachement à faire",
+    });
+    if (items.length >= MAX_ITEMS) break;
+  }
 
   const { count } = await supabase
     .from("learners")
     .select("id", { count: "exact", head: true })
     .in("id", learnerIds)
     .is("company_id", null);
-  return count ?? 0;
+  return { count: count ?? items.length, items };
 }
 
-/**
- * CA potentiel à venir : somme HT des montants devisés sur les inscriptions
- * dont la session est confirmée et pas encore terminée.
- */
+/** CA potentiel à venir : montant agrégé (pas une liste). */
 export async function computeUpcomingRevenueHt(
   supabase: SupabaseClient,
 ): Promise<number> {
@@ -404,21 +626,13 @@ export type SessionQualiopiScore = {
   sessionId: string;
   title: string;
   endDate: string;
-  scorePercent: number; // 0-100
+  scorePercent: number;
   positioningOk: boolean;
   emargementOk: boolean;
   evaluationOk: boolean;
   bilanOk: boolean;
 };
 
-/**
- * Calcule un score Qualiopi simplifié pour les 30 dernières sessions
- * terminées. Chaque indicateur compte pour 25% :
- *  - positionnement : tous les apprenants ont rempli leur positionnement
- *  - émargement : au moins 1 signature par enrollment
- *  - évaluation à chaud : au moins 1 réponse par enrollment
- *  - bilan formateur : ligne session_trainer_reports signée
- */
 export async function computeQualiopiScores(
   supabase: SupabaseClient,
   limit = 30,
@@ -437,15 +651,11 @@ export async function computeQualiopiScores(
   type SRow = {
     id: string;
     end_date: string;
-    formation:
-      | { title: string }
-      | Array<{ title: string }>
-      | null;
+    formation: { title: string } | Array<{ title: string }> | null;
   };
   const rows = sessions as SRow[];
   const sessionIds = rows.map((r) => r.id);
 
-  // Enrollments par session
   const { data: enrollments } = await supabase
     .from("session_enrollments")
     .select("id, session_id")
@@ -463,7 +673,6 @@ export async function computeQualiopiScores(
     enrollmentsBySession.get(e.session_id)!.push(e.id);
   }
 
-  // En parallèle : positionnement, signatures, évals, bilans
   const [posRes, sigRes, evalRes, reportsRes] = await Promise.all([
     enrollmentIds.length > 0
       ? supabase
@@ -554,16 +763,20 @@ export async function computeQualiopiScores(
   });
 }
 
-/** Formateurs actifs sans aucune formation animable liée. */
-export async function countTrainersWithoutFormations(
+export async function listTrainersWithoutFormations(
   supabase: SupabaseClient,
-): Promise<number> {
+): Promise<KpiData> {
   const { data: trainers } = await supabase
     .from("trainers")
-    .select("id")
+    .select("id, first_name, last_name")
     .eq("is_active", true);
-  if (!trainers || trainers.length === 0) return 0;
-  const trainerIds = (trainers as Array<{ id: string }>).map((t) => t.id);
+  if (!trainers || trainers.length === 0) return EMPTY;
+  const trainerRows = trainers as Array<{
+    id: string;
+    first_name: string;
+    last_name: string;
+  }>;
+  const trainerIds = trainerRows.map((t) => t.id);
 
   const { data: links } = await supabase
     .from("trainer_formations")
@@ -572,19 +785,29 @@ export async function countTrainersWithoutFormations(
   const withLinks = new Set(
     ((links ?? []) as Array<{ trainer_id: string }>).map((l) => l.trainer_id),
   );
-  return trainerIds.filter((id) => !withLinks.has(id)).length;
+  const without = trainerRows.filter((t) => !withLinks.has(t.id));
+  const items = without.slice(0, MAX_ITEMS).map((t) => ({
+    label: `${t.last_name.toUpperCase()} ${t.first_name}`,
+    href: `/formateurs/${t.id}`,
+    meta: "Aucune formation animable liée",
+  }));
+  return { count: without.length, items };
 }
 
-/** Formateurs actifs sans token portail (accès non activé). */
-export async function countTrainersWithoutPortal(
+export async function listTrainersWithoutPortal(
   supabase: SupabaseClient,
-): Promise<number> {
+): Promise<KpiData> {
   const { data: trainers } = await supabase
     .from("trainers")
-    .select("id")
+    .select("id, first_name, last_name")
     .eq("is_active", true);
-  if (!trainers || trainers.length === 0) return 0;
-  const trainerIds = (trainers as Array<{ id: string }>).map((t) => t.id);
+  if (!trainers || trainers.length === 0) return EMPTY;
+  const trainerRows = trainers as Array<{
+    id: string;
+    first_name: string;
+    last_name: string;
+  }>;
+  const trainerIds = trainerRows.map((t) => t.id);
 
   const { data: tokens } = await supabase
     .from("trainer_portal_tokens")
@@ -593,5 +816,11 @@ export async function countTrainersWithoutPortal(
   const withToken = new Set(
     ((tokens ?? []) as Array<{ trainer_id: string }>).map((t) => t.trainer_id),
   );
-  return trainerIds.filter((id) => !withToken.has(id)).length;
+  const without = trainerRows.filter((t) => !withToken.has(t.id));
+  const items = without.slice(0, MAX_ITEMS).map((t) => ({
+    label: `${t.last_name.toUpperCase()} ${t.first_name}`,
+    href: `/formateurs/${t.id}`,
+    meta: "Portail formateur non activé",
+  }));
+  return { count: without.length, items };
 }
