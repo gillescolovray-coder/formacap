@@ -276,6 +276,65 @@ export async function linkFormation(
   redirect(`/formateurs/${trainerId}?linked=1`);
 }
 
+/**
+ * Met à jour en bloc les formations d'un formateur : ajoute celles
+ * de `toAdd`, supprime celles de `toRemove`. Utilisé par la nouvelle
+ * UI cases à cocher (Gilles 2026-05-23).
+ *
+ * Comportement :
+ *  - Ajouts : INSERT avec la même justification (champ commun saisi
+ *    par l'admin au moment de l'enregistrement).
+ *  - Retraits : DELETE (perd la justification spécifique précédente).
+ *  - Atomique au sens "tout ou rien" : si une étape échoue, on
+ *    remonte l'erreur sans rollback (les UPSERT/INSERT sont déjà
+ *    individuellement transactionnels).
+ */
+export async function setTrainerFormations(
+  trainerId: string,
+  params: {
+    toAdd: string[];
+    toRemove: string[];
+    commonJustification: string | null;
+  },
+): Promise<{ ok: boolean; added?: number; removed?: number; error?: string }> {
+  const supabase = await createClient();
+  const justification = params.commonJustification?.trim() || null;
+
+  // Retraits
+  if (params.toRemove.length > 0) {
+    const { error: delErr } = await supabase
+      .from("trainer_formations")
+      .delete()
+      .eq("trainer_id", trainerId)
+      .in("formation_id", params.toRemove);
+    if (delErr) {
+      return { ok: false, error: `Suppression : ${delErr.message}` };
+    }
+  }
+
+  // Ajouts
+  if (params.toAdd.length > 0) {
+    const rows = params.toAdd.map((formationId) => ({
+      trainer_id: trainerId,
+      formation_id: formationId,
+      justification,
+    }));
+    const { error: insErr } = await supabase
+      .from("trainer_formations")
+      .insert(rows);
+    if (insErr) {
+      return { ok: false, error: `Ajout : ${insErr.message}` };
+    }
+  }
+
+  revalidatePath(`/formateurs/${trainerId}`);
+  return {
+    ok: true,
+    added: params.toAdd.length,
+    removed: params.toRemove.length,
+  };
+}
+
 export async function unlinkFormation(
   trainerId: string,
   formationId: string,
