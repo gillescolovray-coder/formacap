@@ -11,6 +11,7 @@ import {
   Lock,
   Mail,
   MapPin,
+  MessageSquareText,
   PenTool,
   Target,
   Users,
@@ -18,6 +19,18 @@ import {
 } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { labelLevel, type LevelValue } from "@/lib/positioning/types";
+import {
+  buildEventDateTime,
+  buildGoogleCalendarUrl,
+  buildOutlookCalendarUrl,
+} from "@/lib/calendar/event-links";
+import { formatScheduleLine } from "../../_session-card";
+import {
+  isReportEmpty,
+  labelObjectives,
+  type TrainerReport,
+} from "@/lib/trainer-report/types";
+import { TrainerReportForm } from "./_trainer-report-form";
 import {
   deleteSupportAsTrainer,
   toggleDocumentVisibilityAsTrainer,
@@ -83,7 +96,7 @@ export default async function FormateurSessionDetailPage({
   const { data: session } = await supabase
     .from("sessions")
     .select(
-      "id, status, start_date, end_date, modality, location, video_link, trainer_id, quiz_template_id, formation:formations(title, quiz_template_id), location_ref:formation_locations!location_id(name, address, postal_code, city)",
+      "id, status, start_date, end_date, modality, location, video_link, video_app, trainer_id, quiz_template_id, default_morning_start, default_morning_end, default_afternoon_start, default_afternoon_end, formation:formations(title, quiz_template_id), location_ref:formation_locations!location_id(name, address, postal_code, city), organization:organizations(name, phone, email)",
     )
     .eq("id", sessionId)
     .maybeSingle<{
@@ -94,8 +107,13 @@ export default async function FormateurSessionDetailPage({
       modality: string | null;
       location: string | null;
       video_link: string | null;
+      video_app: string | null;
       trainer_id: string | null;
       quiz_template_id: string | null;
+      default_morning_start: string | null;
+      default_morning_end: string | null;
+      default_afternoon_start: string | null;
+      default_afternoon_end: string | null;
       formation: {
         title: string;
         quiz_template_id: string | null;
@@ -105,6 +123,11 @@ export default async function FormateurSessionDetailPage({
         address: string | null;
         postal_code: string | null;
         city: string | null;
+      } | null;
+      organization: {
+        name: string;
+        phone: string | null;
+        email: string | null;
       } | null;
     }>();
 
@@ -195,21 +218,41 @@ export default async function FormateurSessionDetailPage({
     }
   }
 
-  // 5. Total demi-journées
+  // 5. Total demi-journées + 1er jour pour les horaires affichés dans le header
   const { data: days } = await supabase
     .from("session_days")
-    .select("morning_start, morning_end, afternoon_start, afternoon_end")
-    .eq("session_id", sessionId);
-  let totalSlots = 0;
-  for (const d of (days ?? []) as Array<{
+    .select("day_date, morning_start, morning_end, afternoon_start, afternoon_end")
+    .eq("session_id", sessionId)
+    .order("day_date", { ascending: true });
+  const daysTyped = (days ?? []) as Array<{
+    day_date: string;
     morning_start: string | null;
     morning_end: string | null;
     afternoon_start: string | null;
     afternoon_end: string | null;
-  }>) {
+  }>;
+  let totalSlots = 0;
+  for (const d of daysTyped) {
     if (d.morning_start && d.morning_end) totalSlots++;
     if (d.afternoon_start && d.afternoon_end) totalSlots++;
   }
+  const firstDay = daysTyped[0] ?? null;
+  // Horaires affichés sous la date : 1er jour de session_days ou
+  // valeurs par défaut de la session (modifiables dans /sessions).
+  const headerSchedule = firstDay
+    ? {
+        morning_start: firstDay.morning_start,
+        morning_end: firstDay.morning_end,
+        afternoon_start: firstDay.afternoon_start,
+        afternoon_end: firstDay.afternoon_end,
+      }
+    : {
+        morning_start: session.default_morning_start,
+        morning_end: session.default_morning_end,
+        afternoon_start: session.default_afternoon_start,
+        afternoon_end: session.default_afternoon_end,
+      };
+  const scheduleLine = formatScheduleLine(headerSchedule);
 
   // 6. Évaluations à chaud
   const { data: hotEvals } =
@@ -316,6 +359,44 @@ export default async function FormateurSessionDetailPage({
       slot.post = { score: a.score, max: a.max_score };
   }
 
+  // 6 quater. Bilan formateur (Module 7). Fallback silencieux si la
+  // table n'existe pas encore en prod (migration 0101 pas appliquée) :
+  // la section affichera juste un message d'attente.
+  let trainerReportRow: {
+    report: TrainerReport;
+    signer_name: string | null;
+    signed_at: string | null;
+  } | null = null;
+  let trainerReportTableMissing = false;
+  try {
+    const { data: r, error: rErr } = await supabase
+      .from("session_trainer_reports")
+      .select("report, signer_name, signed_at")
+      .eq("session_id", sessionId)
+      .maybeSingle<{
+        report: TrainerReport;
+        signer_name: string | null;
+        signed_at: string | null;
+      }>();
+    if (rErr && /relation .* does not exist/i.test(rErr.message)) {
+      trainerReportTableMissing = true;
+    } else {
+      trainerReportRow = r ?? null;
+    }
+  } catch {
+    trainerReportTableMissing = true;
+  }
+
+  // Nom complet du formateur (pour pré-remplir signer_name côté formulaire)
+  const { data: trainerRow } = await supabase
+    .from("trainers")
+    .select("first_name, last_name")
+    .eq("id", tokenRow.trainer_id)
+    .maybeSingle<{ first_name: string; last_name: string }>();
+  const trainerFullName = trainerRow
+    ? `${trainerRow.first_name} ${trainerRow.last_name}`.trim()
+    : "Formateur";
+
   // 7. Supports
   const { data: docs } = await supabase
     .from("session_documents")
@@ -344,11 +425,13 @@ export default async function FormateurSessionDetailPage({
   // ============================================================
 
   const formationTitle = session.formation?.title ?? "Session";
-  const ModalityIcon = session.modality === "distanciel" ? Video : MapPin;
-  let locationLabel = "—";
-  if (session.modality === "distanciel") {
-    locationLabel = session.video_link ?? "Distanciel";
-  } else if (session.location_ref) {
+  const isRemote =
+    session.modality === "distanciel" || session.modality === "hybride";
+  const ModalityIcon = isRemote ? Video : MapPin;
+
+  // Adresse complète (présentiel)
+  let fullAddress: string | null = null;
+  if (session.location_ref) {
     const parts = [
       session.location_ref.name,
       session.location_ref.address,
@@ -356,10 +439,68 @@ export default async function FormateurSessionDetailPage({
         .filter(Boolean)
         .join(" "),
     ].filter(Boolean);
-    locationLabel = parts.join(", ");
+    fullAddress = parts.length > 0 ? parts.join(", ") : null;
   } else if (session.location) {
-    locationLabel = session.location;
+    fullAddress = session.location;
   }
+
+  // Libellé visio (distanciel) : "Distanciel via Zoom" ou "Distanciel"
+  const remoteHeaderLabel = session.video_app
+    ? `Distanciel via ${session.video_app}`
+    : "Distanciel";
+
+  // Lien Google Maps pour le présentiel — facilite l'itinéraire
+  const mapsUrl = fullAddress
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddress)}`
+    : null;
+
+  // Représentation string utilisée par les liens Google/Outlook + .ics.
+  // - distanciel : on privilégie le lien direct (ouvrable depuis l'agenda),
+  //   sinon le libellé "Distanciel via {app}" pour que le formateur sache
+  //   quelle app lancer.
+  // - présentiel : adresse complète.
+  const locationForCalendar = isRemote
+    ? (session.video_link ?? remoteHeaderLabel)
+    : (fullAddress ?? "");
+
+  // === Liens d'ajout au calendrier (Google / Outlook / .ics) ===
+  const orgName = session.organization?.name ?? "";
+  const calStart = buildEventDateTime(
+    session.start_date,
+    session.default_morning_start,
+    "09:00",
+  );
+  const calEnd = buildEventDateTime(
+    session.end_date,
+    session.default_afternoon_end,
+    "17:00",
+  );
+  const calPortalUrl =
+    (process.env.NEXT_PUBLIC_APP_URL ?? "https://app.capnumerique.com") +
+    `/formateur/${token}/sessions/${sessionId}`;
+  const calDescription = [
+    `Vous animez cette session pour ${orgName}.`,
+    `${participants.length} apprenant${participants.length > 1 ? "s" : ""} inscrit${participants.length > 1 ? "s" : ""}.`,
+    session.organization?.phone
+      ? `Contact OF : ${session.organization.phone}`
+      : null,
+    session.organization?.email
+      ? `Email OF : ${session.organization.email}`
+      : null,
+    `Mon espace formateur (participants, émargement, supports) : ${calPortalUrl}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const calEvent = {
+    title: formationTitle,
+    start: calStart,
+    end: calEnd,
+    description: calDescription,
+    location: locationForCalendar,
+  };
+  const googleCalUrl = buildGoogleCalendarUrl(calEvent);
+  const outlookCalUrl = buildOutlookCalendarUrl(calEvent);
+  const icsCalUrl = `/api/public/formateur/${token}/sessions/${sessionId}/calendar.ics`;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
@@ -402,14 +543,106 @@ export default async function FormateurSessionDetailPage({
           <h1 className="text-lg md:text-xl font-bold text-zinc-900">
             {formationTitle}
           </h1>
-          <div className="space-y-1 text-xs text-zinc-600 mt-2">
-            <div className="flex items-center gap-1.5">
-              <Calendar className="h-3.5 w-3.5 text-zinc-400" />
-              <span>{formatDateRange(session.start_date, session.end_date)}</span>
+          <div className="space-y-1.5 text-xs text-zinc-600 mt-2">
+            {/* Date + horaires */}
+            <div className="flex items-start gap-1.5">
+              <Calendar className="h-3.5 w-3.5 text-zinc-400 mt-0.5 shrink-0" />
+              <div>
+                <div className="font-medium text-zinc-800">
+                  {formatDateRange(session.start_date, session.end_date)}
+                </div>
+                {scheduleLine && (
+                  <div className="text-[11px] text-zinc-500 tabular-nums">
+                    {scheduleLine}
+                  </div>
+                )}
+              </div>
             </div>
-            <div className="flex items-center gap-1.5">
-              <ModalityIcon className="h-3.5 w-3.5 text-zinc-400" />
-              <span>{locationLabel}</span>
+
+            {/* Lieu : distanciel (app + lien) ou présentiel (adresse + maps) */}
+            <div className="flex items-start gap-1.5">
+              <ModalityIcon className="h-3.5 w-3.5 text-zinc-400 mt-0.5 shrink-0" />
+              <div className="min-w-0 flex-1">
+                {isRemote ? (
+                  <>
+                    <div className="font-medium text-zinc-800">
+                      {remoteHeaderLabel}
+                    </div>
+                    {session.video_link ? (
+                      <a
+                        href={session.video_link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[11px] text-cyan-700 hover:underline break-all"
+                        title="Ouvrir le lien de visio"
+                      >
+                        🔗 {session.video_link}
+                      </a>
+                    ) : (
+                      <div className="text-[11px] text-zinc-400 italic">
+                        Aucun lien de connexion renseigné
+                      </div>
+                    )}
+                  </>
+                ) : fullAddress ? (
+                  <>
+                    <div className="font-medium text-zinc-800 break-words">
+                      {fullAddress}
+                    </div>
+                    {mapsUrl && (
+                      <a
+                        href={mapsUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[11px] text-cyan-700 hover:underline"
+                        title="Ouvrir dans Google Maps"
+                      >
+                        🗺 Itinéraire Google Maps
+                      </a>
+                    )}
+                  </>
+                ) : (
+                  <span className="italic text-zinc-400">Lieu non renseigné</span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Ajouter à mon agenda : 3 voies au choix */}
+          <div className="pt-3 mt-2 border-t border-zinc-100 space-y-1.5">
+            <p className="text-[11px] uppercase tracking-wider font-bold text-zinc-500 inline-flex items-center gap-1.5">
+              <Calendar className="h-3 w-3" />
+              Ajouter à mon agenda
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <a
+                href={googleCalUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-white border-2 border-zinc-300 text-zinc-800 text-xs font-bold hover:bg-zinc-50 hover:border-blue-400 transition-colors"
+                title="Ouvre Google Calendar dans un nouvel onglet avec l'événement pré-rempli"
+              >
+                <span className="text-base leading-none">📅</span>
+                Google Calendar
+              </a>
+              <a
+                href={outlookCalUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-white border-2 border-zinc-300 text-zinc-800 text-xs font-bold hover:bg-zinc-50 hover:border-blue-400 transition-colors"
+                title="Ouvre Outlook (Office 365) avec l'événement pré-rempli"
+              >
+                <span className="text-base leading-none">📨</span>
+                Outlook
+              </a>
+              <a
+                href={icsCalUrl}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-white border-2 border-zinc-300 text-zinc-800 text-xs font-bold hover:bg-zinc-50 hover:border-blue-400 transition-colors"
+                title="Télécharge un fichier .ics universel (Apple Calendar, Outlook desktop, Thunderbird…)"
+              >
+                <span className="text-base leading-none">💾</span>
+                Fichier .ics
+              </a>
             </div>
           </div>
         </header>
@@ -817,6 +1050,78 @@ export default async function FormateurSessionDetailPage({
               Téléverser
             </button>
           </form>
+        </Module>
+
+        {/* Module 7 — Bilan formateur (Qualiopi 11/22/32) */}
+        <Module
+          icon={<MessageSquareText className="h-5 w-5" />}
+          color="violet"
+          title="Bilan formateur"
+          description={
+            trainerReportTableMissing
+              ? "Module bientôt disponible (migration en attente d'application)."
+              : trainerReportRow?.signed_at
+                ? `Signé le ${new Date(trainerReportRow.signed_at).toLocaleDateString("fr-FR")} — modifiable.`
+                : isReportEmpty(trainerReportRow?.report)
+                  ? "Votre retour de fin de session (atteinte des objectifs, adaptations, améliorations…). Exigence Qualiopi."
+                  : "Bilan en brouillon — pensez à signer pour valider."
+          }
+        >
+          {trainerReportTableMissing ? (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
+              ⚠ La table <code>session_trainer_reports</code> n&apos;est pas
+              encore créée. Appliquez la migration{" "}
+              <code>0101_session_trainer_reports.sql</code> dans le SQL
+              Editor Supabase pour activer cette section.
+            </p>
+          ) : (
+            <details className="group" open={isReportEmpty(trainerReportRow?.report)}>
+              <summary className="cursor-pointer list-none flex items-center justify-between gap-2 py-1 text-xs font-semibold text-zinc-700 hover:text-zinc-900">
+                <span className="inline-flex items-center gap-1.5">
+                  {trainerReportRow && !isReportEmpty(trainerReportRow.report) ? (
+                    <>
+                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                      Voir / modifier le bilan
+                    </>
+                  ) : (
+                    "Remplir le bilan"
+                  )}
+                </span>
+                <span className="text-cyan-600 text-[10px] font-bold uppercase tracking-wider group-open:hidden">
+                  Ouvrir
+                </span>
+                <span className="text-zinc-500 text-[10px] font-bold uppercase tracking-wider hidden group-open:inline">
+                  Replier
+                </span>
+              </summary>
+
+              {/* Récap rapide quand replié + bilan déjà rempli */}
+              {trainerReportRow && !isReportEmpty(trainerReportRow.report) && (
+                <div className="mt-2 mb-2 text-[11px] text-zinc-600 group-open:hidden space-y-0.5">
+                  {trainerReportRow.report.objectives_reached && (
+                    <div>
+                      <span className="font-semibold">Objectifs :</span>{" "}
+                      {labelObjectives(trainerReportRow.report.objectives_reached)}
+                    </div>
+                  )}
+                  {trainerReportRow.report.group_level && (
+                    <div className="truncate">
+                      <span className="font-semibold">Groupe :</span>{" "}
+                      {trainerReportRow.report.group_level}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <TrainerReportForm
+                token={token}
+                sessionId={sessionId}
+                trainerName={trainerFullName}
+                initial={trainerReportRow?.report ?? {}}
+                initialSignedAt={trainerReportRow?.signed_at ?? null}
+              />
+            </details>
+          )}
         </Module>
       </div>
     </div>

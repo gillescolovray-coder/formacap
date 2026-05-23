@@ -1,15 +1,12 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import {
-  Calendar,
-  CheckCircle2,
-  ChevronRight,
-  Clock,
-  MapPin,
-  Users,
-  Video,
-} from "lucide-react";
+import { Calendar, Hourglass } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  SessionCard,
+  type SessionRow,
+  type SessionScheduleSnapshot,
+} from "./_session-card";
+import { PastSessionsSection } from "./_past-sessions-section";
 
 export const dynamic = "force-dynamic";
 
@@ -21,15 +18,19 @@ export const metadata: Metadata = {
 type Params = { token: string };
 
 /**
- * Page d'accueil du portail formateur : agenda de SES sessions
- * (sessions où trainer_id = formateur du token). Distinction
- * visuelle entre statuts (draft / planned / confirmed / in_progress
- * / completed / postponed / cancelled). Clic sur une session →
- * fiche détail avec les 6 modules (participants, positionnement,
- * convocations, émargement, éval, supports).
+ * Page d'accueil du portail formateur : agenda de SES sessions.
  *
- * Auth : token URL persistant (pas de compte Supabase Auth).
- * Lecture admin client pour bypass RLS.
+ * - Sessions à venir : toujours visibles, mises en avant (accent
+ *   cyan + badge de proximité Aujourd'hui/Demain/Dans X j).
+ * - Sessions passées : cachées derrière une case à cocher, avec
+ *   recherche par titre + filtre date (cf. PastSessionsSection).
+ *   Cf. demande Gilles 2026-05-23.
+ *
+ * Les horaires (1er jour de session) sont affichés sous la date
+ * pour donner un repère rapide ; la fiche détail montre le planning
+ * complet par demi-journée.
+ *
+ * Auth : token URL persistant. Lecture admin client pour bypass RLS.
  */
 export default async function FormateurAgendaPage({
   params,
@@ -64,7 +65,7 @@ export default async function FormateurAgendaPage({
   const trainer = tokenRow.trainer;
   const trainerName = `${trainer.first_name} ${trainer.last_name}`;
 
-  // 2. Organisation (pour logo + nom)
+  // 2. Organisation
   const { data: org } = await supabase
     .from("organizations")
     .select("name, logo_url")
@@ -80,42 +81,70 @@ export default async function FormateurAgendaPage({
     .eq("trainer_id", trainer.id)
     .order("start_date", { ascending: true });
 
-  const allSessions = ((sessions ?? []) as unknown as Array<{
-    id: string;
-    status: string | null;
-    start_date: string;
-    end_date: string;
-    modality: string | null;
-    location: string | null;
-    formation: { title: string } | null;
-    location_ref: { name: string; city: string | null } | null;
-  }>);
+  const allSessions = ((sessions ?? []) as unknown as SessionRow[]);
 
-  // 4. Comptes participants par session
   const sessionIds = allSessions.map((s) => s.id);
+
+  // 4. Bulk : comptes participants + horaires du 1er jour de chaque session
   const counts = new Map<string, number>();
+  const scheduleBySession = new Map<string, SessionScheduleSnapshot>();
   if (sessionIds.length > 0) {
-    const { data: enrolls } = await supabase
-      .from("session_enrollments")
-      .select("session_id")
-      .in("session_id", sessionIds);
-    for (const row of (enrolls ?? []) as Array<{ session_id: string }>) {
+    const [enrollsRes, daysRes] = await Promise.all([
+      supabase
+        .from("session_enrollments")
+        .select("session_id")
+        .in("session_id", sessionIds),
+      supabase
+        .from("session_days")
+        .select(
+          "session_id, day_date, morning_start, morning_end, afternoon_start, afternoon_end",
+        )
+        .in("session_id", sessionIds)
+        .order("day_date", { ascending: true }),
+    ]);
+
+    for (const row of (enrollsRes.data ?? []) as Array<{ session_id: string }>) {
       counts.set(row.session_id, (counts.get(row.session_id) ?? 0) + 1);
+    }
+
+    // Ne garder QUE le 1er jour de chaque session (ordre asc déjà appliqué)
+    for (const row of (daysRes.data ?? []) as Array<{
+      session_id: string;
+      day_date: string;
+      morning_start: string | null;
+      morning_end: string | null;
+      afternoon_start: string | null;
+      afternoon_end: string | null;
+    }>) {
+      if (!scheduleBySession.has(row.session_id)) {
+        scheduleBySession.set(row.session_id, {
+          morning_start: row.morning_start,
+          morning_end: row.morning_end,
+          afternoon_start: row.afternoon_start,
+          afternoon_end: row.afternoon_end,
+        });
+      }
     }
   }
 
-  // 5. Tri : confirmées + en cours en haut, puis brouillon/planifiées, puis passées
+  // 5. Tri : future vs passée (par end_date)
   const now = new Date();
-  const future: typeof allSessions = [];
-  const past: typeof allSessions = [];
+  const future: SessionRow[] = [];
+  const past: SessionRow[] = [];
   for (const s of allSessions) {
     const end = new Date(s.end_date);
     end.setHours(23, 59, 59, 999);
     if (end.getTime() < now.getTime()) past.push(s);
     else future.push(s);
   }
-  // Plus proches en haut pour future, plus récentes en haut pour past
-  past.reverse();
+  past.reverse(); // plus récentes en haut
+
+  // Données passées formatées pour le composant client
+  const pastData = past.map((s) => ({
+    session: s,
+    participantCount: counts.get(s.id) ?? 0,
+    schedule: scheduleBySession.get(s.id) ?? null,
+  }));
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
@@ -136,19 +165,30 @@ export default async function FormateurAgendaPage({
           <h1 className="text-xl md:text-2xl font-bold text-zinc-900">
             {trainerName}
           </h1>
-          <p className="text-xs text-zinc-500">
-            {org?.name ?? ""}
-          </p>
+          <p className="text-xs text-zinc-500">{org?.name ?? ""}</p>
         </header>
 
-        {/* Section À venir */}
-        <section>
-          <h2 className="text-sm font-bold text-zinc-700 uppercase tracking-wider mb-2 px-1">
-            📅 Sessions à venir ({future.length})
-          </h2>
+        {/* Section À venir — mise en avant */}
+        <section className="rounded-2xl bg-gradient-to-br from-cyan-50/60 to-white border-2 border-cyan-200 p-3 md:p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <div className="h-9 w-9 rounded-lg bg-cyan-600 text-white flex items-center justify-center shadow-sm">
+              <Calendar className="h-5 w-5" />
+            </div>
+            <div className="flex-1">
+              <h2 className="text-base md:text-lg font-bold text-cyan-900 leading-tight">
+                Sessions à venir
+              </h2>
+              <p className="text-[11px] text-cyan-700/80">
+                {future.length === 0
+                  ? "Aucune session planifiée pour le moment"
+                  : `${future.length} session${future.length > 1 ? "s" : ""} à animer`}
+              </p>
+            </div>
+          </div>
+
           {future.length === 0 ? (
-            <div className="rounded-xl bg-white shadow-sm border border-zinc-200 p-6 text-center">
-              <Calendar className="h-10 w-10 text-zinc-300 mx-auto mb-2" />
+            <div className="rounded-xl bg-white border border-cyan-100 p-6 text-center">
+              <Calendar className="h-10 w-10 text-cyan-200 mx-auto mb-2" />
               <p className="text-sm text-zinc-600">
                 Aucune session à venir pour le moment.
               </p>
@@ -161,30 +201,17 @@ export default async function FormateurAgendaPage({
                   token={token}
                   session={s}
                   participantCount={counts.get(s.id) ?? 0}
+                  schedule={scheduleBySession.get(s.id) ?? null}
+                  prominence="high"
                 />
               ))}
             </div>
           )}
         </section>
 
-        {/* Section Passées */}
+        {/* Section Passées : derrière case à cocher + recherche */}
         {past.length > 0 && (
-          <section className="pt-2">
-            <h2 className="text-sm font-bold text-zinc-700 uppercase tracking-wider mb-2 px-1">
-              ⌛ Sessions passées ({past.length})
-            </h2>
-            <div className="space-y-2">
-              {past.map((s) => (
-                <SessionCard
-                  key={s.id}
-                  token={token}
-                  session={s}
-                  participantCount={counts.get(s.id) ?? 0}
-                  faded
-                />
-              ))}
-            </div>
-          </section>
+          <PastSessionsSection token={token} sessions={pastData} />
         )}
 
         <footer className="text-center text-[11px] text-zinc-400 mt-8">
@@ -196,164 +223,11 @@ export default async function FormateurAgendaPage({
   );
 }
 
-// ============================================================
-// Sous-composants
-// ============================================================
-
-type SessionRow = {
-  id: string;
-  status: string | null;
-  start_date: string;
-  end_date: string;
-  modality: string | null;
-  location: string | null;
-  formation: { title: string } | null;
-  location_ref: { name: string; city: string | null } | null;
-};
-
-const STATUS_STYLES: Record<
-  string,
-  { label: string; bg: string; text: string; border: string }
-> = {
-  draft: {
-    label: "Brouillon",
-    bg: "bg-zinc-100",
-    text: "text-zinc-600",
-    border: "border-zinc-200",
-  },
-  planned: {
-    label: "Planifiée",
-    bg: "bg-amber-50",
-    text: "text-amber-700",
-    border: "border-amber-200",
-  },
-  confirmed: {
-    label: "Confirmée",
-    bg: "bg-emerald-50",
-    text: "text-emerald-700",
-    border: "border-emerald-200",
-  },
-  in_progress: {
-    label: "En cours",
-    bg: "bg-cyan-50",
-    text: "text-cyan-700",
-    border: "border-cyan-200",
-  },
-  completed: {
-    label: "Terminée",
-    bg: "bg-violet-50",
-    text: "text-violet-700",
-    border: "border-violet-200",
-  },
-  postponed: {
-    label: "Reportée",
-    bg: "bg-orange-50",
-    text: "text-orange-700",
-    border: "border-orange-200",
-  },
-  cancelled: {
-    label: "Annulée",
-    bg: "bg-red-50",
-    text: "text-red-700",
-    border: "border-red-200",
-  },
-  archived: {
-    label: "Archivée",
-    bg: "bg-slate-100",
-    text: "text-slate-600",
-    border: "border-slate-200",
-  },
-};
-
-function SessionCard({
-  token,
-  session,
-  participantCount,
-  faded,
-}: {
-  token: string;
-  session: SessionRow;
-  participantCount: number;
-  faded?: boolean;
-}) {
-  const statusStyle =
-    STATUS_STYLES[session.status ?? "draft"] ?? STATUS_STYLES.draft;
-  const dateLabel = formatDateRange(session.start_date, session.end_date);
-  const ModalityIcon = session.modality === "distanciel" ? Video : MapPin;
-  let locationLabel = "—";
-  if (session.modality === "distanciel") {
-    locationLabel = "Distanciel";
-  } else if (session.location_ref) {
-    locationLabel = session.location_ref.city
-      ? `${session.location_ref.name} (${session.location_ref.city})`
-      : session.location_ref.name;
-  } else if (session.location) {
-    locationLabel = session.location;
-  }
-
-  return (
-    <Link
-      href={`/formateur/${token}/sessions/${session.id}`}
-      className={
-        faded
-          ? "block rounded-xl bg-white shadow-sm border border-zinc-200 p-4 hover:bg-zinc-50 opacity-70"
-          : "block rounded-xl bg-white shadow-sm border border-zinc-200 p-4 hover:bg-zinc-50 transition-colors"
-      }
-    >
-      <div className="flex items-start gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <span
-              className={`text-[10px] font-bold ${statusStyle.text} ${statusStyle.bg} ${statusStyle.border} border px-2 py-0.5 rounded-full uppercase tracking-wider`}
-            >
-              {statusStyle.label}
-            </span>
-            {session.status === "confirmed" && (
-              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-            )}
-          </div>
-          <h3 className="font-bold text-zinc-900 truncate">
-            {session.formation?.title ?? "Session"}
-          </h3>
-          <div className="mt-1 space-y-0.5 text-xs text-zinc-600">
-            <div className="flex items-center gap-1.5">
-              <Clock className="h-3 w-3 text-zinc-400" />
-              <span>{dateLabel}</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <ModalityIcon className="h-3 w-3 text-zinc-400" />
-              <span>{locationLabel}</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Users className="h-3 w-3 text-zinc-400" />
-              <span>
-                {participantCount} participant{participantCount > 1 ? "s" : ""}
-              </span>
-            </div>
-          </div>
-        </div>
-        <ChevronRight className="h-5 w-5 text-zinc-400 shrink-0 mt-1" />
-      </div>
-    </Link>
-  );
-}
-
-function formatDateRange(start: string, end: string): string {
-  if (start === end) {
-    return new Date(start).toLocaleDateString("fr-FR", {
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    });
-  }
-  return `${new Date(start).toLocaleDateString("fr-FR")} → ${new Date(end).toLocaleDateString("fr-FR")}`;
-}
-
 function NotFoundCard({ reason }: { reason: string }) {
   return (
     <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50">
       <div className="max-w-md bg-white rounded-xl shadow-md border border-zinc-200 p-6 text-center space-y-3">
-        <Calendar className="h-12 w-12 text-zinc-400 mx-auto" />
+        <Hourglass className="h-12 w-12 text-zinc-400 mx-auto" />
         <h1 className="text-lg font-bold">Espace indisponible</h1>
         <p className="text-sm text-zinc-600">{reason}</p>
       </div>

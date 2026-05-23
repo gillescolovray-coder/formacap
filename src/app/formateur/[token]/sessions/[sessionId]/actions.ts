@@ -8,6 +8,7 @@ import {
   type PositioningTrainerObservation,
   type TrainerAdaptationValue,
 } from "@/lib/positioning/types";
+import type { TrainerReport } from "@/lib/trainer-report/types";
 
 const VALID_TRAINER_ADAPTATIONS = TRAINER_ADAPTATIONS.map((a) => a.value);
 
@@ -506,5 +507,74 @@ export async function saveTrainerObservationFromPortal(
   revalidatePath(
     `/formateur/${token}/sessions/${sessionId}/positionnement/${enrollmentId}`,
   );
+  return { ok: true };
+}
+
+/**
+ * Module 7 — Bilan formateur de fin de session.
+ *
+ * Upsert dans `session_trainer_reports` (1 ligne par session). Stocke
+ * le contenu structuré dans la colonne JSONB `report` + métadonnées
+ * de signature (nom, data URL, signed_at).
+ *
+ * Couvre Qualiopi RNQ ind. 11 / 22 / 32. Gilles 2026-05-23.
+ */
+export async function saveTrainerReportFromPortal(
+  token: string,
+  sessionId: string,
+  report: TrainerReport,
+  signerName: string,
+  signatureDataUrl?: string | null,
+): Promise<{ ok: boolean; error?: string }> {
+  const supabase = createAdminClient();
+  const ctx = await validateTrainerAccess(supabase, token, sessionId);
+  if (!ctx) return { ok: false, error: "Accès refusé." };
+
+  // Validation signature optionnelle
+  let signature: string | null = null;
+  if (signatureDataUrl && signatureDataUrl.length > 0) {
+    if (!signatureDataUrl.startsWith("data:image/")) {
+      return { ok: false, error: "Signature invalide." };
+    }
+    if (signatureDataUrl.length > 500_000) {
+      return { ok: false, error: "Signature trop volumineuse." };
+    }
+    signature = signatureDataUrl;
+  }
+  if (!signerName || signerName.trim().length < 2) {
+    return { ok: false, error: "Nom du formateur manquant." };
+  }
+
+  // Nettoyage : trim sur tous les champs texte
+  const cleaned: TrainerReport = {
+    objectives_reached: report.objectives_reached,
+    objectives_comment: report.objectives_comment?.trim() || undefined,
+    group_level: report.group_level?.trim() || undefined,
+    adaptations_made: report.adaptations_made?.trim() || undefined,
+    engagement_dynamics: report.engagement_dynamics?.trim() || undefined,
+    difficulties: report.difficulties?.trim() || undefined,
+    improvements: report.improvements?.trim() || undefined,
+    learner_recommendations: report.learner_recommendations?.trim() || undefined,
+  };
+
+  const now = new Date().toISOString();
+  const { error } = await supabase
+    .from("session_trainer_reports")
+    .upsert(
+      {
+        session_id: sessionId,
+        organization_id: ctx.organizationId,
+        trainer_id: ctx.trainerId,
+        report: cleaned,
+        signer_name: signerName.trim(),
+        signature_data: signature,
+        signed_at: signature ? now : null,
+        updated_at: now,
+      },
+      { onConflict: "session_id" },
+    );
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath(`/formateur/${token}/sessions/${sessionId}`);
   return { ok: true };
 }
