@@ -45,6 +45,10 @@ export function QuizEditor({ quizId, initialQuestions }: Props) {
       if (res.ok && res.questionId) {
         setSelectedId(res.questionId);
         router.refresh();
+      } else {
+        // Erreur visible (sinon le clic ne semble rien faire — bug
+        // vécu 2026-05-23 sur scale_0_10 avec correct_answer NULL).
+        alert(`Impossible d'ajouter la question : ${res.error ?? "erreur inconnue"}`);
       }
     });
   }
@@ -445,7 +449,8 @@ function QuestionEditor({
       setCorrect(opts.map((o) => o.id));
     } else if (newType === "scale_0_10") {
       // Auto-évaluation : pas de bonne réponse. Les options portent
-      // les libellés des extrémités (min/max).
+      // les libellés des extrémités (min/max). correct_answer = "" car
+      // la colonne BDD est NOT NULL (ignoré par evaluateAnswer).
       const existingMin = options.find((o) => o.id === "min")?.label;
       const existingMax = options.find((o) => o.id === "max")?.label;
       setOptions([
@@ -453,7 +458,7 @@ function QuestionEditor({
         { id: "max", label: existingMax ?? "Tout à fait" },
       ]);
       setPairs([]);
-      setCorrect(null as unknown as string);
+      setCorrect("");
       setPoints(10);
     }
   }
@@ -513,7 +518,7 @@ function QuestionEditor({
         : type === "match_pairs"
           ? null
           : type === "scale_0_10"
-            ? null
+            ? "" // NOT NULL en BDD, ignoré par evaluateAnswer
             : correct;
     const effectivePoints = type === "scale_0_10" ? 10 : points;
     startSave(async () => {

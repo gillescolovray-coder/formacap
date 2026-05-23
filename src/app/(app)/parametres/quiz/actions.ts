@@ -160,11 +160,13 @@ export async function addQuestion(
   } else if (type === "scale_0_10") {
     // Auto-évaluation 0-10 : pas de bonne réponse, libellés des
     // extrémités stockés dans options (id 'min' / id 'max').
+    // correct_answer est NOT NULL en BDD → on stocke "" (placeholder)
+    // qui est ignoré par evaluateAnswer pour ce type.
     options = [
       { id: "min", label: "Pas du tout" },
       { id: "max", label: "Tout à fait" },
     ];
-    correctAnswer = null;
+    correctAnswer = "";
   } else {
     correctAnswer = "";
   }
