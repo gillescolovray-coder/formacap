@@ -2,12 +2,18 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isResendConfigured, sendEmail } from "@/lib/email/resend";
 import {
   TRAINER_ADAPTATIONS,
   type PositioningTrainerObservation,
   type TrainerAdaptationValue,
 } from "@/lib/positioning/types";
+import type {
+  AttendanceMoment,
+  AttendanceStatus,
+} from "@/lib/attendances/types";
 import type { TrainerReport } from "@/lib/trainer-report/types";
 
 const VALID_TRAINER_ADAPTATIONS = TRAINER_ADAPTATIONS.map((a) => a.value);
@@ -577,4 +583,466 @@ export async function saveTrainerReportFromPortal(
 
   revalidatePath(`/formateur/${token}/sessions/${sessionId}`);
   return { ok: true };
+}
+
+// ============================================================
+// Phases A / B / C — Alignement émargement formateur ↔ admin
+//
+// Toutes les actions ci-dessous reproduisent les actions admin
+// (cf. src/app/(app)/sessions/[id]/emargement/{actions,signatures/actions}.ts)
+// avec validation par TOKEN PORTAIL FORMATEUR au lieu d'auth Supabase.
+// Pour `marked_by` / `created_by` qui réfèrent à un profile : on
+// passe `null` (les colonnes sont nullable) — la traçabilité passe
+// par le token utilisé + l'IP + le user-agent.
+// ============================================================
+
+const MAX_SIGNATURE_BYTES = 250 * 1024;
+
+function generateRandomToken(): string {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function getAppOriginFromHeaders(): Promise<string> {
+  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL;
+  const h = await headers();
+  const proto = h.get("x-forwarded-proto") ?? "http";
+  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
+  return `${proto}://${host}`;
+}
+
+/**
+ * Vérifie qu'un enrollment appartient bien à la session
+ * accessible par le formateur. Combine validateTrainerAccess +
+ * check enrollment.session_id.
+ */
+async function validateEnrollmentForTrainer(
+  supabase: ReturnType<typeof createAdminClient>,
+  token: string,
+  sessionId: string,
+  enrollmentId: string,
+): Promise<{ trainerId: string; organizationId: string } | null> {
+  const ctx = await validateTrainerAccess(supabase, token, sessionId);
+  if (!ctx) return null;
+  const { data: enr } = await supabase
+    .from("session_enrollments")
+    .select("session_id")
+    .eq("id", enrollmentId)
+    .maybeSingle<{ session_id: string }>();
+  if (!enr || enr.session_id !== sessionId) return null;
+  return ctx;
+}
+
+// ============================================================
+// Phase A — Signature individuelle apprenant + formateur
+// (variante de saveSignature / clearSignature côté admin)
+// ============================================================
+
+export type SaveSignatureAsTrainerInput = {
+  enrollmentId: string;
+  periodDate: string;
+  moment: AttendanceMoment;
+  signerRole: "learner" | "trainer";
+  signerName: string;
+  signatureData: string;
+};
+
+export async function saveSignatureAsTrainer(
+  token: string,
+  sessionId: string,
+  input: SaveSignatureAsTrainerInput,
+): Promise<{ ok: boolean; error?: string }> {
+  const supabase = createAdminClient();
+  const ctx = await validateEnrollmentForTrainer(
+    supabase,
+    token,
+    sessionId,
+    input.enrollmentId,
+  );
+  if (!ctx) return { ok: false, error: "Accès refusé." };
+
+  const data = input.signatureData?.trim() ?? "";
+  if (!data.startsWith("data:image/")) {
+    return { ok: false, error: "Format de signature invalide." };
+  }
+  if (data.length > MAX_SIGNATURE_BYTES) {
+    return { ok: false, error: "Signature trop volumineuse." };
+  }
+  const signerName = input.signerName?.trim() ?? "";
+  if (!signerName) return { ok: false, error: "Nom du signataire requis." };
+
+  const h = await headers();
+  const signedIp = h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
+  const userAgent = h.get("user-agent") ?? null;
+
+  const { error } = await supabase.from("attendance_signatures").upsert(
+    {
+      enrollment_id: input.enrollmentId,
+      period_date: input.periodDate,
+      moment: input.moment,
+      signer_role: input.signerRole,
+      signer_name: signerName,
+      signature_data: data,
+      signed_ip: signedIp,
+      signed_user_agent: userAgent,
+      signed_at: new Date().toISOString(),
+    },
+    { onConflict: "enrollment_id,period_date,moment,signer_role" },
+  );
+  if (error) return { ok: false, error: error.message };
+
+  // Auto-marquage présence si signature apprenant et statut absent/not_recorded
+  if (input.signerRole === "learner") {
+    const { data: existing } = await supabase
+      .from("attendances")
+      .select("status")
+      .eq("enrollment_id", input.enrollmentId)
+      .eq("period_date", input.periodDate)
+      .eq("moment", input.moment)
+      .maybeSingle<{ status: string | null }>();
+    const current = existing?.status ?? null;
+    if (!current || current === "not_recorded") {
+      await supabase.from("attendances").upsert(
+        {
+          enrollment_id: input.enrollmentId,
+          period_date: input.periodDate,
+          moment: input.moment,
+          status: "present",
+          marked_by: null,
+        },
+        { onConflict: "enrollment_id,period_date,moment" },
+      );
+    }
+  }
+
+  revalidatePath(`/formateur/${token}/sessions/${sessionId}/emargement`);
+  return { ok: true };
+}
+
+export async function clearSignatureAsTrainer(
+  token: string,
+  sessionId: string,
+  input: {
+    enrollmentId: string;
+    periodDate: string;
+    moment: AttendanceMoment;
+    signerRole: "learner" | "trainer";
+  },
+): Promise<{ ok: boolean; error?: string }> {
+  const supabase = createAdminClient();
+  const ctx = await validateEnrollmentForTrainer(
+    supabase,
+    token,
+    sessionId,
+    input.enrollmentId,
+  );
+  if (!ctx) return { ok: false, error: "Accès refusé." };
+
+  const { error } = await supabase
+    .from("attendance_signatures")
+    .delete()
+    .eq("enrollment_id", input.enrollmentId)
+    .eq("period_date", input.periodDate)
+    .eq("moment", input.moment)
+    .eq("signer_role", input.signerRole);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath(`/formateur/${token}/sessions/${sessionId}/emargement`);
+  return { ok: true };
+}
+
+// ============================================================
+// Phase A bis — QR code session (variante getOrCreate /
+// regenerate session_emargement_tokens)
+// ============================================================
+
+export type TrainerSessionQrTokenResult = {
+  ok: boolean;
+  error?: string;
+  publicUrl?: string;
+  token?: string;
+  expiresAt?: string;
+};
+
+export async function getOrCreateSessionQrTokenAsTrainer(
+  token: string,
+  sessionId: string,
+): Promise<TrainerSessionQrTokenResult> {
+  const supabase = createAdminClient();
+  const ctx = await validateTrainerAccess(supabase, token, sessionId);
+  if (!ctx) return { ok: false, error: "Accès refusé." };
+
+  const { data: session } = await supabase
+    .from("sessions")
+    .select("id, end_date")
+    .eq("id", sessionId)
+    .maybeSingle<{ id: string; end_date: string }>();
+  if (!session) return { ok: false, error: "Session introuvable." };
+
+  // Token actif existant ?
+  const { data: existing } = await supabase
+    .from("session_emargement_tokens")
+    .select("token, expires_at")
+    .eq("session_id", sessionId)
+    .gt("expires_at", new Date().toISOString())
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ token: string; expires_at: string }>();
+
+  const origin = await getAppOriginFromHeaders();
+  if (existing) {
+    return {
+      ok: true,
+      token: existing.token,
+      publicUrl: `${origin}/emarger/${existing.token}`,
+      expiresAt: existing.expires_at,
+    };
+  }
+
+  // TTL paramétré sur l'organisation
+  const { data: org } = await supabase
+    .from("organizations")
+    .select("emargement_token_ttl_days")
+    .eq("id", ctx.organizationId)
+    .maybeSingle<{ emargement_token_ttl_days: number | null }>();
+  const ttlDays = org?.emargement_token_ttl_days ?? 7;
+
+  const endDate = new Date(session.end_date);
+  endDate.setHours(23, 59, 59, 999);
+  const expiresAt = new Date(
+    endDate.getTime() + ttlDays * 24 * 60 * 60 * 1000,
+  );
+
+  const newToken = generateRandomToken();
+  const { error: insertError } = await supabase
+    .from("session_emargement_tokens")
+    .insert({
+      session_id: sessionId,
+      token: newToken,
+      expires_at: expiresAt.toISOString(),
+      created_by: null, // formateur sans profile_id Supabase Auth
+    });
+  if (insertError) return { ok: false, error: insertError.message };
+
+  return {
+    ok: true,
+    token: newToken,
+    publicUrl: `${origin}/emarger/${newToken}`,
+    expiresAt: expiresAt.toISOString(),
+  };
+}
+
+export async function regenerateSessionQrTokenAsTrainer(
+  token: string,
+  sessionId: string,
+): Promise<TrainerSessionQrTokenResult> {
+  const supabase = createAdminClient();
+  const ctx = await validateTrainerAccess(supabase, token, sessionId);
+  if (!ctx) return { ok: false, error: "Accès refusé." };
+
+  await supabase
+    .from("session_emargement_tokens")
+    .update({ expires_at: new Date(Date.now() - 1000).toISOString() })
+    .eq("session_id", sessionId)
+    .gt("expires_at", new Date().toISOString());
+
+  const result = await getOrCreateSessionQrTokenAsTrainer(token, sessionId);
+  if (result.ok) {
+    revalidatePath(`/formateur/${token}/sessions/${sessionId}/emargement`);
+  }
+  return result;
+}
+
+// ============================================================
+// Phase B — Envoi du lien de signature par email (distanciel)
+// (variante de sendSignatureLink côté admin)
+// ============================================================
+
+export type SendSignatureLinkAsTrainerResult = {
+  ok: boolean;
+  error?: string;
+  publicUrl?: string;
+};
+
+export async function sendSignatureLinkAsTrainer(
+  token: string,
+  sessionId: string,
+  enrollmentId: string,
+): Promise<SendSignatureLinkAsTrainerResult> {
+  const supabase = createAdminClient();
+  const ctx = await validateEnrollmentForTrainer(
+    supabase,
+    token,
+    sessionId,
+    enrollmentId,
+  );
+  if (!ctx) return { ok: false, error: "Accès refusé." };
+
+  const { data: enrollment } = await supabase
+    .from("session_enrollments")
+    .select(
+      "id, learner:learners(first_name, last_name, email, civility), session:sessions(organization_id, formation:formations(title), start_date, end_date)",
+    )
+    .eq("id", enrollmentId)
+    .maybeSingle<{
+      id: string;
+      learner: {
+        first_name: string | null;
+        last_name: string | null;
+        email: string | null;
+        civility: string | null;
+      } | null;
+      session: {
+        organization_id: string;
+        formation: { title: string } | null;
+        start_date: string;
+        end_date: string;
+      } | null;
+    }>();
+
+  if (!enrollment) return { ok: false, error: "Inscription introuvable." };
+  if (!enrollment.learner?.email) {
+    return {
+      ok: false,
+      error: "L'apprenant n'a pas d'adresse email renseignée.",
+    };
+  }
+  if (!isResendConfigured()) {
+    return {
+      ok: false,
+      error: "L'envoi automatique n'est pas configuré (Resend).",
+    };
+  }
+
+  const linkToken = generateRandomToken();
+  const { error: insertError } = await supabase
+    .from("signature_links")
+    .insert({
+      enrollment_id: enrollmentId,
+      token: linkToken,
+      expires_at: new Date(
+        Date.now() + 30 * 24 * 60 * 60 * 1000,
+      ).toISOString(),
+    });
+  if (insertError) return { ok: false, error: insertError.message };
+
+  const origin = await getAppOriginFromHeaders();
+  const publicUrl = `${origin}/signer/${linkToken}`;
+  const learnerName = [
+    enrollment.learner.first_name,
+    enrollment.learner.last_name,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const formationTitle =
+    enrollment.session?.formation?.title ?? "votre formation";
+
+  const { data: org } = await supabase
+    .from("organizations")
+    .select("name, email")
+    .eq("id", ctx.organizationId)
+    .maybeSingle<{ name: string; email: string | null }>();
+  const orgName = org?.name ?? "Notre organisme";
+
+  const subject = `Signature de votre feuille d'émargement — ${formationTitle}`;
+  const html = `
+    <p>Bonjour ${enrollment.learner.civility ?? ""} ${learnerName},</p>
+    <p>Pour finaliser le suivi administratif de votre formation
+    <strong>« ${formationTitle} »</strong>, merci de bien vouloir signer
+    votre feuille d'émargement en cliquant sur le lien ci-dessous :</p>
+    <p style="margin: 24px 0;">
+      <a href="${publicUrl}"
+         style="display:inline-block;background:#1e40af;color:white;
+                text-decoration:none;padding:12px 24px;border-radius:8px;
+                font-weight:bold;">
+        Signer ma feuille d'émargement
+      </a>
+    </p>
+    <p>Ce lien est strictement personnel et restera valable pendant 30 jours.</p>
+    <p>Bien cordialement,<br/><strong>${orgName}</strong></p>
+  `;
+  const text = `Bonjour ${learnerName},\n\nMerci de signer votre feuille d'émargement à l'adresse suivante :\n${publicUrl}\n\nLien valable 30 jours.\n\nCordialement,\n${orgName}`;
+
+  const result = await sendEmail({
+    to: enrollment.learner.email,
+    toName: learnerName,
+    subject,
+    html,
+    text,
+    replyTo: org?.email ?? undefined,
+  });
+
+  await supabase.from("email_log").insert({
+    organization_id: ctx.organizationId,
+    enrollment_id: enrollmentId,
+    type: "signature_link",
+    to_email: enrollment.learner.email,
+    to_name: learnerName,
+    subject,
+    status: result.ok ? "sent" : "failed",
+    provider: "resend",
+    provider_id: result.ok ? result.providerId : null,
+    error: result.ok ? null : result.error,
+    sent_at: result.ok ? new Date().toISOString() : null,
+  });
+
+  revalidatePath(`/formateur/${token}/sessions/${sessionId}/emargement`);
+  if (!result.ok) return { ok: false, error: result.error, publicUrl };
+  return { ok: true, publicUrl };
+}
+
+// ============================================================
+// Phase C — Pointage manuel présent/absent/excusé/retard
+// (variante de setAttendance côté admin)
+// ============================================================
+
+export async function setAttendanceAsTrainer(
+  token: string,
+  sessionId: string,
+  enrollmentId: string,
+  periodDate: string,
+  moment: AttendanceMoment,
+  formData: FormData,
+): Promise<void> {
+  const supabase = createAdminClient();
+  const ctx = await validateEnrollmentForTrainer(
+    supabase,
+    token,
+    sessionId,
+    enrollmentId,
+  );
+  if (!ctx) return; // silent fail = comportement admin similaire
+
+  const statusRaw = formData.get("status");
+  const status =
+    (typeof statusRaw === "string" ? statusRaw : "not_recorded") as AttendanceStatus;
+  const noteRaw = formData.get("note");
+  const note =
+    typeof noteRaw === "string" && noteRaw.trim() !== ""
+      ? noteRaw.trim()
+      : null;
+
+  const { error } = await supabase.from("attendances").upsert(
+    {
+      enrollment_id: enrollmentId,
+      period_date: periodDate,
+      moment,
+      status,
+      note,
+      marked_by: null,
+    },
+    { onConflict: "enrollment_id,period_date,moment" },
+  );
+
+  if (error) {
+    console.error("setAttendanceAsTrainer error:", error, {
+      sessionId,
+      enrollmentId,
+      periodDate,
+      moment,
+    });
+  }
+
+  revalidatePath(`/formateur/${token}/sessions/${sessionId}/emargement`);
 }
