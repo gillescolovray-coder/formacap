@@ -2,11 +2,28 @@ import Link from "next/link";
 import {
   AlertTriangle,
   ArrowRight,
+  Award,
+  Banknote,
   Building2,
   Calendar,
+  CalendarClock,
+  CheckCircle2,
+  ClipboardCheck,
+  ClipboardList,
+  FileWarning,
   GraduationCap,
+  Inbox,
+  Key,
+  Mail,
+  MailX,
+  PenSquare,
+  PenTool,
   Plus,
+  ShieldCheck,
+  Target,
+  TrendingUp,
   Users,
+  UserX,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/page-header";
@@ -23,6 +40,23 @@ import {
   type InscriptionOverviewRow,
 } from "./_inscriptions-overview-table";
 import { MonthlyStats, type MonthlyStats as MonthlyStatsType } from "./_monthly-stats";
+import { KpiCard } from "./_kpi-card";
+import {
+  computeQualiopiScores,
+  computeUpcomingRevenueHt,
+  countEnrollmentsLearnerNoCompany,
+  countEnrollmentsLearnerNoEmail,
+  countPreinscriptionsPending,
+  countSessionsConfirmedNoEnrollment,
+  countSessionsConfirmedNoQuiz,
+  countSessionsConfirmedNoTrainer,
+  countSessionsEmargementMissing,
+  countSessionsPositionnementIncomplete,
+  countSessionsStartingThisWeek,
+  countSessionsWithoutTrainerReport,
+  countTrainersWithoutFormations,
+  countTrainersWithoutPortal,
+} from "./_kpi-queries";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -129,6 +163,63 @@ export default async function DashboardPage() {
     urssafsAlerts.length +
     qualiopisAlerts.length +
     (locationsToVerify?.length ?? 0);
+
+  // ============================================================
+  // KPI Dashboard — refonte 2026-05-23 (Gilles)
+  // 16 KPI groupés en 4 sections : Alertes / Sessions / Pipeline / Qualiopi
+  // ============================================================
+  const [
+    sessionsNoTrainer,
+    sessionsNoQuiz,
+    sessionsNoEnrollment,
+    sessionsThisWeek,
+    sessionsPositionnementMissing,
+    sessionsEmargementMissing,
+    sessionsNoBilan,
+    preinscriptionsPending,
+    enrollmentsNoEmail,
+    enrollmentsNoCompany,
+    upcomingRevenueHt,
+    qualiopiScores,
+    trainersNoFormations,
+    trainersNoPortal,
+  ] = await Promise.all([
+    countSessionsConfirmedNoTrainer(supabase),
+    countSessionsConfirmedNoQuiz(supabase),
+    countSessionsConfirmedNoEnrollment(supabase),
+    countSessionsStartingThisWeek(supabase),
+    countSessionsPositionnementIncomplete(supabase),
+    countSessionsEmargementMissing(supabase),
+    countSessionsWithoutTrainerReport(supabase),
+    countPreinscriptionsPending(supabase),
+    countEnrollmentsLearnerNoEmail(supabase),
+    countEnrollmentsLearnerNoCompany(supabase),
+    computeUpcomingRevenueHt(supabase),
+    computeQualiopiScores(supabase, 30),
+    countTrainersWithoutFormations(supabase),
+    countTrainersWithoutPortal(supabase),
+  ]);
+
+  // Compteur "sessions 100% Qualiopi sur 30 derniers jours"
+  const qualiopiFull = qualiopiScores.filter((s) => s.scorePercent === 100).length;
+  // Top 5 sessions à compléter (score < 100%) pour aperçu rapide
+  const qualiopiWorst = qualiopiScores
+    .filter((s) => s.scorePercent < 100)
+    .sort((a, b) => a.scorePercent - b.scorePercent)
+    .slice(0, 5);
+
+  // Format CA HT (sans décimales pour cards compactes)
+  const upcomingRevenueLabel = upcomingRevenueHt.toLocaleString("fr-FR", {
+    maximumFractionDigits: 0,
+  });
+
+  const totalNewAlerts =
+    sessionsNoTrainer +
+    sessionsNoQuiz +
+    sessionsNoEnrollment +
+    rcAlerts.length +
+    urssafsAlerts.length +
+    qualiopisAlerts.length;
 
   // Tableau « Apprenants inscrits par session » (Gilles 2026-05-20)
   // Source : session_enrollments (= apprenants réellement confirmés).
@@ -520,6 +611,299 @@ export default async function DashboardPage() {
             </ul>
           </section>
         )}
+
+        {/* ============================================================
+            KPI Dashboard — 4 sections thématiques (Gilles 2026-05-23)
+        ============================================================ */}
+
+        {/* 🚨 ALERTES URGENTES */}
+        <section>
+          <h2 className="text-sm font-bold uppercase tracking-wider text-rose-700 mb-3 inline-flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4" />
+            Alertes urgentes
+            {totalNewAlerts > 0 && (
+              <span className="text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200 px-2 py-0.5 rounded-full">
+                {totalNewAlerts} à traiter
+              </span>
+            )}
+          </h2>
+          <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+            <KpiCard
+              label="Docs formateurs expirés/<90j"
+              value={
+                rcAlerts.length + urssafsAlerts.length + qualiopisAlerts.length
+              }
+              hint="RC pro, URSSAF ou Qualiopi à renouveler"
+              icon={ShieldCheck}
+              accent="red"
+              href="/formateurs"
+              pill={
+                rcAlerts.length + urssafsAlerts.length + qualiopisAlerts.length >
+                0
+                  ? { text: "Urgent", tone: "red" }
+                  : undefined
+              }
+            />
+            <KpiCard
+              label="Sessions confirmées sans formateur"
+              value={sessionsNoTrainer}
+              hint="Personne n'anime ! À assigner d'urgence."
+              icon={UserX}
+              accent="red"
+              href="/sessions"
+              pill={
+                sessionsNoTrainer > 0
+                  ? { text: "Urgent", tone: "red" }
+                  : undefined
+              }
+            />
+            <KpiCard
+              label="Sessions confirmées sans quiz"
+              value={sessionsNoQuiz}
+              hint="Mesure pré/post manquante (Qualiopi ind. 11)"
+              icon={Target}
+              accent="amber"
+              href="/sessions"
+            />
+            <KpiCard
+              label="Sessions confirmées sans apprenants"
+              value={sessionsNoEnrollment}
+              hint="Risque d'annulation : aucune inscription"
+              icon={Inbox}
+              accent="amber"
+              href="/sessions"
+            />
+          </div>
+        </section>
+
+        {/* 📅 SESSIONS À SUIVRE */}
+        <section>
+          <h2 className="text-sm font-bold uppercase tracking-wider text-cyan-700 mb-3 inline-flex items-center gap-2">
+            <CalendarClock className="h-4 w-4" />
+            Sessions à suivre
+          </h2>
+          <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+            <KpiCard
+              label="À démarrer cette semaine"
+              value={sessionsThisWeek}
+              hint="Sessions confirmées dans les 7 prochains jours"
+              icon={Calendar}
+              accent="cyan"
+              href="/sessions"
+            />
+            <KpiCard
+              label="Positionnement incomplet (<7j)"
+              value={sessionsPositionnementMissing}
+              hint="Apprenants n'ayant pas rempli leur positionnement, alors que la session démarre dans moins de 7j"
+              icon={ClipboardList}
+              accent="amber"
+              href="/sessions"
+              pill={
+                sessionsPositionnementMissing > 0
+                  ? { text: "Qualiopi 12", tone: "amber" }
+                  : undefined
+              }
+            />
+            <KpiCard
+              label="Émargement manquant (terminées 90j)"
+              value={sessionsEmargementMissing}
+              hint="Sessions terminées sans aucune signature recueillie"
+              icon={PenTool}
+              accent="amber"
+              href="/sessions"
+              pill={
+                sessionsEmargementMissing > 0
+                  ? { text: "Qualiopi R9", tone: "amber" }
+                  : undefined
+              }
+            />
+            <KpiCard
+              label="Bilan formateur manquant (terminées 90j)"
+              value={sessionsNoBilan}
+              hint="Sessions sans bilan formateur signé (Module 7)"
+              icon={PenSquare}
+              accent="amber"
+              href="/sessions"
+              pill={
+                sessionsNoBilan > 0
+                  ? { text: "Qualiopi 22", tone: "amber" }
+                  : undefined
+              }
+            />
+          </div>
+        </section>
+
+        {/* 💰 PIPELINE COMMERCIAL */}
+        <section>
+          <h2 className="text-sm font-bold uppercase tracking-wider text-emerald-700 mb-3 inline-flex items-center gap-2">
+            <TrendingUp className="h-4 w-4" />
+            Pipeline commercial
+          </h2>
+          <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+            <KpiCard
+              label="Pré-inscriptions partenaires en attente"
+              value={preinscriptionsPending}
+              hint="OF/Prescripteurs : à valider de votre côté"
+              icon={Inbox}
+              accent="violet"
+              href="/inscriptions"
+              pill={
+                preinscriptionsPending > 0
+                  ? { text: "À valider", tone: "amber" }
+                  : undefined
+              }
+            />
+            <KpiCard
+              label="Inscriptions sans email apprenant"
+              value={enrollmentsNoEmail}
+              hint="Pas de convocation possible par email"
+              icon={MailX}
+              accent="amber"
+              href="/inscriptions"
+            />
+            <KpiCard
+              label="Inscriptions sans entreprise"
+              value={enrollmentsNoCompany}
+              hint="Apprenants indépendants ou rattachement oublié"
+              icon={Mail}
+              accent="zinc"
+              href="/inscriptions"
+            />
+            <KpiCard
+              label="CA potentiel à venir"
+              value={`${upcomingRevenueLabel} €`}
+              hint="Somme HT des sessions confirmées non terminées"
+              icon={Banknote}
+              accent="emerald"
+            />
+          </div>
+        </section>
+
+        {/* ✅ ÉTAT QUALIOPI */}
+        <section>
+          <h2 className="text-sm font-bold uppercase tracking-wider text-violet-700 mb-3 inline-flex items-center gap-2">
+            <Award className="h-4 w-4" />
+            État Qualiopi
+          </h2>
+          <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+            <KpiCard
+              label="Sessions 100% Qualiopi (90j)"
+              value={qualiopiFull}
+              hint="Positionnement + émargement + éval à chaud + bilan formateur tous complets"
+              icon={CheckCircle2}
+              accent="emerald"
+              pill={
+                qualiopiFull > 0 && qualiopiScores.length > 0
+                  ? {
+                      text: `${Math.round((qualiopiFull / qualiopiScores.length) * 100)}% du total`,
+                      tone: "emerald",
+                    }
+                  : undefined
+              }
+            />
+            <KpiCard
+              label="Sessions à compléter"
+              value={qualiopiScores.length - qualiopiFull}
+              hint="Sessions terminées (90j) avec au moins 1 indicateur Qualiopi manquant"
+              icon={ClipboardCheck}
+              accent="amber"
+            />
+            <KpiCard
+              label="Formateurs sans formation animable"
+              value={trainersNoFormations}
+              hint="Qualiopi ind. 21 : adéquation formateur ↔ formations à renseigner"
+              icon={FileWarning}
+              accent="amber"
+              href="/formateurs"
+            />
+            <KpiCard
+              label="Formateurs sans accès portail activé"
+              value={trainersNoPortal}
+              hint="Module activable depuis la fiche formateur (à venir)"
+              icon={Key}
+              accent="zinc"
+              href="/formateurs"
+            />
+          </div>
+
+          {/* Top 5 sessions à compléter (score Qualiopi < 100%) */}
+          {qualiopiWorst.length > 0 && (
+            <div className="mt-3 rounded-xl bg-white border border-zinc-200 shadow-sm overflow-hidden">
+              <div className="px-4 py-2.5 bg-zinc-50 border-b border-zinc-200">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-700">
+                  Top 5 sessions à compléter (90 derniers jours)
+                </h3>
+              </div>
+              <ul className="divide-y divide-zinc-100">
+                {qualiopiWorst.map((s) => (
+                  <li key={s.sessionId} className="px-4 py-2.5">
+                    <Link
+                      href={`/sessions/${s.sessionId}`}
+                      className="flex items-center justify-between gap-3 hover:bg-zinc-50 -mx-4 px-4 -my-2.5 py-2.5 transition-colors"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium text-zinc-800 truncate">
+                          {s.title}
+                        </div>
+                        <div className="text-[11px] text-zinc-500 mt-0.5 flex items-center gap-2 flex-wrap">
+                          <span>
+                            {new Date(s.endDate).toLocaleDateString("fr-FR")}
+                          </span>
+                          <span
+                            className={
+                              s.positioningOk
+                                ? "text-emerald-700"
+                                : "text-rose-600 font-semibold"
+                            }
+                          >
+                            {s.positioningOk ? "✓" : "✗"} Positionnement
+                          </span>
+                          <span
+                            className={
+                              s.emargementOk
+                                ? "text-emerald-700"
+                                : "text-rose-600 font-semibold"
+                            }
+                          >
+                            {s.emargementOk ? "✓" : "✗"} Émargement
+                          </span>
+                          <span
+                            className={
+                              s.evaluationOk
+                                ? "text-emerald-700"
+                                : "text-rose-600 font-semibold"
+                            }
+                          >
+                            {s.evaluationOk ? "✓" : "✗"} Éval à chaud
+                          </span>
+                          <span
+                            className={
+                              s.bilanOk
+                                ? "text-emerald-700"
+                                : "text-rose-600 font-semibold"
+                            }
+                          >
+                            {s.bilanOk ? "✓" : "✗"} Bilan
+                          </span>
+                        </div>
+                      </div>
+                      <span
+                        className={
+                          "text-lg font-bold tabular-nums shrink-0 " +
+                          (s.scorePercent >= 75
+                            ? "text-amber-600"
+                            : "text-rose-600")
+                        }
+                      >
+                        {s.scorePercent}%
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </section>
 
         {/* Statistiques */}
         <section>
