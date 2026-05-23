@@ -210,16 +210,23 @@ export function parseFormationFromText(rawText: string): ParsedFormation {
   const refMatch = text.match(/(?:Réf\.?|Référence|Code)\s*:?\s*([A-Z0-9-]+)/i);
   if (refMatch) result.internal_code = refMatch[1];
 
-  // Durée combinée
+  // Durée combinée — accepte les décimaux dans "jours" pour gérer
+  // les demi-journées (0.5 j, 1.5 j…) — Gilles 2026-05-23.
   const durationBoth = text.match(
-    /(\d+)\s*jours?\s*(?:soit|=|\(|de)?\s*(\d+(?:[.,]\d+)?)\s*heures?/i,
+    /(\d+(?:[.,]\d+)?)\s*jours?\s*(?:soit|=|\(|de)?\s*(\d+(?:[.,]\d+)?)\s*heures?/i,
   );
   if (durationBoth) {
-    result.duration_days = parseInt(durationBoth[1], 10);
+    result.duration_days = parseFloat(durationBoth[1].replace(",", "."));
     result.duration_hours = parseFloat(durationBoth[2].replace(",", "."));
   } else {
-    const daysOnly = text.match(/(\d+)\s*jours?/i);
-    if (daysOnly) result.duration_days = parseInt(daysOnly[1], 10);
+    // Match "½ journée" / "demi-journée" → 0.5
+    if (/(?:½\s*journ[ée]e|demi[-\s]journ[ée]e)/i.test(text)) {
+      result.duration_days = 0.5;
+    } else {
+      const daysOnly = text.match(/(\d+(?:[.,]\d+)?)\s*jours?/i);
+      if (daysOnly)
+        result.duration_days = parseFloat(daysOnly[1].replace(",", "."));
+    }
     const hoursOnly = text.match(/(\d+(?:[.,]\d+)?)\s*heures?/i);
     if (hoursOnly)
       result.duration_hours = parseFloat(hoursOnly[1].replace(",", "."));

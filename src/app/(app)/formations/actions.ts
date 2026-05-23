@@ -92,7 +92,10 @@ function buildPayload(formData: FormData) {
     evaluation_methods: parseText(formData.get("evaluation_methods")),
     accessibility: parseText(formData.get("accessibility")),
     duration_hours: parseNumber(formData.get("duration_hours")),
-    duration_days: parseInt(formData.get("duration_days")),
+    // duration_days : NUMERIC depuis migration 0103 (accepte 0.5, 1.5...).
+    // On utilise parseNumber pour accepter les décimaux (multiples de 0.5
+    // contrôlés par CHECK constraint côté BDD).
+    duration_days: parseNumber(formData.get("duration_days")),
     modality:
       (parseText(formData.get("modality")) as FormationModality | null) ??
       null,

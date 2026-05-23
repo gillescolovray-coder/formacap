@@ -22,8 +22,8 @@ Format JSON attendu :
 {
   "title": string,
   "internal_code": string | null,
-  "duration_days": number | null,
-  "duration_hours": number | null,
+  "duration_days": number | null,    // Multiple de 0.5 (ex: 0.5 pour une demi-journée, 1, 1.5, 2…)
+  "duration_hours": number | null,    // Décimal accepté (ex: 3.5 pour une demi-journée)
   "min_participants": number | null,
   "max_participants": number | null,
   "public_price_excl_tax": number | null,

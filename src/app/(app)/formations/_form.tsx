@@ -255,12 +255,15 @@ export function FormationForm({
               id="duration_days"
               name="duration_days"
               type="number"
-              step="1"
+              step="0.5"
               min="0"
               defaultValue={formation?.duration_days ?? ""}
-              placeholder="Ex: 2"
+              placeholder="Ex: 2 ou 0.5"
               className="bg-white dark:bg-zinc-900"
             />
+            <p className="text-[10px] text-blue-700/70 dark:text-blue-400/70 italic">
+              Accepte 0.5, 1, 1.5, 2… (demi-journée = 0.5)
+            </p>
           </div>
           <div className="rounded-xl border border-sky-200 dark:border-sky-900/50 bg-sky-50/50 dark:bg-sky-950/20 p-3.5 space-y-2">
             <Label
