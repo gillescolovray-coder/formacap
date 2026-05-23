@@ -1,6 +1,6 @@
 import { updatePassword } from "../actions";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import {
   Card,
@@ -29,10 +29,9 @@ export default async function ResetPasswordPage({
         <form action={updatePassword} className="space-y-4" id="reset-form">
           <div className="space-y-2">
             <Label htmlFor="password">Nouveau mot de passe</Label>
-            <Input
+            <PasswordInput
               id="password"
               name="password"
-              type="password"
               required
               autoComplete="new-password"
               minLength={6}
@@ -40,10 +39,9 @@ export default async function ResetPasswordPage({
           </div>
           <div className="space-y-2">
             <Label htmlFor="password_confirm">Confirmation</Label>
-            <Input
+            <PasswordInput
               id="password_confirm"
               name="password_confirm"
-              type="password"
               required
               autoComplete="new-password"
               minLength={6}
