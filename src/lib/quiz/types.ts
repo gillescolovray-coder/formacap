@@ -29,7 +29,8 @@ export type QuestionType =
   | "true_false"
   | "text_exact"
   | "match_pairs"
-  | "reorder";
+  | "reorder"
+  | "scale_0_10";
 
 export const QUESTION_TYPE_LABELS: Record<QuestionType, string> = {
   qcm_single: "QCM (1 bonne réponse)",
@@ -38,6 +39,7 @@ export const QUESTION_TYPE_LABELS: Record<QuestionType, string> = {
   text_exact: "Réponse texte exacte",
   match_pairs: "Associer par paires",
   reorder: "Remettre dans l'ordre",
+  scale_0_10: "Échelle 0 à 10 (auto-évaluation)",
 };
 
 export type QuizOption = { id: string; label: string };
@@ -53,7 +55,9 @@ export type QuizQuestion = {
   position: number;
   type: QuestionType;
   text: string;
-  /** QCM : tableau d'options. Null pour true_false / text_exact. */
+  /** QCM : tableau d'options. Null pour true_false / text_exact.
+   *  scale_0_10 : 2 entrées d'id 'min' et 'max' avec libellés des
+   *  extrémités (ex: 0 = 'Pas du tout', 10 = 'Tout à fait'). */
   options: QuizOption[] | null;
   /**
    * Bonne(s) réponse(s).
@@ -61,8 +65,9 @@ export type QuizQuestion = {
    * - qcm_multiple : ids d'options (string[])
    * - true_false   : boolean
    * - text_exact   : string attendu (comparaison insensible casse/accents)
+   * - scale_0_10   : null (pas de bonne réponse, auto-évaluation)
    */
-  correct_answer: string | string[] | boolean;
+  correct_answer: string | string[] | boolean | null;
   points: number;
   explanation: string | null;
 };
@@ -85,7 +90,8 @@ export type QuizTemplate = {
 
 export type QuizAttemptAnswer = {
   question_id: string;
-  answer: string | string[] | boolean | null;
+  /** Type union étendu pour `scale_0_10` (valeur numérique 0-10). */
+  answer: string | string[] | boolean | number | null;
   is_correct: boolean;
   points_earned: number;
 };
@@ -129,7 +135,7 @@ export function normalizeText(s: string): string {
  */
 export function evaluateAnswer(
   question: QuizQuestion,
-  answer: string | string[] | boolean | null,
+  answer: string | string[] | boolean | number | null,
 ): { is_correct: boolean; points_earned: number } {
   if (answer === null || answer === undefined) {
     return { is_correct: false, points_earned: 0 };
@@ -192,6 +198,17 @@ export function evaluateAnswer(
         expected.length === got.length &&
         expected.every((v, i) => v === got[i]);
       return { is_correct: ok, points_earned: ok ? question.points : 0 };
+    }
+    case "scale_0_10": {
+      // Auto-évaluation : pas de bonne réponse.
+      // Score = valeur saisie (clampée 0..10), is_correct = true tant
+      // que l'apprenant a répondu (utile pour calcul "complétion").
+      const n = typeof answer === "number" ? answer : Number(answer);
+      if (!Number.isFinite(n)) {
+        return { is_correct: false, points_earned: 0 };
+      }
+      const clamped = Math.max(0, Math.min(10, Math.round(n)));
+      return { is_correct: true, points_earned: clamped };
     }
   }
 }

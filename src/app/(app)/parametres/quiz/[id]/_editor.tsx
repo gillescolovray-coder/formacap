@@ -89,13 +89,14 @@ export function QuizEditor({ quizId, initialQuestions }: Props) {
             <Plus className="h-3.5 w-3.5" />
             Ajouter une question
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
             {(
               [
                 "qcm_single",
                 "qcm_multiple",
                 "true_false",
                 "text_exact",
+                "scale_0_10",
               ] as QuestionType[]
             ).map((type) => {
               const t = TYPE_STYLES[type];
@@ -214,6 +215,12 @@ const TYPE_STYLES: Record<
     text: "text-orange-700",
     badge: "bg-orange-50 text-orange-700 border-orange-200",
     short: "1→N",
+  },
+  scale_0_10: {
+    bg: "bg-indigo-100",
+    text: "text-indigo-700",
+    badge: "bg-indigo-50 text-indigo-700 border-indigo-200",
+    short: "0-10",
   },
 };
 
@@ -353,9 +360,9 @@ function QuestionEditor({
       ? ((question.options ?? []) as unknown as QuizPair[])
       : [],
   );
-  const [correct, setCorrect] = useState<string | string[] | boolean>(
-    question.correct_answer,
-  );
+  const [correct, setCorrect] = useState<
+    string | string[] | boolean | null
+  >(question.correct_answer);
   const [points, setPoints] = useState(question.points);
   const [explanation, setExplanation] = useState(question.explanation ?? "");
   const [savePending, startSave] = useTransition();
@@ -436,6 +443,18 @@ function QuestionEditor({
       setOptions(opts);
       setPairs([]);
       setCorrect(opts.map((o) => o.id));
+    } else if (newType === "scale_0_10") {
+      // Auto-évaluation : pas de bonne réponse. Les options portent
+      // les libellés des extrémités (min/max).
+      const existingMin = options.find((o) => o.id === "min")?.label;
+      const existingMax = options.find((o) => o.id === "max")?.label;
+      setOptions([
+        { id: "min", label: existingMin ?? "Pas du tout" },
+        { id: "max", label: existingMax ?? "Tout à fait" },
+      ]);
+      setPairs([]);
+      setCorrect(null as unknown as string);
+      setPoints(10);
     }
   }
 
@@ -480,25 +499,30 @@ function QuestionEditor({
     setError(null);
     // Pour match_pairs : on envoie `pairs` à la place de `options`.
     // Pour reorder : on resynchronise correct_answer avec l'ordre des items.
+    // Pour scale_0_10 : options = [{id:'min',label}, {id:'max',label}],
+    //                   correct_answer = null, points = 10.
     const effectiveOptions =
       type === "match_pairs"
         ? (pairs as unknown as QuizOption[])
         : options.length > 0
           ? options
           : null;
-    const effectiveCorrect =
+    const effectiveCorrect: string | string[] | boolean | null =
       type === "reorder"
         ? options.map((o) => o.id)
         : type === "match_pairs"
-          ? (null as unknown as string)
-          : correct;
+          ? null
+          : type === "scale_0_10"
+            ? null
+            : correct;
+    const effectivePoints = type === "scale_0_10" ? 10 : points;
     startSave(async () => {
       const res = await updateQuestion(question.id, {
         text,
         type,
         options: effectiveOptions,
         correct_answer: effectiveCorrect,
-        points,
+        points: effectivePoints,
         explanation: explanation || null,
       });
       if (!res.ok) {
@@ -512,7 +536,7 @@ function QuestionEditor({
         type,
         options: effectiveOptions,
         correct_answer: effectiveCorrect,
-        points,
+        points: effectivePoints,
         explanation: explanation || null,
       });
     });
@@ -568,6 +592,7 @@ function QuestionEditor({
               "qcm_multiple",
               "true_false",
               "text_exact",
+              "scale_0_10",
             ] as QuestionType[]
           ).map((t) => (
             <option key={t} value={t}>
@@ -698,6 +723,98 @@ function QuestionEditor({
           <p className="text-[11px] text-zinc-500">
             Comparaison insensible à la casse et aux accents.
           </p>
+        </div>
+      )}
+
+      {/* Échelle 0-10 — auto-évaluation avec libellés des extrémités */}
+      {type === "scale_0_10" && (
+        <div className="space-y-2">
+          <label className="text-xs font-medium text-zinc-700">
+            Libellés des extrémités de l&apos;échelle
+            <span className="text-zinc-500 font-normal ml-1">
+              (affichés sous 0 et 10 dans le portail apprenant)
+            </span>
+          </label>
+          <div className="rounded-lg border border-indigo-200 bg-indigo-50/30 p-3 space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <div className="text-[10px] uppercase tracking-wider font-bold text-indigo-700 mb-1">
+                  Sous le 0 (gauche)
+                </div>
+                <input
+                  type="text"
+                  value={
+                    options.find((o) => o.id === "min")?.label ?? ""
+                  }
+                  onChange={(e) => {
+                    const min = e.target.value;
+                    const max =
+                      options.find((o) => o.id === "max")?.label ?? "";
+                    setOptions([
+                      { id: "min", label: min },
+                      { id: "max", label: max },
+                    ]);
+                  }}
+                  placeholder="Ex : Pas du tout"
+                  className="h-9 w-full rounded-md border border-zinc-300 px-3 text-sm bg-white"
+                />
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-wider font-bold text-indigo-700 mb-1">
+                  Sous le 10 (droite)
+                </div>
+                <input
+                  type="text"
+                  value={
+                    options.find((o) => o.id === "max")?.label ?? ""
+                  }
+                  onChange={(e) => {
+                    const max = e.target.value;
+                    const min =
+                      options.find((o) => o.id === "min")?.label ?? "";
+                    setOptions([
+                      { id: "min", label: min },
+                      { id: "max", label: max },
+                    ]);
+                  }}
+                  placeholder="Ex : Tout à fait"
+                  className="h-9 w-full rounded-md border border-zinc-300 px-3 text-sm bg-white"
+                />
+              </div>
+            </div>
+            {/* Aperçu de l'échelle telle qu'elle sera vue par l'apprenant */}
+            <div className="pt-2 border-t border-indigo-200">
+              <div className="text-[10px] uppercase tracking-wider font-bold text-indigo-700 mb-1.5">
+                Aperçu apprenant
+              </div>
+              <div className="flex items-center gap-1 flex-wrap">
+                {Array.from({ length: 11 }, (_, i) => i).map((n) => (
+                  <span
+                    key={n}
+                    className="inline-flex items-center justify-center h-8 w-8 rounded-md border border-indigo-200 bg-white text-xs font-semibold text-zinc-600"
+                  >
+                    {n}
+                  </span>
+                ))}
+              </div>
+              <div className="flex justify-between text-[11px] text-zinc-500 mt-1 px-0.5">
+                <span className="italic">
+                  {options.find((o) => o.id === "min")?.label ||
+                    "Pas du tout"}
+                </span>
+                <span className="italic">
+                  {options.find((o) => o.id === "max")?.label ||
+                    "Tout à fait"}
+                </span>
+              </div>
+            </div>
+            <p className="text-[11px] text-zinc-500 italic">
+              Auto-évaluation : pas de bonne réponse. La note saisie
+              par l&apos;apprenant compte directement comme score
+              (max&nbsp;10). Utile pour mesurer la progression
+              pré/post sur le ressenti.
+            </p>
+          </div>
         </div>
       )}
 
@@ -899,14 +1016,21 @@ function QuestionEditor({
       {/* Points */}
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-zinc-700">Points</label>
-        <input
-          type="number"
-          min={0}
-          step={1}
-          value={points}
-          onChange={(e) => setPoints(Number(e.target.value))}
-          className="h-9 w-24 rounded-md border border-zinc-300 px-3 text-sm"
-        />
+        {type === "scale_0_10" ? (
+          <div className="text-xs text-zinc-600 bg-indigo-50/50 border border-indigo-200 rounded-md px-3 py-2">
+            <strong>10 points</strong> (fixe pour ce type — le score
+            obtenu = la note saisie par l&apos;apprenant, max 10).
+          </div>
+        ) : (
+          <input
+            type="number"
+            min={0}
+            step={1}
+            value={points}
+            onChange={(e) => setPoints(Number(e.target.value))}
+            className="h-9 w-24 rounded-md border border-zinc-300 px-3 text-sm"
+          />
+        )}
       </div>
 
       {/* Explication */}

@@ -25,11 +25,14 @@ export function QuizPreview({
   questions: QuizQuestion[];
 }) {
   const [answers, setAnswers] = useState<
-    Record<string, string | string[] | boolean | null>
+    Record<string, string | string[] | boolean | number | null>
   >({});
   const [submitted, setSubmitted] = useState(false);
 
-  function setAnswer(qid: string, v: string | string[] | boolean | null) {
+  function setAnswer(
+    qid: string,
+    v: string | string[] | boolean | number | null,
+  ) {
     setAnswers((p) => ({ ...p, [qid]: v }));
   }
   function toggleMulti(qid: string, opt: string) {
@@ -112,10 +115,14 @@ export function QuizPreview({
               </div>
               <div>
                 <dt className="inline font-semibold text-zinc-600">
-                  Bonne réponse :{" "}
+                  {d.q.type === "scale_0_10"
+                    ? "Note simulée : "
+                    : "Bonne réponse : "}
                 </dt>
                 <dd className="inline">
-                  {formatAnswer(d.q, d.q.correct_answer)}
+                  {d.q.type === "scale_0_10"
+                    ? "Auto-évaluation (pas de bonne réponse)"
+                    : formatAnswer(d.q, d.q.correct_answer)}
                 </dd>
               </div>
               {d.q.explanation && (
@@ -247,6 +254,48 @@ export function QuizPreview({
               onChange={(v) => setAnswer(q.id, v)}
             />
           )}
+          {q.type === "scale_0_10" && (
+            <div className="space-y-2">
+              <div
+                className="grid grid-cols-11 gap-1"
+                role="radiogroup"
+                aria-label="Échelle de 0 à 10"
+              >
+                {Array.from({ length: 11 }, (_, i) => i).map((n) => {
+                  const checked = answers[q.id] === n;
+                  return (
+                    <label
+                      key={n}
+                      className={
+                        "cursor-pointer select-none flex items-center justify-center h-11 rounded-md border-2 text-sm font-bold transition-colors min-h-[44px] " +
+                        (checked
+                          ? "bg-indigo-600 border-indigo-600 text-white"
+                          : "bg-white border-zinc-300 text-zinc-700 hover:border-indigo-400 hover:bg-indigo-50")
+                      }
+                    >
+                      <input
+                        type="radio"
+                        name={q.id}
+                        value={n}
+                        checked={checked}
+                        onChange={() => setAnswer(q.id, n)}
+                        className="sr-only"
+                      />
+                      {n}
+                    </label>
+                  );
+                })}
+              </div>
+              <div className="flex justify-between text-[11px] text-zinc-500 px-0.5">
+                <span className="italic">
+                  {q.options?.find((o) => o.id === "min")?.label ?? "Pas du tout"}
+                </span>
+                <span className="italic">
+                  {q.options?.find((o) => o.id === "max")?.label ?? "Tout à fait"}
+                </span>
+              </div>
+            </div>
+          )}
         </section>
       ))}
 
@@ -264,7 +313,7 @@ export function QuizPreview({
 
 function formatAnswer(
   q: QuizQuestion,
-  ans: string | string[] | boolean | null | undefined,
+  ans: string | string[] | boolean | number | null | undefined,
 ): string {
   if (ans === null || ans === undefined) return "—";
   if (q.type === "true_false") return ans === true ? "Vrai" : ans === false ? "Faux" : "—";
@@ -298,6 +347,11 @@ function formatAnswer(
     const ids = Array.isArray(ans) ? (ans as string[]) : [];
     return ids.map((id, i) => `${i + 1}. ${byId.get(id) ?? id}`).join(" → ");
   }
+  if (q.type === "scale_0_10") {
+    const n = typeof ans === "number" ? ans : Number(ans);
+    if (!Number.isFinite(n)) return "—";
+    return `${n} / 10`;
+  }
   return String(ans);
 }
 
@@ -330,8 +384,8 @@ function MatchPairsInput({
 }: {
   questionId: string;
   pairs: Array<{ id: string; left: string; right: string }>;
-  value: string | string[] | boolean | null | undefined;
-  onChange: (v: string | string[] | boolean | null) => void;
+  value: string | string[] | boolean | number | null | undefined;
+  onChange: (v: string | string[] | boolean | number | null) => void;
 }) {
   const shuffledRights = seededShuffle(pairs.map((p) => p.right), questionId);
   const answer =
@@ -389,8 +443,8 @@ function ReorderInput({
 }: {
   questionId: string;
   items: Array<{ id: string; label: string }>;
-  value: string | string[] | boolean | null | undefined;
-  onChange: (v: string | string[] | boolean | null) => void;
+  value: string | string[] | boolean | number | null | undefined;
+  onChange: (v: string | string[] | boolean | number | null) => void;
 }) {
   const currentOrder = Array.isArray(value)
     ? (value as string[])

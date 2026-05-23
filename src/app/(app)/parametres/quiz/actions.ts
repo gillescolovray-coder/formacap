@@ -157,9 +157,20 @@ export async function addQuestion(
       { id: "i3", label: "Étape 3" },
     ];
     correctAnswer = ["i1", "i2", "i3"];
+  } else if (type === "scale_0_10") {
+    // Auto-évaluation 0-10 : pas de bonne réponse, libellés des
+    // extrémités stockés dans options (id 'min' / id 'max').
+    options = [
+      { id: "min", label: "Pas du tout" },
+      { id: "max", label: "Tout à fait" },
+    ];
+    correctAnswer = null;
   } else {
     correctAnswer = "";
   }
+
+  // scale_0_10 : score max forcé à 10 (la valeur saisie sert de score).
+  const defaultPoints = type === "scale_0_10" ? 10 : 1;
 
   const { data, error } = await supabase
     .from("quiz_questions")
@@ -170,7 +181,7 @@ export async function addQuestion(
       text: "Nouvelle question",
       options,
       correct_answer: correctAnswer,
-      points: 1,
+      points: defaultPoints,
       explanation: null,
     })
     .select("id")
@@ -187,8 +198,12 @@ export async function addQuestion(
 export type UpdateQuestionPayload = {
   text: string;
   type: QuestionType;
-  options: Array<{ id: string; label: string }> | null;
-  correct_answer: string | string[] | boolean;
+  /** Pour match_pairs : Array<{id,left,right}>. Pour scale_0_10 :
+   *  Array<{id:'min'|'max',label}>. Le typage reste large via `unknown`
+   *  côté DB (jsonb). */
+  options: Array<{ id: string; label?: string; left?: string; right?: string }> | null;
+  /** scale_0_10 : null (pas de bonne réponse). */
+  correct_answer: string | string[] | boolean | null;
   points: number;
   explanation: string | null;
 };

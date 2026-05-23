@@ -30,7 +30,7 @@ export function QuizPlay({
       : null;
 
   const [answers, setAnswers] = useState<
-    Record<string, string | string[] | boolean | null>
+    Record<string, string | string[] | boolean | number | null>
   >({});
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,7 +42,7 @@ export function QuizPlay({
 
   function setAnswer(
     questionId: string,
-    value: string | string[] | boolean | null,
+    value: string | string[] | boolean | number | null,
   ) {
     setAnswers((prev) => ({ ...prev, [questionId]: value }));
   }
@@ -194,8 +194,8 @@ function QuestionInput({
 }: {
   index: number;
   question: QuizQuestion;
-  value: string | string[] | boolean | null | undefined;
-  onChange: (v: string | string[] | boolean | null) => void;
+  value: string | string[] | boolean | number | null | undefined;
+  onChange: (v: string | string[] | boolean | number | null) => void;
   onToggleMulti: (optionId: string) => void;
 }) {
   return (
@@ -303,7 +303,78 @@ function QuestionInput({
           onChange={onChange}
         />
       )}
+
+      {question.type === "scale_0_10" && (
+        <ScaleInput
+          questionId={question.id}
+          minLabel={
+            question.options?.find((o) => o.id === "min")?.label ?? "Pas du tout"
+          }
+          maxLabel={
+            question.options?.find((o) => o.id === "max")?.label ?? "Tout à fait"
+          }
+          value={typeof value === "number" ? value : null}
+          onChange={(n) => onChange(n)}
+        />
+      )}
     </section>
+  );
+}
+
+// ============================================================
+// Saisie : Échelle 0 → 10
+// ============================================================
+
+function ScaleInput({
+  questionId,
+  minLabel,
+  maxLabel,
+  value,
+  onChange,
+}: {
+  questionId: string;
+  minLabel: string;
+  maxLabel: string;
+  value: number | null;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <div
+        className="grid grid-cols-11 gap-1"
+        role="radiogroup"
+        aria-label="Échelle de 0 à 10"
+      >
+        {Array.from({ length: 11 }, (_, i) => i).map((n) => {
+          const checked = value === n;
+          return (
+            <label
+              key={n}
+              className={
+                "cursor-pointer select-none flex items-center justify-center h-11 rounded-md border-2 text-sm font-bold transition-colors min-h-[44px] " +
+                (checked
+                  ? "bg-indigo-600 border-indigo-600 text-white"
+                  : "bg-white border-zinc-300 text-zinc-700 hover:border-indigo-400 hover:bg-indigo-50")
+              }
+            >
+              <input
+                type="radio"
+                name={questionId}
+                value={n}
+                checked={checked}
+                onChange={() => onChange(n)}
+                className="sr-only"
+              />
+              {n}
+            </label>
+          );
+        })}
+      </div>
+      <div className="flex justify-between text-[11px] text-zinc-500 px-0.5">
+        <span className="italic">{minLabel}</span>
+        <span className="italic">{maxLabel}</span>
+      </div>
+    </div>
   );
 }
 
@@ -338,8 +409,8 @@ function MatchPairsInput({
 }: {
   questionId: string;
   pairs: Array<{ id: string; left: string; right: string }>;
-  value: string | string[] | boolean | null | undefined;
-  onChange: (v: string | string[] | boolean | null) => void;
+  value: string | string[] | boolean | number | null | undefined;
+  onChange: (v: string | string[] | boolean | number | null) => void;
 }) {
   // Liste mélangée des "right" (stable par question)
   const shuffledRights = seededShuffle(
@@ -401,8 +472,8 @@ function ReorderInput({
 }: {
   questionId: string;
   items: Array<{ id: string; label: string }>;
-  value: string | string[] | boolean | null | undefined;
-  onChange: (v: string | string[] | boolean | null) => void;
+  value: string | string[] | boolean | number | null | undefined;
+  onChange: (v: string | string[] | boolean | number | null) => void;
 }) {
   // Ordre actuel : valeur courante OU mélangé initial
   const currentOrder = Array.isArray(value)
@@ -489,7 +560,7 @@ function ResultsView({
   otherAttempt: QuizAttempt | null;
   userAnswers?: Array<{
     question_id: string;
-    answer: string | string[] | boolean | null;
+    answer: string | string[] | boolean | number | null;
   }>;
 }) {
   const data = attempt?.data ?? null;
@@ -567,10 +638,12 @@ function ResultsView({
               </div>
               <div>
                 <dt className="inline font-semibold text-zinc-600">
-                  Bonne réponse :{" "}
+                  {q.type === "scale_0_10" ? "Note saisie : " : "Bonne réponse : "}
                 </dt>
                 <dd className="inline">
-                  {formatAnswer(q, q.correct_answer)}
+                  {q.type === "scale_0_10"
+                    ? "Auto-évaluation (pas de bonne réponse)"
+                    : formatAnswer(q, q.correct_answer)}
                 </dd>
               </div>
               {q.explanation && (
@@ -588,7 +661,7 @@ function ResultsView({
 
 function formatAnswer(
   q: QuizQuestion,
-  ans: string | string[] | boolean | null | undefined,
+  ans: string | string[] | boolean | number | null | undefined,
 ): string {
   if (ans === null || ans === undefined) return "—";
   if (q.type === "true_false") {
@@ -624,6 +697,11 @@ function formatAnswer(
     const byId = new Map(items.map((i) => [i.id, i.label]));
     const ids = Array.isArray(ans) ? (ans as string[]) : [];
     return ids.map((id, i) => `${i + 1}. ${byId.get(id) ?? id}`).join(" → ");
+  }
+  if (q.type === "scale_0_10") {
+    const n = typeof ans === "number" ? ans : Number(ans);
+    if (!Number.isFinite(n)) return "—";
+    return `${n} / 10`;
   }
   return String(ans);
 }

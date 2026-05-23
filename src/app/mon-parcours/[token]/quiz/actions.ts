@@ -17,7 +17,8 @@ export type SubmitQuizResult = {
 
 type AnswerInput = {
   question_id: string;
-  answer: string | string[] | boolean | null;
+  /** Étendu pour scale_0_10 (valeur numérique 0-10). */
+  answer: string | string[] | boolean | number | null;
 };
 
 /**
