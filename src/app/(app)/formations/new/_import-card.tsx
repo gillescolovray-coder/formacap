@@ -51,9 +51,10 @@ export function PdfImportCard() {
           <div className="mt-3 flex items-center gap-2 text-xs text-cyan-700 dark:text-cyan-400 bg-white/60 dark:bg-zinc-900/40 rounded-lg px-3 py-2">
             <Brain className="h-3.5 w-3.5 shrink-0" />
             <span>
-              Si <strong>LM Studio</strong> tourne en local
-              (http://localhost:1234), l&apos;IA est utilisée. Sinon, repli sur
-              un parseur classique.
+              Le logiciel essaie d&apos;abord une analyse <strong>IA</strong>{" "}
+              avancée ; en cas d&apos;indisponibilité il bascule
+              automatiquement sur un parseur classique. Le résultat est
+              toujours <strong>modifiable</strong> avant enregistrement.
             </span>
           </div>
         </div>
@@ -73,7 +74,8 @@ export function PdfImportCard() {
             className="block w-full text-sm text-zinc-600 dark:text-zinc-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-zinc-900 file:text-white hover:file:bg-zinc-800 dark:file:bg-white dark:file:text-zinc-900 dark:hover:file:bg-zinc-200 cursor-pointer"
           />
           <p className="text-xs text-zinc-500">
-            Max 10 Mo. L&apos;OCR + LM Studio peut prendre 30 s à 2 min.
+            Max 10 Mo. L&apos;analyse peut prendre 30 secondes à 2 minutes
+            selon la taille du document.
           </p>
         </div>
         <ImportButton />

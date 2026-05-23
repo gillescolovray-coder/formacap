@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { humanizeSupabaseError } from "@/lib/supabase/error-messages";
 import type {
   FormationModality,
   FormationStatus,
@@ -149,7 +150,9 @@ export async function createFormation(formData: FormData) {
     .single();
 
   if (error) {
-    redirect(`/formations/new?error=${encodeURIComponent(error.message)}`);
+    redirect(
+      `/formations/new?error=${encodeURIComponent(humanizeSupabaseError(error))}`,
+    );
   }
 
   revalidatePath("/formations");
@@ -170,7 +173,9 @@ export async function updateFormation(id: string, formData: FormData) {
     .eq("id", id);
 
   if (error) {
-    redirect(`/formations/${id}?error=${encodeURIComponent(error.message)}`);
+    redirect(
+      `/formations/${id}?error=${encodeURIComponent(humanizeSupabaseError(error))}`,
+    );
   }
 
   revalidatePath("/formations");
