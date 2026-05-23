@@ -64,7 +64,8 @@ create policy session_trainer_reports_select_org
     organization_id in (
       select om.organization_id
       from public.organization_members om
-      where om.user_id = auth.uid()
+      where om.profile_id = auth.uid()
+        and om.is_active
     )
   );
 
@@ -77,14 +78,16 @@ create policy session_trainer_reports_modify_org
     organization_id in (
       select om.organization_id
       from public.organization_members om
-      where om.user_id = auth.uid()
+      where om.profile_id = auth.uid()
+        and om.is_active
     )
   )
   with check (
     organization_id in (
       select om.organization_id
       from public.organization_members om
-      where om.user_id = auth.uid()
+      where om.profile_id = auth.uid()
+        and om.is_active
     )
   );
 
