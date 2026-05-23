@@ -8,7 +8,7 @@ import { isResendConfigured, sendEmail } from "@/lib/email/resend";
 import { loadTrainerConvocationEmailTemplate } from "@/lib/document-templates/loader";
 import {
   buildTrainerPortalUrl,
-  getTrainerPortalToken,
+  getOrCreateTrainerPortalToken,
 } from "@/lib/portal/trainer-token";
 
 async function getAppOrigin(): Promise<string> {
@@ -137,14 +137,13 @@ export async function confirmSession(
     }
   }
 
-  // 3. Token portail formateur — lecture seule (Gilles 2026-05-23).
-  // Si l'admin n'a pas encore activé le portail pour ce formateur,
-  // le lien sera absent de la convocation (variable {portal_url}
-  // remplacée par chaîne vide). L'admin peut activer le portail
-  // depuis la fiche formateur puis envoyer/renvoyer l'invitation.
-  const portal = await getTrainerPortalToken(supabase, session.trainer.id);
+  // 3. Token portail formateur (idempotent)
+  const portal = await getOrCreateTrainerPortalToken(
+    supabase,
+    session.trainer.id,
+  );
   const origin = await getAppOrigin();
-  const portalUrl = portal ? buildTrainerPortalUrl(origin, portal.token) : "";
+  const portalUrl = buildTrainerPortalUrl(origin, portal.token);
 
   // 4. Envoyer l'email convocation formateur
   if (!session.trainer.email) {
