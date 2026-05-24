@@ -11,6 +11,7 @@ import { TrainerSignatureGrid } from "./_trainer-signature-grid";
 import { TrainerQrButton } from "./_trainer-qr-button";
 import { TrainerRemoteSignSection } from "./_trainer-remote-sign";
 import { TrainerAttendanceGrid } from "./_trainer-attendance-grid";
+import { SecondaryToolsToggle } from "./_secondary-tools-toggle";
 import type {
   AttendanceMoment,
   AttendanceStatus,
@@ -380,7 +381,9 @@ export default async function FormateurEmargementPage({
                 </div>
               </div>
 
-              {/* Dashboard signatures (apprenants non-OF) */}
+              {/* Dashboard signatures (apprenants non-OF) — toujours
+                  visible : c'est le suivi en direct des signatures qui
+                  arrivent via le QR. */}
               <SignaturesDashboard
                 enrollments={learnersForGrid.map((l) => ({
                   enrollmentId: l.enrollmentId,
@@ -390,36 +393,39 @@ export default async function FormateurEmargementPage({
                 signaturesIndex={signaturesIndex}
               />
 
-              {/* Grille signatures individuelles apprenant + formateur */}
-              {periods.length === 0 ? (
-                <div className="rounded-xl bg-white border border-zinc-200 p-12 text-center text-sm text-zinc-500">
-                  Aucun jour planifié pour cette session.
-                </div>
-              ) : learnersForGrid.length === 0 ? (
-                <div className="rounded-xl bg-white border border-zinc-200 p-12 text-center text-sm text-zinc-500">
-                  Aucun apprenant à émarger électroniquement (les apprenants
-                  OF partenaires sont gérés dans l&apos;onglet{" "}
-                  <strong>Pointage manuel</strong>).
-                </div>
-              ) : (
-                <TrainerSignatureGrid
+              {/* Outils de secours (cachés derrière une case à cocher) :
+                  grille signature au doigt sur PC + envoi lien par email.
+                  Gilles 2026-05-24. */}
+              <SecondaryToolsToggle>
+                {periods.length === 0 ? (
+                  <div className="rounded-xl bg-white border border-zinc-200 p-12 text-center text-sm text-zinc-500">
+                    Aucun jour planifié pour cette session.
+                  </div>
+                ) : learnersForGrid.length === 0 ? (
+                  <div className="rounded-xl bg-white border border-zinc-200 p-12 text-center text-sm text-zinc-500">
+                    Aucun apprenant à émarger électroniquement (les apprenants
+                    OF partenaires sont gérés dans l&apos;onglet{" "}
+                    <strong>Pointage manuel</strong>).
+                  </div>
+                ) : (
+                  <TrainerSignatureGrid
+                    token={token}
+                    sessionId={sessionId}
+                    periods={periods}
+                    learners={learnersForGrid}
+                    initialSignatures={fullSignatures}
+                    trainerDisplayName={trainerName}
+                    modalityShortLabel={modalityShortLabel}
+                  />
+                )}
+
+                <TrainerRemoteSignSection
                   token={token}
                   sessionId={sessionId}
-                  periods={periods}
-                  learners={learnersForGrid}
-                  initialSignatures={fullSignatures}
-                  trainerDisplayName={trainerName}
-                  modalityShortLabel={modalityShortLabel}
+                  learners={learnersForRemoteSign}
+                  resendConfigured={resendOn}
                 />
-              )}
-
-              {/* Section signature à distance par email */}
-              <TrainerRemoteSignSection
-                token={token}
-                sessionId={sessionId}
-                learners={learnersForRemoteSign}
-                resendConfigured={resendOn}
-              />
+              </SecondaryToolsToggle>
             </div>
           }
           manuelContent={
