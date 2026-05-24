@@ -250,7 +250,7 @@ export default async function DashboardPage() {
         company:companies(name, address, postal_code, city)
       ),
       session:sessions(id, start_date, end_date, is_inter, modality,
-        formation:formations(title, duration_hours, duration_days)
+        formation:formations(title, duration_hours, duration_days, public_price_excl_tax)
       ),
       inscription_request:inscription_requests(
         id, via_partner_portal,
@@ -290,8 +290,8 @@ export default async function DashboardPage() {
           is_inter: boolean | null;
           modality: string | null;
           formation:
-            | { title: string; duration_hours: number | null; duration_days: number | null }
-            | Array<{ title: string; duration_hours: number | null; duration_days: number | null }>
+            | { title: string; duration_hours: number | null; duration_days: number | null; public_price_excl_tax: number | null }
+            | Array<{ title: string; duration_hours: number | null; duration_days: number | null; public_price_excl_tax: number | null }>
             | null;
         }
       | Array<{
@@ -301,8 +301,8 @@ export default async function DashboardPage() {
           is_inter: boolean | null;
           modality: string | null;
           formation:
-            | { title: string; duration_hours: number | null; duration_days: number | null }
-            | Array<{ title: string; duration_hours: number | null; duration_days: number | null }>
+            | { title: string; duration_hours: number | null; duration_days: number | null; public_price_excl_tax: number | null }
+            | Array<{ title: string; duration_hours: number | null; duration_days: number | null; public_price_excl_tax: number | null }>
             | null;
         }>
       | null;
@@ -358,13 +358,43 @@ export default async function DashboardPage() {
           ? "of"
           : "partenaire"
         : "direct";
+      // Budget HT : 1) quote_amount_ht s'il existe (saisi a la main
+      // ou calcule par un portail partenaire), sinon 2) fallback
+      // formations.public_price_excl_tax × duration_days (Gilles
+      // 2026-05-24 : cas typique d'une inscription CAP NUMERIQUE
+      // direct ou l'admin n'a pas saisi de montant). Le flag
+      // `amountHtEstimated` permet d'afficher discretement que c'est
+      // une estimation (italique cote tableau).
       const amountRaw = req?.quote_amount_ht;
-      const amountHt =
+      const explicitAmount =
         amountRaw === null || amountRaw === undefined
           ? null
           : typeof amountRaw === "number"
             ? amountRaw
             : Number(amountRaw);
+      const validExplicit =
+        explicitAmount != null && Number.isFinite(explicitAmount)
+          ? explicitAmount
+          : null;
+      let amountHt: number | null = validExplicit;
+      let amountHtEstimated = false;
+      if (amountHt === null) {
+        const publicPrice = formation?.public_price_excl_tax;
+        const days = formation?.duration_days;
+        if (
+          publicPrice !== null &&
+          publicPrice !== undefined &&
+          days !== null &&
+          days !== undefined
+        ) {
+          const p = Number(publicPrice);
+          const d = Number(days);
+          if (Number.isFinite(p) && Number.isFinite(d) && p > 0 && d > 0) {
+            amountHt = p * d;
+            amountHtEstimated = true;
+          }
+        }
+      }
       return {
         enrollmentId: e.id,
         sessionId: session?.id ?? null,
@@ -386,6 +416,7 @@ export default async function DashboardPage() {
         durationDays: formation?.duration_days ?? null,
         durationHours: formation?.duration_hours ?? null,
         amountHt: amountHt != null && Number.isFinite(amountHt) ? amountHt : null,
+        amountHtEstimated,
         sourceKind,
         partnerName: referrer?.name ?? null,
       };

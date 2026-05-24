@@ -36,8 +36,11 @@ export type InscriptionOverviewRow = {
   formationTitle: string;
   durationDays: number | null;
   durationHours: number | null;
-  /** Tarif HT applique pour cette inscription (quote_amount_ht). */
+  /** Tarif HT applique pour cette inscription (quote_amount_ht ou
+   *  fallback prix catalogue × jours si null). */
   amountHt: number | null;
+  /** true si le tarif vient du fallback (pas saisi explicitement). */
+  amountHtEstimated?: boolean;
   /** Source de l'inscription. */
   sourceKind: "direct" | "partenaire" | "of";
   /** Nom du partenaire si sourceKind ≠ "direct" */
@@ -307,11 +310,25 @@ export function InscriptionsOverviewTable({
                   <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">
                     {r.amountHt != null ? (
                       <div className="space-y-0.5">
+                        {r.amountHtEstimated && (
+                          <div
+                            className="text-[9px] uppercase tracking-wider font-bold text-amber-700"
+                            title="Estimation = prix catalogue × jours. Saisissez un montant dans la fiche inscription pour fixer le prix réel."
+                          >
+                            ≈ estimé
+                          </div>
+                        )}
                         <div className="text-xs">
                           <span className="text-[10px] uppercase tracking-wider text-zinc-500 mr-1">
                             HT
                           </span>
-                          <span className="font-bold text-zinc-900 dark:text-zinc-100">
+                          <span
+                            className={
+                              r.amountHtEstimated
+                                ? "font-bold text-zinc-600 dark:text-zinc-400 italic"
+                                : "font-bold text-zinc-900 dark:text-zinc-100"
+                            }
+                          >
                             {currencyFormatter.format(r.amountHt)}
                           </span>
                         </div>
