@@ -18,8 +18,7 @@ import {
   Video,
 } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { QuizAttempt, QuizQuestion } from "@/lib/quiz/types";
-import { QuizQuestionProgression } from "@/lib/quiz/question-progression";
+import type { QuizAttempt } from "@/lib/quiz/types";
 import { labelLevel, type LevelValue } from "@/lib/positioning/types";
 import {
   buildEventDateTime,
@@ -377,13 +376,11 @@ export default async function FormateurSessionDetailPage({
       : Promise.resolve({ data: [] as Array<unknown> }),
   ]);
   const quizAttempts = (quizAttemptsRaw ?? []) as unknown as QuizAttempt[];
-  const quizQuestions = (quizQuestionsRaw ?? []) as unknown as QuizQuestion[];
+  // (quizQuestionsRaw n'est plus utilisé — vue par question retirée 2026-05-24.)
+  void quizQuestionsRaw;
   const quizByEnrollment = new Map<
     string,
-    {
-      pre: { score: number; max: number } | null;
-      post: { score: number; max: number } | null;
-    }
+    { pre: QuizAttempt | null; post: QuizAttempt | null }
   >();
   for (const eid of enrollmentIds) {
     quizByEnrollment.set(eid, { pre: null, post: null });
@@ -391,13 +388,9 @@ export default async function FormateurSessionDetailPage({
   for (const a of quizAttempts) {
     const slot = quizByEnrollment.get(a.enrollment_id);
     if (!slot) continue;
-    if (a.score === null || a.max_score === null) continue;
-    if (a.phase === "pre")
-      slot.pre = { score: a.score, max: a.max_score };
-    if (a.phase === "post")
-      slot.post = { score: a.score, max: a.max_score };
+    if (a.phase === "pre") slot.pre = a;
+    if (a.phase === "post") slot.post = a;
   }
-  const hasAnyQuizAttempt = quizAttempts.length > 0;
 
   // 6 quater. Bilan formateur (Module 7). Fallback silencieux si la
   // table n'existe pas encore en prod (migration 0101 pas appliquée) :
@@ -770,6 +763,7 @@ export default async function FormateurSessionDetailPage({
           color="amber"
           title={`Tests de positionnement (${positioningRows?.length ?? 0}/${participants.length})`}
           description="Auto-évaluations remplies par les apprenants avant la formation."
+          subcontractedManagedByOf={session.is_subcontracted === true}
         >
           {participants.length === 0 ? (
             <p className="text-xs text-zinc-500 italic">Aucun apprenant.</p>
@@ -822,6 +816,7 @@ export default async function FormateurSessionDetailPage({
           color="indigo"
           title="Convocations envoyées"
           description="État d'envoi des convocations apprenants par email."
+          subcontractedManagedByOf={session.is_subcontracted === true}
         >
           {participants.length === 0 ? (
             <p className="text-xs text-zinc-500 italic">
@@ -911,6 +906,7 @@ export default async function FormateurSessionDetailPage({
               ? `Note de recommandation moyenne : ${npsAvg}/10`
               : "Évaluations remplies par les apprenants en fin de session."
           }
+          subcontractedManagedByOf={session.is_subcontracted === true}
         >
           {(hotEvals?.length ?? 0) === 0 ? (
             <p className="text-xs text-zinc-500 italic">
@@ -945,76 +941,83 @@ export default async function FormateurSessionDetailPage({
           )}
         </Module>
 
-        {/* Module 5 bis — Quiz pré/post */}
+        {/* Module 5 bis — Quiz pré/post (refonte 2026-05-24 :
+            tableau par apprenant avec horodatage + progression %). */}
         {effectiveQuizId && (
           <Module
             icon={<Target className="h-5 w-5" />}
             color="amber"
             title="Quiz d'évaluation (pré / post)"
-            description="Scores avant / après la formation et progression individuelle."
+            description="Pour chaque apprenant : date et score du quiz d'entrée, du quiz de sortie, et progression mesurée."
           >
             {participants.length === 0 ? (
               <p className="text-xs text-zinc-500 italic">Aucun apprenant.</p>
             ) : (
-              <ul className="space-y-1 text-xs">
-                {participants.map((p) => {
-                  const slot = quizByEnrollment.get(p.enrollmentId);
-                  const pre = slot?.pre;
-                  const post = slot?.post;
-                  const delta =
-                    pre && post
-                      ? Math.round(
-                          ((post.score / post.max) * 100) -
-                            ((pre.score / pre.max) * 100),
-                        )
-                      : null;
-                  return (
-                    <li
-                      key={p.enrollmentId}
-                      className="flex items-center justify-between py-1 gap-2"
-                    >
-                      <span className="text-zinc-700 truncate">
-                        {p.fullName}
-                      </span>
-                      <span className="inline-flex items-center gap-1.5 shrink-0 text-[10px]">
-                        <span className="bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full font-semibold">
-                          Pré : {pre ? `${pre.score}/${pre.max}` : "—"}
-                        </span>
-                        <span className="bg-cyan-100 text-cyan-800 px-1.5 py-0.5 rounded-full font-semibold">
-                          Post : {post ? `${post.score}/${post.max}` : "—"}
-                        </span>
-                        {delta !== null && (
-                          <span
-                            className={
-                              "px-1.5 py-0.5 rounded-full font-bold " +
-                              (delta > 0
-                                ? "bg-emerald-100 text-emerald-800"
-                                : delta < 0
-                                  ? "bg-rose-100 text-rose-800"
-                                  : "bg-zinc-100 text-zinc-700")
-                            }
-                          >
-                            {delta > 0 ? "+" : ""}
-                            {delta} pts
-                          </span>
-                        )}
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-
-            {/* Progression détaillée par question (Gilles 2026-05-24) :
-                pour chaque question, % bonnes réponses au pré vs post +
-                progression globale. Affichée seulement quand au moins une
-                tentative existe. */}
-            {hasAnyQuizAttempt && quizQuestions.length > 0 && (
-              <div className="mt-4">
-                <QuizQuestionProgression
-                  questions={quizQuestions}
-                  attempts={quizAttempts}
-                />
+              <div className="overflow-x-auto -mx-4 sm:mx-0">
+                <table className="w-full text-xs sm:text-sm min-w-[640px]">
+                  <thead className="bg-zinc-50 text-left text-[10px] uppercase tracking-wider text-zinc-500 font-bold border-b border-zinc-200">
+                    <tr>
+                      <th className="px-2 py-2">Apprenant</th>
+                      <th className="px-2 py-2">Quiz d&apos;entrée</th>
+                      <th className="px-2 py-2">Quiz de sortie</th>
+                      <th className="px-2 py-2 text-right">Progression</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100">
+                    {participants.map((p) => {
+                      const slot = quizByEnrollment.get(p.enrollmentId);
+                      const pre = slot?.pre ?? null;
+                      const post = slot?.post ?? null;
+                      const prePct =
+                        pre && pre.max_score
+                          ? Math.round(
+                              ((pre.score ?? 0) / pre.max_score) * 100,
+                            )
+                          : null;
+                      const postPct =
+                        post && post.max_score
+                          ? Math.round(
+                              ((post.score ?? 0) / post.max_score) * 100,
+                            )
+                          : null;
+                      const delta =
+                        prePct !== null && postPct !== null
+                          ? postPct - prePct
+                          : null;
+                      return (
+                        <tr key={p.enrollmentId}>
+                          <td className="px-2 py-2 align-top font-medium text-zinc-900">
+                            {p.fullName}
+                          </td>
+                          <td className="px-2 py-2 align-top">
+                            <AttemptCell attempt={pre} />
+                          </td>
+                          <td className="px-2 py-2 align-top">
+                            <AttemptCell attempt={post} />
+                          </td>
+                          <td className="px-2 py-2 align-top text-right tabular-nums">
+                            {delta === null ? (
+                              <span className="text-zinc-300">—</span>
+                            ) : (
+                              <span
+                                className={
+                                  delta > 0
+                                    ? "text-emerald-700 font-bold"
+                                    : delta < 0
+                                      ? "text-rose-700 font-bold"
+                                      : "text-zinc-600"
+                                }
+                              >
+                                {delta > 0 ? "+" : ""}
+                                {delta} pts
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             )}
           </Module>
@@ -1245,6 +1248,10 @@ function Module({
   description,
   actionButton,
   children,
+  /** En mode sous-traitance, certains blocs sont gérés par l'OF
+   *  donneur d'ordre — on les grise visuellement pour que le formateur
+   *  comprenne qu'il n'a rien à faire ici. Gilles 2026-05-24. */
+  subcontractedManagedByOf,
 }: {
   icon: React.ReactNode;
   color: ModuleColor;
@@ -1252,8 +1259,28 @@ function Module({
   description: string;
   actionButton?: React.ReactNode;
   children: React.ReactNode;
+  subcontractedManagedByOf?: boolean;
 }) {
   const colors = MODULE_COLORS[color];
+  if (subcontractedManagedByOf) {
+    return (
+      <section className="rounded-xl bg-zinc-50 border border-zinc-200 p-4 opacity-70">
+        <div className="flex items-start gap-3 mb-2">
+          <div className="shrink-0 h-10 w-10 rounded-lg bg-zinc-200 text-zinc-500 flex items-center justify-center">
+            {icon}
+          </div>
+          <div className="flex-1 min-w-0">
+            <h2 className="font-bold text-zinc-700 text-sm">{title}</h2>
+            <p className="text-xs text-zinc-500 mt-0.5">{description}</p>
+          </div>
+        </div>
+        <div className="rounded-md bg-white border border-dashed border-zinc-300 p-2.5 text-[11px] text-zinc-600 italic">
+          🔒 Géré par l&apos;OF donneur d&apos;ordre — vous n&apos;avez pas
+          à intervenir sur ce bloc en sous-traitance.
+        </div>
+      </section>
+    );
+  }
   return (
     <section className="rounded-xl bg-white shadow-sm border border-zinc-200 p-4">
       <div className="flex items-start gap-3 mb-3">
@@ -1270,6 +1297,68 @@ function Module({
       </div>
       {children}
     </section>
+  );
+}
+
+/**
+ * Cellule d'un quiz (pré ou post) côté portail formateur : badge score
+ * + horodatage de la complétion. Lit `completed_at` en priorité, sinon
+ * `started_at`. Gilles 2026-05-24.
+ */
+function AttemptCell({
+  attempt,
+}: {
+  attempt: QuizAttempt | null | undefined;
+}) {
+  if (!attempt) {
+    return <span className="text-zinc-400 text-[11px]">⏳ Non joué</span>;
+  }
+  const at = attempt.completed_at ?? attempt.started_at;
+  const dateLabel = at
+    ? new Date(at).toLocaleString("fr-FR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : null;
+  if (attempt.score === null || !attempt.max_score) {
+    return (
+      <div className="space-y-0.5">
+        <span className="text-[11px] text-amber-700">En cours</span>
+        {dateLabel && (
+          <div className="text-[10px] text-zinc-400 tabular-nums">
+            démarré {dateLabel}
+          </div>
+        )}
+      </div>
+    );
+  }
+  const pct = Math.round((attempt.score / attempt.max_score) * 100);
+  const color =
+    pct >= 75
+      ? "bg-emerald-100 text-emerald-800"
+      : pct >= 50
+        ? "bg-amber-100 text-amber-800"
+        : "bg-rose-100 text-rose-800";
+  return (
+    <div className="space-y-0.5">
+      <span
+        className={
+          "inline-flex items-center gap-1 text-[11px] font-bold px-1.5 py-0.5 rounded-full " +
+          color
+        }
+      >
+        {attempt.score}/{attempt.max_score}
+        <span className="text-[10px] font-normal opacity-80">({pct} %)</span>
+      </span>
+      {dateLabel && (
+        <div className="text-[10px] text-zinc-500 tabular-nums">
+          {dateLabel}
+        </div>
+      )}
+    </div>
   );
 }
 

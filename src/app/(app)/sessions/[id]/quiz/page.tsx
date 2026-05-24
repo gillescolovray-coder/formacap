@@ -13,8 +13,7 @@ import { PageHeader } from "@/components/page-header";
 import { BackButton } from "@/components/back-button";
 import { SessionTabs } from "../_session-tabs";
 import { SessionHeaderMeta } from "../_session-header-meta";
-import type { QuizAttempt, QuizQuestion } from "@/lib/quiz/types";
-import { QuizQuestionProgression } from "@/lib/quiz/question-progression";
+import type { QuizAttempt } from "@/lib/quiz/types";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -143,27 +142,18 @@ export default async function SessionQuizDashboardPage({
 
   const enrollmentIds = participants.map((p) => p.enrollmentId);
 
-  const [{ data: attemptsRaw }, { data: questionsRaw }] = await Promise.all([
+  const { data: attemptsRaw } =
     enrollmentIds.length > 0
-      ? supabase
+      ? await supabase
           .from("quiz_attempts")
           .select(
             "id, enrollment_id, quiz_template_id, phase, score, max_score, completed_at, started_at, data",
           )
           .in("enrollment_id", enrollmentIds)
           .eq("quiz_template_id", effectiveQuizId)
-      : Promise.resolve({ data: [] as QuizAttempt[] }),
-    supabase
-      .from("quiz_questions")
-      .select(
-        "id, quiz_template_id, position, type, text, options, correct_answer, points, explanation",
-      )
-      .eq("quiz_template_id", effectiveQuizId)
-      .order("position", { ascending: true }),
-  ]);
+      : { data: [] as QuizAttempt[] };
 
   const attempts = (attemptsRaw ?? []) as QuizAttempt[];
-  const quizQuestions = (questionsRaw ?? []) as QuizQuestion[];
 
   // Index : enrollment_id → { pre, post }
   const byEnrollment = new Map<
@@ -288,71 +278,74 @@ export default async function SessionQuizDashboardPage({
               Aucun apprenant inscrit.
             </div>
           ) : (
-            <table className="w-full text-sm">
-              <thead className="bg-zinc-50 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500 border-b border-zinc-200">
-                <tr>
-                  <th className="px-4 py-3">Apprenant</th>
-                  <th className="px-4 py-3">Entreprise</th>
-                  <th className="px-4 py-3">Pré</th>
-                  <th className="px-4 py-3">Post</th>
-                  <th className="px-4 py-3">Progression</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-200">
-                {participants.map((p) => {
-                  const slot = byEnrollment.get(p.enrollmentId);
-                  const pre = slot?.pre;
-                  const post = slot?.post;
-                  const prePct =
-                    pre && pre.max_score
-                      ? Math.round(((pre.score ?? 0) / pre.max_score) * 100)
-                      : null;
-                  const postPct =
-                    post && post.max_score
-                      ? Math.round(((post.score ?? 0) / post.max_score) * 100)
-                      : null;
-                  const delta =
-                    prePct !== null && postPct !== null
-                      ? postPct - prePct
-                      : null;
-                  return (
-                    <tr key={p.enrollmentId}>
-                      <td className="px-4 py-3 font-medium">
-                        {p.civility ? `${p.civility} ` : ""}
-                        {p.fullName}
-                      </td>
-                      <td className="px-4 py-3 text-zinc-600">
-                        {p.companyName ?? "—"}
-                      </td>
-                      <td className="px-4 py-3">
-                        <ScoreBadge attempt={pre} />
-                      </td>
-                      <td className="px-4 py-3">
-                        <ScoreBadge attempt={post} />
-                      </td>
-                      <td className="px-4 py-3">
-                        {delta === null ? (
-                          <span className="text-zinc-300 text-xs">—</span>
-                        ) : (
-                          <span
-                            className={
-                              delta > 0
-                                ? "text-emerald-700 font-bold"
-                                : delta < 0
-                                  ? "text-rose-700 font-bold"
-                                  : "text-zinc-600"
-                            }
-                          >
-                            {delta > 0 ? "+" : ""}
-                            {delta} pts
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[820px]">
+                <thead className="bg-zinc-50 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500 border-b border-zinc-200">
+                  <tr>
+                    <th className="px-4 py-3">Apprenant</th>
+                    <th className="px-4 py-3">Entreprise</th>
+                    <th className="px-4 py-3">Quiz d&apos;entrée</th>
+                    <th className="px-4 py-3">Quiz de sortie</th>
+                    <th className="px-4 py-3 text-right">Progression</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-200">
+                  {participants.map((p) => {
+                    const slot = byEnrollment.get(p.enrollmentId);
+                    const pre = slot?.pre;
+                    const post = slot?.post;
+                    const prePct =
+                      pre && pre.max_score
+                        ? Math.round(((pre.score ?? 0) / pre.max_score) * 100)
+                        : null;
+                    const postPct =
+                      post && post.max_score
+                        ? Math.round(((post.score ?? 0) / post.max_score) * 100)
+                        : null;
+                    const delta =
+                      prePct !== null && postPct !== null
+                        ? postPct - prePct
+                        : null;
+                    return (
+                      <tr key={p.enrollmentId}>
+                        <td className="px-4 py-3 font-medium align-top">
+                          {p.civility ? `${p.civility} ` : ""}
+                          {p.fullName}
+                        </td>
+                        <td className="px-4 py-3 text-zinc-600 align-top">
+                          {p.companyName ?? "—"}
+                        </td>
+                        <td className="px-4 py-3 align-top">
+                          <AttemptCell attempt={pre} />
+                        </td>
+                        <td className="px-4 py-3 align-top">
+                          <AttemptCell attempt={post} />
+                        </td>
+                        <td className="px-4 py-3 align-top text-right">
+                          {delta === null ? (
+                            <span className="text-zinc-300 text-xs">—</span>
+                          ) : (
+                            <span
+                              className={
+                                "tabular-nums " +
+                                (delta > 0
+                                  ? "text-emerald-700 font-bold"
+                                  : delta < 0
+                                    ? "text-rose-700 font-bold"
+                                    : "text-zinc-600")
+                              }
+                            >
+                              {delta > 0 ? "+" : ""}
+                              {delta} pts
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
         </section>
 
@@ -412,13 +405,6 @@ export default async function SessionQuizDashboardPage({
           </section>
         )}
 
-        {/* Progression détaillée par question (Gilles 2026-05-24) */}
-        {(nbPre > 0 || nbPost > 0) && quizQuestions.length > 0 && (
-          <QuizQuestionProgression
-            questions={quizQuestions}
-            attempts={attempts}
-          />
-        )}
       </div>
     </>
   );
@@ -466,9 +452,37 @@ function Stat({
   );
 }
 
-function ScoreBadge({ attempt }: { attempt: QuizAttempt | null | undefined }) {
-  if (!attempt || attempt.score === null || !attempt.max_score) {
-    return <span className="text-zinc-400 text-xs">⏳ En attente</span>;
+/**
+ * Cellule d'un quiz (pré ou post) : badge score + horodatage de la
+ * complétion. L'horodatage permet au formateur de voir QUAND chaque
+ * apprenant a joué (utile pour relancer ceux qui n'ont pas fait le
+ * post, ou repérer ceux qui jouent trop tôt / trop tard).
+ */
+function AttemptCell({ attempt }: { attempt: QuizAttempt | null | undefined }) {
+  if (!attempt) {
+    return <span className="text-zinc-400 text-xs">⏳ Non joué</span>;
+  }
+  const at = attempt.completed_at ?? attempt.started_at;
+  const dateLabel = at
+    ? new Date(at).toLocaleString("fr-FR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : null;
+  if (attempt.score === null || !attempt.max_score) {
+    return (
+      <div className="space-y-0.5">
+        <span className="text-xs text-amber-700">En cours</span>
+        {dateLabel && (
+          <div className="text-[10px] text-zinc-400 tabular-nums">
+            démarré {dateLabel}
+          </div>
+        )}
+      </div>
+    );
   }
   const pct = Math.round((attempt.score / attempt.max_score) * 100);
   const color =
@@ -478,12 +492,22 @@ function ScoreBadge({ attempt }: { attempt: QuizAttempt | null | undefined }) {
         ? "bg-amber-100 text-amber-800"
         : "bg-rose-100 text-rose-800";
   return (
-    <span
-      className={"inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full " + color}
-    >
-      {attempt.score}/{attempt.max_score}
-      <span className="text-[10px] font-normal opacity-80">({pct} %)</span>
-    </span>
+    <div className="space-y-0.5">
+      <span
+        className={
+          "inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full " +
+          color
+        }
+      >
+        {attempt.score}/{attempt.max_score}
+        <span className="text-[10px] font-normal opacity-80">({pct} %)</span>
+      </span>
+      {dateLabel && (
+        <div className="text-[10px] text-zinc-500 tabular-nums">
+          {dateLabel}
+        </div>
+      )}
+    </div>
   );
 }
 
