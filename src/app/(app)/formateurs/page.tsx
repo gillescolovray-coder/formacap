@@ -24,6 +24,7 @@ import {
   type TrainerStatus,
   type TrainerValidationStatus,
 } from "@/lib/trainers/types";
+import { PortalIcon } from "./_portal-icon";
 
 type SearchParams = {
   q?: string;
@@ -103,6 +104,55 @@ export default async function TrainersListPage({
   if (activeFilter === "no") query = query.eq("is_active", false);
 
   const { data: trainers, error } = await query;
+
+  // Bulk : tokens portail + compétences (trainer_competences) en 1 round-trip
+  // chacun. Évite N+1 queries.
+  const tokenByTrainer = new Map<string, string>();
+  const competencesByTrainer = new Map<
+    string,
+    Array<{ domainName: string; levelName: string | null }>
+  >();
+  if (trainers && trainers.length > 0) {
+    const trainerIds = (trainers as Array<{ id: string }>).map((t) => t.id);
+
+    const [tokensRes, competencesRes] = await Promise.all([
+      supabase
+        .from("trainer_portal_tokens")
+        .select("trainer_id, token")
+        .in("trainer_id", trainerIds),
+      supabase
+        .from("trainer_competences")
+        .select(
+          "trainer_id, domain:skill_domains(name), level:skill_levels(name)",
+        )
+        .in("trainer_id", trainerIds),
+    ]);
+
+    for (const row of (tokensRes.data ?? []) as Array<{
+      trainer_id: string;
+      token: string;
+    }>) {
+      tokenByTrainer.set(row.trainer_id, row.token);
+    }
+
+    type CompRow = {
+      trainer_id: string;
+      domain: { name: string } | Array<{ name: string }> | null;
+      level: { name: string } | Array<{ name: string }> | null;
+    };
+    for (const row of (competencesRes.data ?? []) as CompRow[]) {
+      const dom = Array.isArray(row.domain) ? row.domain[0] : row.domain;
+      const lvl = Array.isArray(row.level) ? row.level[0] : row.level;
+      if (!dom?.name) continue;
+      if (!competencesByTrainer.has(row.trainer_id)) {
+        competencesByTrainer.set(row.trainer_id, []);
+      }
+      competencesByTrainer.get(row.trainer_id)!.push({
+        domainName: dom.name,
+        levelName: lvl?.name ?? null,
+      });
+    }
+  }
 
   const stats = [
     {
@@ -339,6 +389,9 @@ export default async function TrainersListPage({
                     <th className="px-4 py-3">Domaines</th>
                     <th className="px-4 py-3">Niveau</th>
                     <th className="px-4 py-3">Validation</th>
+                    <th className="px-4 py-3 text-center" title="Double-cliquez pour ouvrir le portail formateur">
+                      Portail
+                    </th>
                     <th className="px-4 py-3 text-right">Satisfaction</th>
                   </tr>
                 </thead>
@@ -416,32 +469,78 @@ export default async function TrainersListPage({
                         )}
                       </td>
                       <td className="px-4 py-3 text-xs text-slate-600 max-w-[200px]">
-                        {(t.intervention_domains ?? []).length > 0 ? (
-                          <div className="flex flex-wrap gap-1">
-                            {(t.intervention_domains ?? [])
-                              .slice(0, 3)
-                              .map((d) => (
-                                <span
-                                  key={d}
-                                  className="inline-block px-1.5 py-0.5 rounded bg-cyan-50 text-cyan-700 border border-cyan-200 dark:bg-cyan-950/40 dark:text-cyan-300 dark:border-cyan-900 text-[10px] font-medium"
-                                >
-                                  {d}
-                                </span>
-                              ))}
-                            {(t.intervention_domains ?? []).length > 3 && (
-                              <span className="text-[10px] text-slate-400">
-                                +{(t.intervention_domains ?? []).length - 3}
-                              </span>
-                            )}
-                          </div>
-                        ) : (
-                          "—"
-                        )}
+                        {(() => {
+                          // Priorité au nouveau système (trainer_competences :
+                          // domaine + niveau structurés). Fallback sur l'ancien
+                          // intervention_domains (text[] saisi via tags libres)
+                          // pour les fiches non migrées (Gilles 2026-05-24).
+                          const comps = competencesByTrainer.get(t.id) ?? [];
+                          if (comps.length > 0) {
+                            return (
+                              <div className="flex flex-wrap gap-1">
+                                {comps.slice(0, 3).map((c, i) => (
+                                  <span
+                                    key={`${c.domainName}-${i}`}
+                                    className="inline-block px-1.5 py-0.5 rounded bg-cyan-50 text-cyan-700 border border-cyan-200 dark:bg-cyan-950/40 dark:text-cyan-300 dark:border-cyan-900 text-[10px] font-medium"
+                                    title={
+                                      c.levelName
+                                        ? `${c.domainName} · ${c.levelName}`
+                                        : c.domainName
+                                    }
+                                  >
+                                    {c.domainName}
+                                  </span>
+                                ))}
+                                {comps.length > 3 && (
+                                  <span className="text-[10px] text-slate-400">
+                                    +{comps.length - 3}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          }
+                          // Fallback ancien système
+                          const legacy = t.intervention_domains ?? [];
+                          if (legacy.length > 0) {
+                            return (
+                              <div className="flex flex-wrap gap-1">
+                                {legacy.slice(0, 3).map((d) => (
+                                  <span
+                                    key={d}
+                                    className="inline-block px-1.5 py-0.5 rounded bg-cyan-50 text-cyan-700 border border-cyan-200 dark:bg-cyan-950/40 dark:text-cyan-300 dark:border-cyan-900 text-[10px] font-medium"
+                                  >
+                                    {d}
+                                  </span>
+                                ))}
+                                {legacy.length > 3 && (
+                                  <span className="text-[10px] text-slate-400">
+                                    +{legacy.length - 3}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          }
+                          return "—";
+                        })()}
                       </td>
                       <td className="px-4 py-3 text-xs text-slate-500 max-w-[150px]">
-                        {(t.intervention_levels ?? []).length > 0
-                          ? (t.intervention_levels ?? []).join(", ")
-                          : "—"}
+                        {(() => {
+                          // Niveaux : du nouveau système d'abord (uniques),
+                          // sinon fallback ancien intervention_levels.
+                          const comps = competencesByTrainer.get(t.id) ?? [];
+                          const newLevels = Array.from(
+                            new Set(
+                              comps
+                                .map((c) => c.levelName)
+                                .filter((n): n is string => !!n),
+                            ),
+                          );
+                          if (newLevels.length > 0) return newLevels.join(", ");
+                          const legacyLevels = t.intervention_levels ?? [];
+                          return legacyLevels.length > 0
+                            ? legacyLevels.join(", ")
+                            : "—";
+                        })()}
                       </td>
                       <td className="px-4 py-3">
                         <span
@@ -456,6 +555,11 @@ export default async function TrainersListPage({
                             ]
                           }
                         </span>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <PortalIcon
+                          token={tokenByTrainer.get(t.id) ?? null}
+                        />
                       </td>
                       <td className="px-4 py-3 text-right tabular-nums">
                         {t.satisfaction_avg !== null ? (
