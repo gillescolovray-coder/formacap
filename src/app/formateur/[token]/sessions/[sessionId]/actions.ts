@@ -1097,9 +1097,16 @@ export async function updateLearnerFromPortal(
  * un apprenant régulier peut avoir une convention, des signatures,
  * une attestation déjà émise — sa suppression doit passer par l'admin).
  *
- * Cascade : enrollment + token portail apprenant + learner. Les rows
- * orphelines (positioning_responses, quiz_attempts…) sont nettoyées
- * automatiquement via les ON DELETE CASCADE des migrations.
+ * Ordre de suppression (important — session_enrollments.learner_id
+ * est en ON DELETE RESTRICT, cf. migration 0006) :
+ *   1. Supprimer les inscription_requests (FK ON DELETE SET NULL — on
+ *      les supprime franchement pour ne pas laisser de demandes
+ *      fantômes après promotion).
+ *   2. Supprimer tous les session_enrollments du learner — ce DELETE
+ *      cascade vers : enrollment_portal_tokens, quiz_attempts,
+ *      attendance_signatures, etc.
+ *   3. Supprimer le learner (les notes session_learner_notes cascade
+ *      via leur propre FK ON DELETE CASCADE, cf. migration 0039).
  */
 export async function deleteExpressLearnerFromPortal(
   token: string,
@@ -1133,11 +1140,30 @@ export async function deleteExpressLearnerFromPortal(
     .eq("session_id", sessionId)
     .eq("learner_id", learnerId)
     .maybeSingle<{ id: string }>();
-  if (!enr) return { ok: false, error: "Apprenant non inscrit sur cette session." };
+  if (!enr) {
+    return { ok: false, error: "Apprenant non inscrit sur cette session." };
+  }
 
-  // Suppression : on supprime le learner — ON DELETE CASCADE nettoie
-  // session_enrollments → enrollment_portal_tokens → quiz_attempts → etc.
-  const { error } = await supabase.from("learners").delete().eq("id", learnerId);
+  // 1. Nettoyer les inscription_requests (typiquement aucune pour un
+  //    apprenant temporaire saisi en express, mais sécurité)
+  await supabase
+    .from("inscription_requests")
+    .delete()
+    .eq("learner_id", learnerId);
+
+  // 2. Supprimer TOUS les session_enrollments du learner — cascade vers
+  //    enrollment_portal_tokens, quiz_attempts, attendance_signatures…
+  const { error: enrDelErr } = await supabase
+    .from("session_enrollments")
+    .delete()
+    .eq("learner_id", learnerId);
+  if (enrDelErr) return { ok: false, error: enrDelErr.message };
+
+  // 3. Supprimer le learner (notes cascade automatiquement)
+  const { error } = await supabase
+    .from("learners")
+    .delete()
+    .eq("id", learnerId);
   if (error) return { ok: false, error: error.message };
 
   revalidatePath(`/formateur/${token}/sessions/${sessionId}`);
