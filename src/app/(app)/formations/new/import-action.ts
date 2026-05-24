@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { extractText, getDocumentProxy } from "unpdf";
 import { createClient } from "@/lib/supabase/server";
+import { humanizeSupabaseError } from "@/lib/supabase/error-messages";
 import {
   parseFormationFromText,
   type ParsedFormation,
@@ -145,7 +146,26 @@ export async function importFormationFromDocument(formData: FormData) {
     }
   };
 
-  setIfDefined("internal_code", parsed.internal_code);
+  // Code interne : on l'attribue seulement s'il n'est pas déjà pris
+  // pour cette organisation. Sinon on le laisse vide — l'utilisateur
+  // pourra l'éditer manuellement après création. Évite l'erreur
+  // "duplicate key" qui bloquait l'import (Gilles bug 2026-05-24).
+  if (parsed.internal_code && parsed.internal_code.trim() !== "") {
+    const supabaseCheck = await createClient();
+    const code = parsed.internal_code.trim();
+    const { data: clash } = await supabaseCheck
+      .from("formations")
+      .select("id")
+      .eq("organization_id", organizationId)
+      .eq("internal_code", code)
+      .limit(1)
+      .maybeSingle();
+    if (!clash) {
+      insertPayload.internal_code = code;
+    }
+    // Sinon : code déjà pris → on n'insère pas internal_code,
+    // l'utilisateur l'ajustera dans la fiche.
+  }
   setIfDefined("duration_days", parsed.duration_days);
   setIfDefined("duration_hours", parsed.duration_hours);
   setIfDefined("min_participants", parsed.min_participants);
@@ -178,8 +198,11 @@ export async function importFormationFromDocument(formData: FormData) {
     .single();
 
   if (error || !data) {
+    const friendly = error
+      ? humanizeSupabaseError(error)
+      : "Erreur inconnue.";
     redirect(
-      `/formations/new?error=${encodeURIComponent("Création échouée : " + (error?.message ?? "inconnue"))}`,
+      `/formations/new?error=${encodeURIComponent(friendly)}`,
     );
   }
 
