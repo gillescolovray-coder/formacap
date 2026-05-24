@@ -384,14 +384,14 @@ export default async function TrainersListPage({
                   <tr>
                     <th className="px-4 py-3">Formateur</th>
                     <th className="px-4 py-3">Contact</th>
+                    <th className="px-4 py-3 text-center" title="Double-cliquez pour ouvrir le portail formateur">
+                      Portail
+                    </th>
                     <th className="px-4 py-3">Statut</th>
                     <th className="px-4 py-3">Ville</th>
                     <th className="px-4 py-3">Domaines</th>
                     <th className="px-4 py-3">Niveau</th>
                     <th className="px-4 py-3">Validation</th>
-                    <th className="px-4 py-3 text-center" title="Double-cliquez pour ouvrir le portail formateur">
-                      Portail
-                    </th>
                     <th className="px-4 py-3 text-right">Satisfaction</th>
                   </tr>
                 </thead>
@@ -444,6 +444,11 @@ export default async function TrainersListPage({
                             {t.phone}
                           </a>
                         ) : null}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <PortalIcon
+                          token={tokenByTrainer.get(t.id) ?? null}
+                        />
                       </td>
                       <td className="px-4 py-3">
                         <span
@@ -555,11 +560,6 @@ export default async function TrainersListPage({
                             ]
                           }
                         </span>
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <PortalIcon
-                          token={tokenByTrainer.get(t.id) ?? null}
-                        />
                       </td>
                       <td className="px-4 py-3 text-right tabular-nums">
                         {t.satisfaction_avg !== null ? (
