@@ -115,16 +115,22 @@ export async function listTrainersDocsExpiring(
   return { count: items.length, items };
 }
 
+/**
+ * Sessions confirmées vraiment sans formateur : ni au niveau session
+ * (`sessions.trainer_id`), ni au niveau d'un de ses jours
+ * (`session_days.trainer_id`). Règle alignée sur l'auto-promotion
+ * du formateur dans confirmSession (Gilles 2026-05-22).
+ */
 export async function listSessionsConfirmedNoTrainer(
   supabase: SupabaseClient,
 ): Promise<KpiData> {
+  // 1. Sessions confirmées sans trainer_id session
   const { data } = await supabase
     .from("sessions")
     .select("id, start_date, end_date, formation:formations(title)")
     .eq("status", "confirmed")
     .is("trainer_id", null)
-    .order("start_date", { ascending: true })
-    .limit(MAX_ITEMS);
+    .order("start_date", { ascending: true });
 
   type Row = {
     id: string;
@@ -132,8 +138,24 @@ export async function listSessionsConfirmedNoTrainer(
     end_date: string;
     formation: { title: string } | Array<{ title: string }> | null;
   };
-  const rows = (data ?? []) as Row[];
-  const items = rows.map((r) => {
+  const candidates = (data ?? []) as Row[];
+  if (candidates.length === 0) return EMPTY;
+
+  // 2. Exclure celles qui ont un formateur sur AU MOINS un jour
+  const candidateIds = candidates.map((s) => s.id);
+  const { data: daysWithTrainer } = await supabase
+    .from("session_days")
+    .select("session_id")
+    .in("session_id", candidateIds)
+    .not("trainer_id", "is", null);
+  const hasDayTrainer = new Set(
+    ((daysWithTrainer ?? []) as Array<{ session_id: string }>).map(
+      (d) => d.session_id,
+    ),
+  );
+
+  const trulyNoTrainer = candidates.filter((s) => !hasDayTrainer.has(s.id));
+  const items = trulyNoTrainer.slice(0, MAX_ITEMS).map((r) => {
     const f = Array.isArray(r.formation) ? r.formation[0] : r.formation;
     return {
       label: f?.title ?? "Session",
@@ -141,18 +163,7 @@ export async function listSessionsConfirmedNoTrainer(
       meta: `Démarre le ${fmtDate(r.start_date)}`,
     };
   });
-
-  const exact =
-    items.length < MAX_ITEMS
-      ? items.length
-      : ((
-          await supabase
-            .from("sessions")
-            .select("id", { count: "exact", head: true })
-            .eq("status", "confirmed")
-            .is("trainer_id", null)
-        ).count ?? items.length);
-  return { count: exact, items };
+  return { count: trulyNoTrainer.length, items };
 }
 
 export async function listSessionsConfirmedNoQuiz(
