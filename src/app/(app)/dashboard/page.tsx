@@ -41,6 +41,7 @@ import {
 } from "./_inscriptions-overview-table";
 import { MonthlyStats, type MonthlyStats as MonthlyStatsType } from "./_monthly-stats";
 import { KpiCard } from "./_kpi-card";
+import { TrainerActivityTable } from "./_trainer-activity-table";
 import {
   computeQualiopiScores,
   computeUpcomingRevenueHt,
@@ -54,6 +55,7 @@ import {
   listSessionsPositionnementIncomplete,
   listSessionsStartingThisWeek,
   listSessionsWithoutTrainerReport,
+  listTrainerActivityByYear,
   listTrainersDocsExpiring,
   listTrainersWithoutFormations,
   listTrainersWithoutPortal,
@@ -162,6 +164,10 @@ export default async function DashboardPage() {
   // V2 : chaque query renvoie { count, items[] } pour accordéon
   // dépliable + KPI à 0 masqué automatiquement (économie d'espace).
   // ============================================================
+  // Années pour le tableau "Activité formateurs sur 3 ans" (Gilles 2026-05-24)
+  const currYear = new Date().getFullYear();
+  const activityYears = [currYear - 2, currYear - 1, currYear];
+
   const [
     docsExpiring,
     sessionsNoTrainer,
@@ -178,6 +184,7 @@ export default async function DashboardPage() {
     qualiopiScores,
     trainersNoFormations,
     trainersNoPortal,
+    trainerActivity,
   ] = await Promise.all([
     listTrainersDocsExpiring(supabase),
     listSessionsConfirmedNoTrainer(supabase),
@@ -194,6 +201,7 @@ export default async function DashboardPage() {
     computeQualiopiScores(supabase, 30),
     listTrainersWithoutFormations(supabase),
     listTrainersWithoutPortal(supabase),
+    listTrainerActivityByYear(supabase, activityYears),
   ]);
 
   const qualiopiFull = qualiopiScores.filter((s) => s.scorePercent === 100).length;
@@ -959,6 +967,15 @@ export default async function DashboardPage() {
               Gérer les catégories
             </Button>
           </div>
+        </div>
+
+        {/* Activité formateurs : nombre de sessions confirmées
+            par formateur sur les 3 dernières années (Gilles 2026-05-24). */}
+        <div className="mt-6">
+          <TrainerActivityTable
+            years={activityYears}
+            rows={trainerActivity}
+          />
         </div>
 
         {/* Statistiques mensuelles : 5 KPI annuels + graphique en barres

@@ -805,6 +805,129 @@ export async function listTrainersWithoutFormations(
   return { count: without.length, items };
 }
 
+// ============================================================
+// 👥 ACTIVITÉ FORMATEURS SUR 3 ANS
+// ============================================================
+
+export type TrainerActivityRow = {
+  trainerId: string;
+  trainerName: string;
+  byYear: Record<number, number>;
+  total: number;
+};
+
+/**
+ * Pour chaque formateur, compte le nombre de sessions confirmées
+ * terminées (status='confirmed' ou 'completed') dont end_date tombe
+ * dans chacune des `years` années civiles (01/01 → 31/12).
+ *
+ * Une session avec un formateur principal (sessions.trainer_id) ou
+ * un formateur de jour (session_days.trainer_id) compte pour lui.
+ * Si plusieurs formateurs interviennent sur la même session (jours
+ * différents), elle est comptée une fois pour chacun (= journées
+ * animées réellement distinctes).
+ *
+ * Gilles 2026-05-24 : "nombre de formations réalisées par formateur
+ * sur 3 ans".
+ */
+export async function listTrainerActivityByYear(
+  supabase: SupabaseClient,
+  years: number[],
+): Promise<TrainerActivityRow[]> {
+  if (years.length === 0) return [];
+  const minYear = Math.min(...years);
+  const maxYear = Math.max(...years);
+  const yearStart = `${minYear}-01-01`;
+  const yearEnd = `${maxYear + 1}-01-01`;
+
+  // 1. Sessions confirmées/completed dans la plage des années,
+  //    avec leur trainer_id principal
+  const { data: sessions } = await supabase
+    .from("sessions")
+    .select("id, end_date, trainer_id")
+    .in("status", ["confirmed", "completed"])
+    .gte("end_date", yearStart)
+    .lt("end_date", yearEnd);
+  const sessionRows = (sessions ?? []) as Array<{
+    id: string;
+    end_date: string;
+    trainer_id: string | null;
+  }>;
+  if (sessionRows.length === 0) return [];
+
+  // 2. Pour chaque session, récupérer aussi les formateurs des jours
+  //    (session_days.trainer_id) — auto-promotion / co-animation
+  const sessionIds = sessionRows.map((s) => s.id);
+  const { data: dayTrainers } = await supabase
+    .from("session_days")
+    .select("session_id, trainer_id")
+    .in("session_id", sessionIds)
+    .not("trainer_id", "is", null);
+  const dayTrainersBySession = new Map<string, Set<string>>();
+  for (const row of (dayTrainers ?? []) as Array<{
+    session_id: string;
+    trainer_id: string;
+  }>) {
+    if (!dayTrainersBySession.has(row.session_id)) {
+      dayTrainersBySession.set(row.session_id, new Set());
+    }
+    dayTrainersBySession.get(row.session_id)!.add(row.trainer_id);
+  }
+
+  // 3. Pour chaque session, identifier l'ensemble unique des
+  //    formateurs concernés (session.trainer_id + day trainers)
+  // 4. Incrémenter le compteur de chacun pour l'année concernée
+  const counts = new Map<string, Map<number, number>>();
+  for (const s of sessionRows) {
+    const year = new Date(s.end_date).getFullYear();
+    if (!years.includes(year)) continue;
+    const trainerIds = new Set<string>();
+    if (s.trainer_id) trainerIds.add(s.trainer_id);
+    const dayTr = dayTrainersBySession.get(s.id);
+    if (dayTr) for (const id of dayTr) trainerIds.add(id);
+    for (const tid of trainerIds) {
+      if (!counts.has(tid)) counts.set(tid, new Map());
+      const m = counts.get(tid)!;
+      m.set(year, (m.get(year) ?? 0) + 1);
+    }
+  }
+
+  // 5. Charger les noms des formateurs concernés
+  const trainerIds = Array.from(counts.keys());
+  if (trainerIds.length === 0) return [];
+  const { data: trainers } = await supabase
+    .from("trainers")
+    .select("id, first_name, last_name")
+    .in("id", trainerIds);
+  const namesById = new Map(
+    ((trainers ?? []) as Array<{
+      id: string;
+      first_name: string;
+      last_name: string;
+    }>).map((t) => [t.id, `${t.last_name.toUpperCase()} ${t.first_name}`]),
+  );
+
+  // 6. Construire les rows, tri par total décroissant
+  const rows: TrainerActivityRow[] = trainerIds.map((tid) => {
+    const byYearMap = counts.get(tid) ?? new Map();
+    const byYear: Record<number, number> = {};
+    let total = 0;
+    for (const y of years) {
+      const n = byYearMap.get(y) ?? 0;
+      byYear[y] = n;
+      total += n;
+    }
+    return {
+      trainerId: tid,
+      trainerName: namesById.get(tid) ?? "Formateur inconnu",
+      byYear,
+      total,
+    };
+  });
+  rows.sort((a, b) => b.total - a.total);
+  return rows;
+}
+
 export async function listTrainersWithoutPortal(
   supabase: SupabaseClient,
 ): Promise<KpiData> {
