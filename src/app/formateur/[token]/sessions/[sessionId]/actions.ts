@@ -1009,6 +1009,142 @@ export async function createExpressLearnerFromPortal(
 }
 
 /**
+ * Édite les informations d'un apprenant TEMPORAIRE depuis le portail
+ * formateur (saisie express sous-traitance). Refuse les apprenants
+ * inscrits officiellement par l'OF — pour ceux-là le formateur doit
+ * passer par l'admin (risque d'incohérence avec convention, convocation,
+ * attestation déjà émises).
+ *
+ * Gilles 2026-05-24 : "uniquement les apprenants qu'il a inscrit et
+ * non ceux de l'OF".
+ */
+export async function updateLearnerFromPortal(
+  token: string,
+  sessionId: string,
+  learnerId: string,
+  formData: FormData,
+): Promise<{ ok: boolean; error?: string }> {
+  const supabase = createAdminClient();
+  const ctx = await validateTrainerAccess(supabase, token, sessionId);
+  if (!ctx) return { ok: false, error: "Accès refusé." };
+
+  // Vérifier que l'apprenant est bien inscrit à cette session
+  const { data: enr } = await supabase
+    .from("session_enrollments")
+    .select("id, learner_id")
+    .eq("session_id", sessionId)
+    .eq("learner_id", learnerId)
+    .maybeSingle<{ id: string; learner_id: string }>();
+  if (!enr) {
+    return { ok: false, error: "Apprenant introuvable sur cette session." };
+  }
+
+  const { data: current } = await supabase
+    .from("learners")
+    .select("is_temporary, organization_id")
+    .eq("id", learnerId)
+    .maybeSingle<{ is_temporary: boolean | null; organization_id: string }>();
+  if (!current || current.organization_id !== ctx.organizationId) {
+    return { ok: false, error: "Apprenant introuvable." };
+  }
+  if (!current.is_temporary) {
+    return {
+      ok: false,
+      error:
+        "Cet apprenant a été inscrit officiellement par l'organisme. Demandez à l'admin pour le modifier.",
+    };
+  }
+
+  const cleanText = (raw: FormDataEntryValue | null): string | null => {
+    if (raw === null) return null;
+    const s = String(raw).trim();
+    return s === "" ? null : s;
+  };
+  const firstName = cleanText(formData.get("first_name"));
+  const lastName = cleanText(formData.get("last_name"));
+  const companyName = cleanText(formData.get("company_name_temp"));
+  if (!firstName || !lastName || !companyName) {
+    return {
+      ok: false,
+      error: "Société, prénom et nom sont obligatoires.",
+    };
+  }
+
+  const siretRaw = cleanText(formData.get("company_siret_temp"));
+  const update: Record<string, unknown> = {
+    civility: cleanText(formData.get("civility")),
+    first_name: firstName,
+    last_name: lastName,
+    email: cleanText(formData.get("email")),
+    job_title: cleanText(formData.get("job_title")),
+    company_name_temp: companyName,
+    company_siret_temp: siretRaw ? siretRaw.replace(/\D/g, "") : null,
+  };
+
+  const { error } = await supabase
+    .from("learners")
+    .update(update)
+    .eq("id", learnerId);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath(`/formateur/${token}/sessions/${sessionId}`);
+  return { ok: true };
+}
+
+/**
+ * Supprime un apprenant TEMPORAIRE (saisie express) depuis le portail
+ * formateur. Refuse si l'apprenant n'est pas temporaire (sécurité :
+ * un apprenant régulier peut avoir une convention, des signatures,
+ * une attestation déjà émise — sa suppression doit passer par l'admin).
+ *
+ * Cascade : enrollment + token portail apprenant + learner. Les rows
+ * orphelines (positioning_responses, quiz_attempts…) sont nettoyées
+ * automatiquement via les ON DELETE CASCADE des migrations.
+ */
+export async function deleteExpressLearnerFromPortal(
+  token: string,
+  sessionId: string,
+  learnerId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const supabase = createAdminClient();
+  const ctx = await validateTrainerAccess(supabase, token, sessionId);
+  if (!ctx) return { ok: false, error: "Accès refusé." };
+
+  const { data: learner } = await supabase
+    .from("learners")
+    .select("is_temporary, organization_id")
+    .eq("id", learnerId)
+    .maybeSingle<{ is_temporary: boolean | null; organization_id: string }>();
+  if (!learner || learner.organization_id !== ctx.organizationId) {
+    return { ok: false, error: "Apprenant introuvable." };
+  }
+  if (!learner.is_temporary) {
+    return {
+      ok: false,
+      error:
+        "Cet apprenant a été inscrit officiellement par l'organisme. Demandez à l'admin pour le retirer.",
+    };
+  }
+
+  // Vérifier qu'il est bien inscrit sur cette session (sécurité)
+  const { data: enr } = await supabase
+    .from("session_enrollments")
+    .select("id")
+    .eq("session_id", sessionId)
+    .eq("learner_id", learnerId)
+    .maybeSingle<{ id: string }>();
+  if (!enr) return { ok: false, error: "Apprenant non inscrit sur cette session." };
+
+  // Suppression : on supprime le learner — ON DELETE CASCADE nettoie
+  // session_enrollments → enrollment_portal_tokens → quiz_attempts → etc.
+  const { error } = await supabase.from("learners").delete().eq("id", learnerId);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath(`/formateur/${token}/sessions/${sessionId}`);
+  return { ok: true };
+}
+
+/**
  * Génère (ou récupère) le token QR d'inscription rapide depuis le
  * portail formateur. Retourne l'URL publique à afficher en QR.
  */

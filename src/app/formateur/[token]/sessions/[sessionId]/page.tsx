@@ -34,11 +34,14 @@ import {
 import { TrainerReportForm } from "./_trainer-report-form";
 import {
   createExpressLearnerFromPortal,
+  deleteExpressLearnerFromPortal,
   deleteSupportAsTrainer,
   generateQuickSignupTokenFromPortal,
   toggleDocumentVisibilityAsTrainer,
+  updateLearnerFromPortal,
   uploadSupportAsTrainer,
 } from "./actions";
+import { ExpressLearnerActions } from "./_express-learner-actions";
 import { ExpressSignupBlock } from "@/components/express-signup-block";
 
 function labelPositioningLevel(v: string | undefined): string {
@@ -162,30 +165,47 @@ export default async function FormateurSessionDetailPage({
   }
 
   // 2. Inscriptions + apprenants
+  // (on charge aussi is_temporary + champs édition pour la saisie express)
   const { data: enrollments } = await supabase
     .from("session_enrollments")
     .select(
-      "id, learner:learners(civility, first_name, last_name, email, company:companies(name))",
+      "id, learner:learners(id, civility, first_name, last_name, email, job_title, is_temporary, company_name_temp, company_siret_temp, company:companies(name))",
     )
     .eq("session_id", sessionId);
 
   const participants = ((enrollments ?? []) as unknown as Array<{
     id: string;
     learner: {
+      id: string;
       civility: string | null;
       first_name: string | null;
       last_name: string | null;
       email: string | null;
+      job_title: string | null;
+      is_temporary: boolean | null;
+      company_name_temp: string | null;
+      company_siret_temp: string | null;
       company: { name: string } | null;
     } | null;
   }>).map((e) => ({
     enrollmentId: e.id,
+    learnerId: e.learner?.id ?? null,
     fullName: [e.learner?.first_name, e.learner?.last_name]
       .filter(Boolean)
       .join(" "),
     civility: e.learner?.civility ?? "",
     email: e.learner?.email ?? null,
-    company: e.learner?.company?.name ?? null,
+    jobTitle: e.learner?.job_title ?? null,
+    isTemporary: e.learner?.is_temporary === true,
+    // Société : fiche entreprise officielle OU texte libre temporaire
+    company:
+      e.learner?.company?.name ??
+      e.learner?.company_name_temp ??
+      null,
+    companyNameTemp: e.learner?.company_name_temp ?? null,
+    companySiretTemp: e.learner?.company_siret_temp ?? null,
+    firstName: e.learner?.first_name ?? null,
+    lastName: e.learner?.last_name ?? null,
   }));
 
   const enrollmentIds = participants.map((p) => p.enrollmentId);
@@ -730,26 +750,68 @@ export default async function FormateurSessionDetailPage({
               {participants.map((p) => (
                 <li
                   key={p.enrollmentId}
-                  className="px-4 py-2 flex items-center justify-between"
+                  className="px-4 py-2 flex items-start justify-between gap-2"
                 >
-                  <div>
-                    <div className="text-sm font-medium text-zinc-900">
-                      {p.civility ? `${p.civility} ` : ""}
-                      {p.fullName}
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium text-zinc-900 flex items-center gap-1.5 flex-wrap">
+                      <span>
+                        {p.civility ? `${p.civility} ` : ""}
+                        {p.fullName}
+                      </span>
+                      {p.isTemporary && (
+                        <span
+                          className="text-[9px] uppercase tracking-wider bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full font-bold"
+                          title="Apprenant saisi en express le jour J (sous-traitance)"
+                        >
+                          Express
+                        </span>
+                      )}
                     </div>
                     {p.company && (
-                      <div className="text-[11px] text-zinc-500">
+                      <div className="text-[11px] text-zinc-500 truncate">
                         {p.company}
                       </div>
                     )}
+                    {p.email && (
+                      <a
+                        href={`mailto:${p.email}`}
+                        className="text-[11px] text-cyan-700 hover:underline truncate block"
+                      >
+                        {p.email}
+                      </a>
+                    )}
                   </div>
-                  {p.email && (
-                    <a
-                      href={`mailto:${p.email}`}
-                      className="text-xs text-cyan-700 hover:underline"
-                    >
-                      {p.email}
-                    </a>
+                  {p.learnerId && (
+                    <ExpressLearnerActions
+                      learnerId={p.learnerId}
+                      isTemporary={p.isTemporary}
+                      initial={{
+                        civility: p.civility || null,
+                        firstName: p.firstName,
+                        lastName: p.lastName,
+                        email: p.email,
+                        jobTitle: p.jobTitle,
+                        companyNameTemp: p.companyNameTemp,
+                        companySiretTemp: p.companySiretTemp,
+                      }}
+                      updateAction={async (learnerId, formData) => {
+                        "use server";
+                        return await updateLearnerFromPortal(
+                          token,
+                          sessionId,
+                          learnerId,
+                          formData,
+                        );
+                      }}
+                      deleteAction={async (learnerId) => {
+                        "use server";
+                        return await deleteExpressLearnerFromPortal(
+                          token,
+                          sessionId,
+                          learnerId,
+                        );
+                      }}
+                    />
                   )}
                 </li>
               ))}
