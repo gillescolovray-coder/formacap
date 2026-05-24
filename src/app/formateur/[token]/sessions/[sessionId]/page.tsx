@@ -35,6 +35,7 @@ import { TrainerReportForm } from "./_trainer-report-form";
 import {
   createExpressLearnerFromPortal,
   deleteExpressLearnerFromPortal,
+  deleteQuizAttemptFromPortal,
   deleteSupportAsTrainer,
   generateQuickSignupTokenFromPortal,
   toggleDocumentVisibilityAsTrainer,
@@ -42,6 +43,7 @@ import {
   uploadSupportAsTrainer,
 } from "./actions";
 import { ExpressLearnerActions } from "./_express-learner-actions";
+import { QuizAttemptResetButton } from "./_quiz-attempt-reset";
 import { ExpressSignupBlock } from "@/components/express-signup-block";
 
 function labelPositioningLevel(v: string | undefined): string {
@@ -1062,9 +1064,39 @@ export default async function FormateurSessionDetailPage({
                           </td>
                           <td className="px-2 py-2 align-top">
                             <AttemptCell attempt={pre} />
+                            {pre && (
+                              <QuizAttemptResetButton
+                                learnerName={p.fullName}
+                                phaseLabel="du quiz d'entrée"
+                                resetAction={async () => {
+                                  "use server";
+                                  return await deleteQuizAttemptFromPortal(
+                                    token,
+                                    sessionId,
+                                    p.enrollmentId,
+                                    "pre",
+                                  );
+                                }}
+                              />
+                            )}
                           </td>
                           <td className="px-2 py-2 align-top">
                             <AttemptCell attempt={post} />
+                            {post && (
+                              <QuizAttemptResetButton
+                                learnerName={p.fullName}
+                                phaseLabel="du quiz de sortie"
+                                resetAction={async () => {
+                                  "use server";
+                                  return await deleteQuizAttemptFromPortal(
+                                    token,
+                                    sessionId,
+                                    p.enrollmentId,
+                                    "post",
+                                  );
+                                }}
+                              />
+                            )}
                           </td>
                           <td className="px-2 py-2 align-top text-right tabular-nums">
                             {delta === null ? (

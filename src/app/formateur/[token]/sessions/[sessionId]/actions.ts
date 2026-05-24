@@ -1171,6 +1171,65 @@ export async function deleteExpressLearnerFromPortal(
 }
 
 /**
+ * Supprime une tentative de quiz (pré ou post) d'un apprenant depuis
+ * le portail formateur. Sert à "rejouer" un quiz : on supprime la
+ * tentative, l'apprenant peut rejouer la phase en allant sur son
+ * portail (la page /mon-parcours/[token]/quiz détecte automatiquement
+ * qu'il manque cette phase et la lui propose).
+ *
+ * Gilles 2026-05-24 : "le formateur peut supprimer un quiz ou le
+ * faire rejouer à l'apprenant sans qu'il ait besoin de réinscrire".
+ *
+ * Sécurité : on vérifie que l'enrollment appartient bien à la session
+ * accessible par ce formateur (via validateEnrollmentForTrainer).
+ */
+export async function deleteQuizAttemptFromPortal(
+  token: string,
+  sessionId: string,
+  enrollmentId: string,
+  phase: "pre" | "post",
+): Promise<{ ok: boolean; error?: string }> {
+  if (phase !== "pre" && phase !== "post") {
+    return { ok: false, error: "Phase invalide." };
+  }
+  const supabase = createAdminClient();
+  const ctx = await validateEnrollmentForTrainer(
+    supabase,
+    token,
+    sessionId,
+    enrollmentId,
+  );
+  if (!ctx) return { ok: false, error: "Accès refusé." };
+
+  // Quiz effectif rattaché à la session (sessions.quiz_template_id ou
+  // formations.quiz_template_id en fallback)
+  const { data: session } = await supabase
+    .from("sessions")
+    .select("quiz_template_id, formation:formations(quiz_template_id)")
+    .eq("id", sessionId)
+    .maybeSingle<{
+      quiz_template_id: string | null;
+      formation: { quiz_template_id: string | null } | null;
+    }>();
+  const effectiveQuizId =
+    session?.quiz_template_id ?? session?.formation?.quiz_template_id ?? null;
+  if (!effectiveQuizId) {
+    return { ok: false, error: "Aucun quiz rattaché à cette session." };
+  }
+
+  const { error } = await supabase
+    .from("quiz_attempts")
+    .delete()
+    .eq("enrollment_id", enrollmentId)
+    .eq("quiz_template_id", effectiveQuizId)
+    .eq("phase", phase);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath(`/formateur/${token}/sessions/${sessionId}`);
+  return { ok: true };
+}
+
+/**
  * Génère (ou récupère) le token QR d'inscription rapide depuis le
  * portail formateur. Retourne l'URL publique à afficher en QR.
  */
