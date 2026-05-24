@@ -121,14 +121,21 @@ export function ExpressSignupBlock({
 
               <div className="text-center space-y-1">
                 <div className="text-xs uppercase tracking-widest text-amber-700 font-semibold">
-                  Inscription rapide — sous-traitance
+                  Inscription rapide — tour de table
                 </div>
                 <h2 className="text-lg font-bold text-zinc-900">
-                  Scannez ce QR code
+                  Affichez ce QR code aux apprenants
                 </h2>
                 <p className="text-sm text-zinc-600">
-                  L&apos;apprenant scanne avec son téléphone, remplit le
-                  formulaire et arrive directement sur le quiz pré-formation.
+                  Pendant le tour de table, chaque apprenant scanne avec
+                  son téléphone, renseigne sa fiche, puis enchaîne
+                  directement sur le quiz pré-formation —{" "}
+                  <strong>sans ressaisir ses informations</strong>.
+                </p>
+                <p className="text-[11px] text-zinc-500 pt-1">
+                  Astuce : cliquez sur <em>Plein écran</em> pour
+                  l&apos;afficher en grand sur votre ordinateur ou
+                  vidéo-projecteur.
                 </p>
               </div>
 

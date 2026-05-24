@@ -685,7 +685,7 @@ export default async function FormateurSessionDetailPage({
         {session.is_subcontracted && (
           <ExpressSignupBlock
             subcontractorName={session.subcontractor_name}
-            helpText="L'OF donneur d'ordre n'a pas transmis la liste ? Ajoutez ici les apprenants découverts le jour J."
+            helpText="L'OF donneur d'ordre n'a pas transmis la liste ? Au démarrage, affichez le QR code pendant le tour de table : chaque apprenant scanne, remplit sa fiche, puis arrive direct sur le quiz pré-formation (pas de double saisie). Vous pouvez aussi saisir vous-même un apprenant ponctuel."
             createAction={async (formData) => {
               "use server";
               await createExpressLearnerFromPortal(

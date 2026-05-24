@@ -312,6 +312,7 @@ export default async function ParticipantsPage({
         {session.is_subcontracted && (
           <ExpressSignupBlock
             subcontractorName={session.subcontractor_name}
+            helpText="Sous-traitance : la liste n'arrive souvent qu'au jour J. Le formateur peut afficher le QR code au démarrage (tour de table) — chaque apprenant scanne, remplit sa fiche et passe direct au quiz pré-formation (pas de double saisie). Vous pouvez aussi ajouter ici un apprenant manuellement."
             createAction={async (formData) => {
               "use server";
               await createExpressLearnerAdmin(id, formData);
