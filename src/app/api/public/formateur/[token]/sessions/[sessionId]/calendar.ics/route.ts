@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { trainerHasAccessToSession } from "@/lib/portal/trainer-session-access";
 
 export const runtime = "nodejs";
 
@@ -87,7 +88,16 @@ export async function GET(
       } | null;
     }>();
 
-  if (!session || session.trainer_id !== tokenRow.trainer_id) {
+  if (!session) {
+    return new NextResponse("Session inaccessible.", { status: 404 });
+  }
+  const access = await trainerHasAccessToSession(
+    supabase,
+    tokenRow.trainer_id,
+    sessionId,
+    session.trainer_id,
+  );
+  if (!access) {
     return new NextResponse("Session inaccessible.", { status: 404 });
   }
 

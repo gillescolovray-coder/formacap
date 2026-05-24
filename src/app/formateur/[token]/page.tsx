@@ -72,16 +72,53 @@ export default async function FormateurAgendaPage({
     .eq("id", trainer.organization_id)
     .maybeSingle<{ name: string; logo_url: string | null }>();
 
-  // 3. Sessions où ce formateur est trainer_id
-  const { data: sessions } = await supabase
-    .from("sessions")
-    .select(
-      "id, status, start_date, end_date, modality, location, is_inter, formation:formations(title), location_ref:formation_locations!location_id(name, city)",
-    )
-    .eq("trainer_id", trainer.id)
-    .order("start_date", { ascending: true });
+  // 3. Sessions où ce formateur intervient — soit comme formateur
+  //    principal de la session (sessions.trainer_id), soit comme
+  //    formateur d'un jour du planning détaillé (session_days.trainer_id).
+  //    Gilles 2026-05-24 : un formateur assigné uniquement au niveau
+  //    jour n'était pas vu dans son portail. Règle métier alignée
+  //    sur l'auto-promotion (confirmSession) et le KPI dashboard.
+  const [sessionsAsMain, dayAssignments] = await Promise.all([
+    supabase
+      .from("sessions")
+      .select(
+        "id, status, start_date, end_date, modality, location, is_inter, formation:formations(title), location_ref:formation_locations!location_id(name, city)",
+      )
+      .eq("trainer_id", trainer.id),
+    supabase
+      .from("session_days")
+      .select("session_id")
+      .eq("trainer_id", trainer.id),
+  ]);
 
-  const allSessions = ((sessions ?? []) as unknown as SessionRow[]);
+  const sessionIdsViaDays = Array.from(
+    new Set(
+      ((dayAssignments.data ?? []) as Array<{ session_id: string }>).map(
+        (d) => d.session_id,
+      ),
+    ),
+  );
+
+  // Charger les sessions trouvées via les jours (et qui ne seraient
+  // pas déjà dans sessionsAsMain)
+  const mainIds = new Set(
+    ((sessionsAsMain.data ?? []) as Array<{ id: string }>).map((s) => s.id),
+  );
+  const idsToFetch = sessionIdsViaDays.filter((id) => !mainIds.has(id));
+  const { data: sessionsViaDays } =
+    idsToFetch.length > 0
+      ? await supabase
+          .from("sessions")
+          .select(
+            "id, status, start_date, end_date, modality, location, is_inter, formation:formations(title), location_ref:formation_locations!location_id(name, city)",
+          )
+          .in("id", idsToFetch)
+      : { data: [] };
+
+  const allSessions = ([
+    ...((sessionsAsMain.data ?? []) as unknown as SessionRow[]),
+    ...((sessionsViaDays ?? []) as unknown as SessionRow[]),
+  ]).sort((a, b) => a.start_date.localeCompare(b.start_date));
 
   const sessionIds = allSessions.map((s) => s.id);
 

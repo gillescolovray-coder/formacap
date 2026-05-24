@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { trainerHasAccessToSession } from "@/lib/portal/trainer-session-access";
 import { PositioningResponseView } from "@/lib/positioning/response-view";
 import { TrainerObservationForm } from "@/lib/positioning/_trainer-observation-form";
 import type {
@@ -40,9 +41,14 @@ export default async function FormateurPositionnementDetailPage({
       trainer_id: string | null;
       formation: { title: string } | null;
     }>();
-  if (!session || session.trainer_id !== tokenRow.trainer_id) {
-    return <NotFound />;
-  }
+  if (!session) return <NotFound />;
+  const access = await trainerHasAccessToSession(
+    supabase,
+    tokenRow.trainer_id,
+    sessionId,
+    session.trainer_id,
+  );
+  if (!access) return <NotFound />;
 
   // 2. Enrollment + apprenant
   const { data: enrollment } = await supabase

@@ -65,9 +65,22 @@ async function validateTrainerAccess(
     .select("trainer_id, organization_id")
     .eq("id", sessionId)
     .maybeSingle<{ trainer_id: string | null; organization_id: string }>();
-  if (!session || session.trainer_id !== tokenRow.trainer_id) {
-    return null;
+  if (!session) return null;
+
+  // Accès autorisé si formateur principal OU formateur d'au moins un jour
+  // du planning détaillé (Gilles 2026-05-24).
+  let authorized = session.trainer_id === tokenRow.trainer_id;
+  if (!authorized) {
+    const { data: dayAssign } = await supabase
+      .from("session_days")
+      .select("id")
+      .eq("session_id", sessionId)
+      .eq("trainer_id", tokenRow.trainer_id)
+      .limit(1)
+      .maybeSingle();
+    authorized = !!dayAssign;
   }
+  if (!authorized) return null;
 
   return {
     trainerId: tokenRow.trainer_id,

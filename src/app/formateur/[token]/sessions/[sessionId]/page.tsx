@@ -132,7 +132,23 @@ export default async function FormateurSessionDetailPage({
       } | null;
     }>();
 
-  if (!session || session.trainer_id !== tokenRow.trainer_id) {
+  // Accès autorisé si formateur principal de la session OU formateur
+  // d'au moins un jour du planning détaillé (Gilles 2026-05-24).
+  if (!session) {
+    return <NotFoundCard reason="Session introuvable." />;
+  }
+  let isAuthorized = session.trainer_id === tokenRow.trainer_id;
+  if (!isAuthorized) {
+    const { data: dayAssign } = await supabase
+      .from("session_days")
+      .select("id")
+      .eq("session_id", sessionId)
+      .eq("trainer_id", tokenRow.trainer_id)
+      .limit(1)
+      .maybeSingle();
+    isAuthorized = !!dayAssign;
+  }
+  if (!isAuthorized) {
     return (
       <NotFoundCard reason="Vous n'avez pas accès à cette session." />
     );

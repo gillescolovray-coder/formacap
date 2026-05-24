@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { trainerHasAccessToSession } from "@/lib/portal/trainer-session-access";
 import { cn } from "@/lib/utils";
 import { PrintButton } from "@/app/(app)/sessions/[id]/emargement/print/_print-button";
 import type { SessionDay, TrainingSession } from "@/lib/sessions/types";
@@ -127,9 +128,14 @@ export default async function EmargementPrintPageFormateur({
       }
     >();
 
-  if (!session || session.trainer_id !== tokenRow.trainer_id) {
-    notFound();
-  }
+  if (!session) notFound();
+  const access = await trainerHasAccessToSession(
+    supabase,
+    tokenRow.trainer_id,
+    sessionId,
+    session.trainer_id,
+  );
+  if (!access) notFound();
 
   const [{ data: enrollments }, { data: sessionDays }] = await Promise.all([
     supabase

@@ -4,6 +4,7 @@ import { ChevronLeft, Info, Printer } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isResendConfigured } from "@/lib/email/resend";
 import { healEnrollmentsForSession } from "@/lib/inscriptions/sync";
+import { trainerHasAccessToSession } from "@/lib/portal/trainer-session-access";
 import { SignaturesDashboard } from "@/app/(app)/sessions/[id]/emargement/_signatures-dashboard";
 import { EmargementTabs } from "./_emargement-tabs";
 import { TrainerSignatureGrid } from "./_trainer-signature-grid";
@@ -76,9 +77,14 @@ export default async function FormateurEmargementPage({
       start_date: string;
       end_date: string;
     }>();
-  if (!session || session.trainer_id !== tokenRow.trainer_id) {
-    return <NotFound />;
-  }
+  if (!session) return <NotFound />;
+  const access = await trainerHasAccessToSession(
+    supabase,
+    tokenRow.trainer_id,
+    sessionId,
+    session.trainer_id,
+  );
+  if (!access) return <NotFound />;
 
   // 2 bis. Self-healing (identique à admin) — robustifie la synchro
   // inscriptions ↔ enrollments avant émargement.
