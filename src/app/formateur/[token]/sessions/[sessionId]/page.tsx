@@ -528,9 +528,14 @@ export default async function FormateurSessionDetailPage({
     session.default_afternoon_end,
     "17:00",
   );
-  const calPortalUrl =
-    (process.env.NEXT_PUBLIC_APP_URL ?? "https://app.capnumerique.com") +
-    `/formateur/${token}/sessions/${sessionId}`;
+  const calAppBase =
+    process.env.NEXT_PUBLIC_APP_URL ?? "https://app.capnumerique.com";
+  const calAgendaUrl = `${calAppBase}/formateur/${token}`;
+  const calPortalUrl = `${calAppBase}/formateur/${token}/sessions/${sessionId}`;
+  // Description riche pour Google/Outlook/.ics : on inclut les 2 liens
+  // utiles (agenda global + cette session) pour que le formateur retombe
+  // toujours sur son portail sans avoir a rechercher l'email d'invitation
+  // (Gilles 2026-05-24).
   const calDescription = [
     `Vous animez cette session pour ${orgName}.`,
     `${participants.length} apprenant${participants.length > 1 ? "s" : ""} inscrit${participants.length > 1 ? "s" : ""}.`,
@@ -540,9 +545,12 @@ export default async function FormateurSessionDetailPage({
     session.organization?.email
       ? `Email OF : ${session.organization.email}`
       : null,
-    `Mon espace formateur (participants, émargement, supports) : ${calPortalUrl}`,
+    "",
+    "--- Acces a mon portail formateur ---",
+    `Mon agenda : ${calAgendaUrl}`,
+    `Cette session (participants, emargement, supports, bilan) : ${calPortalUrl}`,
   ]
-    .filter(Boolean)
+    .filter((line) => line !== null)
     .join("\n");
   const calEvent = {
     title: formationTitle,

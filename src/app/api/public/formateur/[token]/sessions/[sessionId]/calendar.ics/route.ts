@@ -137,17 +137,24 @@ export async function GET(
     location = parts.length > 0 ? parts.join(", ") : (session.location ?? "");
   }
 
-  const portalUrl =
-    (process.env.NEXT_PUBLIC_APP_URL ?? "https://app.capnumerique.com") +
-    `/formateur/${token}/sessions/${sessionId}`;
+  const appBase =
+    process.env.NEXT_PUBLIC_APP_URL ?? "https://app.capnumerique.com";
+  const agendaUrl = `${appBase}/formateur/${token}`;
+  const portalUrl = `${appBase}/formateur/${token}/sessions/${sessionId}`;
+  // Description : 2 liens utiles vers le portail formateur pour que
+  // le rappel agenda (Apple Calendar, Outlook desktop, Thunderbird...)
+  // ramene toujours le formateur a son espace (Gilles 2026-05-24).
   const description = [
     `Vous animez cette session pour ${orgName}.`,
     `${enrollmentCount ?? 0} apprenant${(enrollmentCount ?? 0) > 1 ? "s" : ""} inscrit${(enrollmentCount ?? 0) > 1 ? "s" : ""}.`,
     session.organization?.phone ? `Contact OF : ${session.organization.phone}` : null,
     session.organization?.email ? `Email OF : ${session.organization.email}` : null,
-    `Mon espace formateur (participants, émargement, supports) : ${portalUrl}`,
+    "",
+    "--- Acces a mon portail formateur ---",
+    `Mon agenda : ${agendaUrl}`,
+    `Cette session (participants, emargement, supports, bilan) : ${portalUrl}`,
   ]
-    .filter(Boolean)
+    .filter((line) => line !== null)
     .join("\n");
 
   const uid = `formacap-trainer-${sessionId}@capnumerique.com`;
