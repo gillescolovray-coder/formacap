@@ -343,22 +343,40 @@ export default async function FormateurEmargementPage({
         <EmargementTabs
           electroniqueContent={
             <div className="space-y-4">
-              <div className="rounded-xl bg-gradient-to-br from-cyan-50 to-blue-50 border border-cyan-200 p-4">
+              {/* Bandeau principal : QR code = methode privilegiee.
+                  Gilles 2026-05-24 : il faut que le formateur comprenne
+                  l'ordre d'utilisation et la solution de repli. */}
+              <div className="rounded-xl bg-gradient-to-br from-cyan-50 to-blue-50 border-2 border-cyan-300 p-4 space-y-3">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="flex-1 min-w-[260px]">
-                    <h3 className="font-bold text-sm text-cyan-900 mb-1">
-                      Émargement électronique
+                    <div className="text-[10px] uppercase tracking-widest text-cyan-700 font-bold mb-0.5">
+                      Méthode recommandée
+                    </div>
+                    <h3 className="font-bold text-base text-cyan-900 mb-1">
+                      1. Émargement par QR code
                     </h3>
                     <p className="text-xs text-cyan-800 leading-relaxed">
-                      Chaque apprenant signe depuis son téléphone via un QR
-                      code (présentiel) ou un lien email (distanciel). Vous
-                      pouvez aussi signer pour eux dans la grille ci-dessous
-                      si le formateur fait passer son téléphone.
+                      Affichez le QR code à vos apprenants (idéalement en{" "}
+                      <strong>plein écran</strong> sur votre ordinateur ou
+                      vidéo-projecteur). Chacun le scanne avec son téléphone,
+                      sélectionne son nom dans la liste et signe sa demi-journée.
+                      Les signatures arrivent en direct dans la grille
+                      ci-dessous.
                     </p>
                   </div>
                   <div className="shrink-0">
                     <TrainerQrButton token={token} sessionId={sessionId} />
                   </div>
+                </div>
+                <div className="rounded-md bg-white/70 border border-cyan-200 px-3 py-2 text-[11px] text-zinc-700 leading-relaxed">
+                  <strong className="text-cyan-900">
+                    💡 Solution de secours :
+                  </strong>{" "}
+                  si un apprenant n&apos;arrive pas à scanner le QR code
+                  (téléphone à plat, app appareil photo qui bug, etc.), il
+                  peut signer directement depuis votre ordinateur en cliquant
+                  sur le bouton <strong>« Signer »</strong> sur sa ligne dans
+                  la grille ci-dessous — il signera au doigt sur votre écran.
                 </div>
               </div>
 
