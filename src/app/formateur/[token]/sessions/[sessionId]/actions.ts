@@ -7,6 +7,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { isResendConfigured, sendEmail } from "@/lib/email/resend";
 import {
   createExpressLearnerForSession,
+  ensureEnrollmentPortalToken,
   ensureQuickSignupToken,
 } from "@/lib/portal/express-signup";
 import {
@@ -1168,6 +1169,44 @@ export async function deleteExpressLearnerFromPortal(
 
   revalidatePath(`/formateur/${token}/sessions/${sessionId}`);
   return { ok: true };
+}
+
+/**
+ * Récupère (ou crée à la volée) le lien personnel du portail apprenant
+ * pour un enrollment de cette session, depuis le portail formateur.
+ *
+ * Cas d'usage (Gilles 2026-05-24) : le formateur a saisi un apprenant
+ * lui-même (ou son apprenant a perdu sa convocation) et veut lui
+ * donner le lien vers son portail pour qu'il puisse jouer le quiz
+ * pré/post, émarger, voir les supports.
+ *
+ * Le QR / lien retourné pointe vers /mon-parcours/[token] — la page
+ * d'accueil personnelle de l'apprenant. De là il accède au quiz,
+ * à l'émargement, etc.
+ */
+export async function getLearnerPortalLinkFromPortal(
+  token: string,
+  sessionId: string,
+  enrollmentId: string,
+): Promise<{ url: string; token: string } | { error: string }> {
+  const supabase = createAdminClient();
+  const ctx = await validateEnrollmentForTrainer(
+    supabase,
+    token,
+    sessionId,
+    enrollmentId,
+  );
+  if (!ctx) return { error: "Accès refusé." };
+
+  // Réutilise le helper de création / récupération idempotente
+  const learnerToken = await ensureEnrollmentPortalToken(supabase, enrollmentId);
+
+  const base =
+    process.env.NEXT_PUBLIC_APP_URL ?? "https://app.capnumerique.com";
+  return {
+    url: `${base}/mon-parcours/${learnerToken}`,
+    token: learnerToken,
+  };
 }
 
 /**

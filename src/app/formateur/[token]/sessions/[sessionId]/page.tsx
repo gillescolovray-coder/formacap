@@ -38,11 +38,13 @@ import {
   deleteQuizAttemptFromPortal,
   deleteSupportAsTrainer,
   generateQuickSignupTokenFromPortal,
+  getLearnerPortalLinkFromPortal,
   toggleDocumentVisibilityAsTrainer,
   updateLearnerFromPortal,
   uploadSupportAsTrainer,
 } from "./actions";
 import { ExpressLearnerActions } from "./_express-learner-actions";
+import { LearnerPortalLinkButton } from "./_learner-portal-link-button";
 import { QuizAttemptResetButton } from "./_quiz-attempt-reset";
 import { ExpressSignupBlock } from "@/components/express-signup-block";
 
@@ -792,6 +794,22 @@ export default async function FormateurSessionDetailPage({
                       </a>
                     )}
                   </div>
+                  <div className="flex items-start gap-0.5 shrink-0">
+                    {/* Lien personnel apprenant (QR + URL) : disponible
+                        pour TOUS les apprenants — utile quand le formateur
+                        a saisi l'apprenant lui-meme ou qu'un apprenant a
+                        perdu sa convocation (Gilles 2026-05-24). */}
+                    <LearnerPortalLinkButton
+                      learnerName={p.fullName || "l'apprenant"}
+                      getLinkAction={async () => {
+                        "use server";
+                        return await getLearnerPortalLinkFromPortal(
+                          token,
+                          sessionId,
+                          p.enrollmentId,
+                        );
+                      }}
+                    />
                   {p.learnerId && (
                     <ExpressLearnerActions
                       learnerId={p.learnerId}
@@ -824,6 +842,7 @@ export default async function FormateurSessionDetailPage({
                       }}
                     />
                   )}
+                  </div>
                 </li>
               ))}
             </ul>
