@@ -25,7 +25,40 @@ export type ParsedFormation = {
   evaluation_methods?: string;
   accessibility?: string;
   programme_days?: ProgrammeDay[];
+  /** "presentiel" | "distanciel" | "hybride" — détecté depuis le document. */
+  modality?: "presentiel" | "distanciel" | "hybride";
 };
+
+/**
+ * Détecte la modalité depuis le texte du programme. FOAD / e-learning /
+ * Zoom / Teams / classe virtuelle → distanciel. Présentiel / en salle →
+ * présentiel. Mention des deux → hybride. Sinon undefined (l'utilisateur
+ * choisira manuellement).
+ */
+export function detectModalityFromText(
+  text: string,
+): "presentiel" | "distanciel" | "hybride" | undefined {
+  const t = text.toLowerCase();
+  const hasRemote =
+    /\bfoad\b/.test(t) ||
+    /formation\s+ouverte\s+(?:et\s+)?(?:à\s+)?distance/.test(t) ||
+    /\be[-\s]?learning\b/.test(t) ||
+    /\bdistanciel\b/.test(t) ||
+    /\bà\s+distance\b/.test(t) ||
+    /\bclasse\s+virtuelle\b/.test(t) ||
+    /\bvisio(?:conf[ée]rence)?\b/.test(t) ||
+    /\b(?:zoom|teams|google\s*meet|webex|jitsi)\b/.test(t);
+  const hasOnsite =
+    /\bpr[ée]sentiel\b/.test(t) ||
+    /\ben\s+salle\b/.test(t) ||
+    /\bintra(?:\s+entreprise)?\b/.test(t) ||
+    /\bsur\s+site\b/.test(t);
+
+  if (hasRemote && hasOnsite) return "hybride";
+  if (hasRemote) return "distanciel";
+  if (hasOnsite) return "presentiel";
+  return undefined;
+}
 
 const SECTION_LABELS = [
   "Objectifs",
@@ -313,6 +346,10 @@ export function parseFormationFromText(rawText: string): ParsedFormation {
   if (programme) {
     result.programme_days = parseProgramme(programme);
   }
+
+  // Modalité (FOAD / présentiel / hybride) — détection sur tout le texte
+  const modality = detectModalityFromText(text);
+  if (modality) result.modality = modality;
 
   return result;
 }

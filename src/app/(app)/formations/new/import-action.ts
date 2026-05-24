@@ -186,6 +186,14 @@ export async function importFormationFromDocument(formData: FormData) {
   setIfDefined("technical_means", parsed.technical_means);
   setIfDefined("evaluation_methods", parsed.evaluation_methods);
   setIfDefined("accessibility", parsed.accessibility);
+  // Modalité auto-detectée (FOAD / présentiel / hybride) — Gilles 2026-05-24
+  if (
+    parsed.modality === "presentiel" ||
+    parsed.modality === "distanciel" ||
+    parsed.modality === "hybride"
+  ) {
+    insertPayload.modality = parsed.modality;
+  }
   if (parsed.programme_days && parsed.programme_days.length > 0) {
     insertPayload.programme_days = parsed.programme_days;
   }

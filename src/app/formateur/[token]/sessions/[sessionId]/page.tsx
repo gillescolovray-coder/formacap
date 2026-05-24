@@ -32,10 +32,13 @@ import {
 } from "@/lib/trainer-report/types";
 import { TrainerReportForm } from "./_trainer-report-form";
 import {
+  createExpressLearnerFromPortal,
   deleteSupportAsTrainer,
+  generateQuickSignupTokenFromPortal,
   toggleDocumentVisibilityAsTrainer,
   uploadSupportAsTrainer,
 } from "./actions";
+import { ExpressSignupBlock } from "@/components/express-signup-block";
 
 function labelPositioningLevel(v: string | undefined): string {
   if (!v) return "—";
@@ -73,6 +76,7 @@ export default async function FormateurSessionDetailPage({
     deleted?: string;
     signed?: string;
     error?: string;
+    expressOk?: string;
   }>;
 }) {
   const { token, sessionId } = await params;
@@ -96,7 +100,7 @@ export default async function FormateurSessionDetailPage({
   const { data: session } = await supabase
     .from("sessions")
     .select(
-      "id, status, start_date, end_date, modality, location, video_link, video_app, trainer_id, quiz_template_id, is_inter, default_morning_start, default_morning_end, default_afternoon_start, default_afternoon_end, formation:formations(title, quiz_template_id), location_ref:formation_locations!location_id(name, address, postal_code, city), organization:organizations(name, phone, email)",
+      "id, status, start_date, end_date, modality, location, video_link, video_app, trainer_id, quiz_template_id, is_inter, is_subcontracted, subcontractor_name, default_morning_start, default_morning_end, default_afternoon_start, default_afternoon_end, formation:formations(title, quiz_template_id), location_ref:formation_locations!location_id(name, address, postal_code, city), organization:organizations(name, phone, email)",
     )
     .eq("id", sessionId)
     .maybeSingle<{
@@ -111,6 +115,8 @@ export default async function FormateurSessionDetailPage({
       trainer_id: string | null;
       quiz_template_id: string | null;
       is_inter: boolean | null;
+      is_subcontracted: boolean | null;
+      subcontractor_name: string | null;
       default_morning_start: string | null;
       default_morning_end: string | null;
       default_afternoon_start: string | null;
@@ -551,6 +557,11 @@ export default async function FormateurSessionDetailPage({
             {sp.error}
           </div>
         )}
+        {sp.expressOk && (
+          <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-700">
+            ✓ Apprenant ajouté en saisie express.
+          </div>
+        )}
 
         {/* En-tête session */}
         <header className="rounded-xl bg-white shadow-sm border border-zinc-200 p-4 space-y-2">
@@ -669,6 +680,29 @@ export default async function FormateurSessionDetailPage({
             </div>
           </div>
         </header>
+
+        {/* Saisie express — sous-traitance (Phase 1 MVP, Gilles 2026-05-24) */}
+        {session.is_subcontracted && (
+          <ExpressSignupBlock
+            subcontractorName={session.subcontractor_name}
+            helpText="L'OF donneur d'ordre n'a pas transmis la liste ? Ajoutez ici les apprenants découverts le jour J."
+            createAction={async (formData) => {
+              "use server";
+              await createExpressLearnerFromPortal(
+                token,
+                sessionId,
+                formData,
+              );
+            }}
+            generateQuickSignupAction={async () => {
+              "use server";
+              return await generateQuickSignupTokenFromPortal(
+                token,
+                sessionId,
+              );
+            }}
+          />
+        )}
 
         {/* Module 1 — Participants */}
         <Module

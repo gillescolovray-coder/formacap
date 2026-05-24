@@ -5,6 +5,11 @@ import { BackButton } from "@/components/back-button";
 import { SessionTabs } from "../_session-tabs";
 import { SessionHeaderMeta } from "../_session-header-meta";
 import { ParticipantsInscriptionsBlock } from "../_participants-inscriptions-block";
+import { ExpressSignupBlock } from "@/components/express-signup-block";
+import {
+  createExpressLearnerAdmin,
+  generateQuickSignupTokenAdmin,
+} from "../express-actions";
 import type {
   InscriptionRequest,
   InscriptionStage,
@@ -78,7 +83,7 @@ export default async function ParticipantsPage({
   const { data: session } = await supabase
     .from("sessions")
     .select(
-      "id, max_participants, status, pricing_mode, price_per_day_ht, price_forfait_ht, price_extra_per_day_ht, pricing_threshold, formation:formations(id, title, public_price_excl_tax)",
+      "id, max_participants, status, pricing_mode, price_per_day_ht, price_forfait_ht, price_extra_per_day_ht, pricing_threshold, is_subcontracted, subcontractor_name, formation:formations(id, title, public_price_excl_tax)",
     )
     .eq("id", id)
     .maybeSingle<{
@@ -90,6 +95,8 @@ export default async function ParticipantsPage({
       price_forfait_ht: number | null;
       price_extra_per_day_ht: number | null;
       pricing_threshold: number | null;
+      is_subcontracted: boolean | null;
+      subcontractor_name: string | null;
       formation: {
         id: string;
         title: string;
@@ -294,6 +301,26 @@ export default async function ParticipantsPage({
           <div className="rounded-xl bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-900 p-4 text-sm text-red-700 dark:text-red-300">
             {query.error}
           </div>
+        )}
+        {query.expressOk && (
+          <div className="rounded-xl bg-emerald-50 dark:bg-emerald-950 border border-emerald-200 dark:border-emerald-900 p-4 text-sm text-emerald-700 dark:text-emerald-300">
+            Apprenant ajouté en saisie express. Il apparaît dans la liste
+            ci-dessous en mode « temporaire ».
+          </div>
+        )}
+
+        {session.is_subcontracted && (
+          <ExpressSignupBlock
+            subcontractorName={session.subcontractor_name}
+            createAction={async (formData) => {
+              "use server";
+              await createExpressLearnerAdmin(id, formData);
+            }}
+            generateQuickSignupAction={async () => {
+              "use server";
+              return await generateQuickSignupTokenAdmin(id);
+            }}
+          />
         )}
 
         <ParticipantsInscriptionsBlock

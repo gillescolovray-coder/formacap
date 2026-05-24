@@ -38,6 +38,7 @@ Format JSON attendu :
   "technical_means": string | null,
   "evaluation_methods": string | null,
   "accessibility": string | null,
+  "modality": "presentiel" | "distanciel" | "hybride" | null,
   "programme_days": [
     { "morning": "texte avec sauts de ligne", "afternoon": "texte avec sauts de ligne" }
   ]
@@ -49,6 +50,11 @@ Règles strictes :
 - operational_objectives : un élément par puce, sans le tiret en préfixe.
 - programme_days : un élément par journée, contenu matin/après-midi.
 - Si le tarif est "Sur devis" : pricing_note = "Sur devis", public_price_excl_tax = null.
+- modality :
+    * "distanciel" si FOAD, e-learning, classe virtuelle, Zoom/Teams/Meet, ou mention "à distance".
+    * "presentiel" si "en salle", "sur site", "présentiel" uniquement.
+    * "hybride" si les deux modalités sont mentionnées.
+    * null sinon (l'utilisateur choisira manuellement).
 - Réponds STRICTEMENT en JSON pur, rien d'autre.`;
 
 function getApiKey(): string {

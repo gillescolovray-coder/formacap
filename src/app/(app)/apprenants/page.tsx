@@ -51,9 +51,12 @@ export default async function LearnersListPage({
     .select("id, name")
     .order("name", { ascending: true });
 
+  // Exclure les apprenants temporaires (saisie express sous-traitance)
+  // tant qu'ils ne sont pas promus. Migration 0104, Gilles 2026-05-24.
   let query = supabase
     .from("learners")
     .select("*, company:companies(id, name)")
+    .eq("is_temporary", false)
     .order("updated_at", { ascending: false });
 
   if (q) {
@@ -84,23 +87,30 @@ export default async function LearnersListPage({
     { count: companyCount },
     { count: privateCount },
   ] = await Promise.all([
-    supabase.from("learners").select("id", { count: "exact", head: true }),
     supabase
       .from("learners")
       .select("id", { count: "exact", head: true })
-      .eq("is_active", true),
+      .eq("is_temporary", false),
     supabase
       .from("learners")
       .select("id", { count: "exact", head: true })
-      .eq("is_active", false),
+      .eq("is_active", true)
+      .eq("is_temporary", false),
     supabase
       .from("learners")
       .select("id", { count: "exact", head: true })
-      .not("company_id", "is", null),
+      .eq("is_active", false)
+      .eq("is_temporary", false),
     supabase
       .from("learners")
       .select("id", { count: "exact", head: true })
-      .is("company_id", null),
+      .not("company_id", "is", null)
+      .eq("is_temporary", false),
+    supabase
+      .from("learners")
+      .select("id", { count: "exact", head: true })
+      .is("company_id", null)
+      .eq("is_temporary", false),
   ]);
 
   function statCardClass(active: boolean, accent: string) {

@@ -247,7 +247,11 @@ export default async function FormationsListPage({
           {showArchived && (
             <input type="hidden" name="show_archived" value="1" />
           )}
-          <div className="grid gap-3 md:grid-cols-[2fr_1fr_auto] items-end">
+          {/* Le filtre modalité passe en chips (cf. plus bas) — ici on
+              conserve sa valeur via un hidden pour le bouton Filtrer
+              et la recherche libre. */}
+          <input type="hidden" name="modality" value={modalityFilter} />
+          <div className="grid gap-3 md:grid-cols-[1fr_auto] items-end">
             <div className="space-y-1.5">
               <Label htmlFor="q" className="text-xs">
                 Rechercher
@@ -259,26 +263,6 @@ export default async function FormationsListPage({
                 placeholder="Titre, code, description…"
                 defaultValue={q}
               />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="modality" className="text-xs">
-                Modalité
-              </Label>
-              <select
-                id="modality"
-                name="modality"
-                defaultValue={modalityFilter}
-                className="flex h-9 w-full rounded-md border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-400"
-              >
-                <option value="">Toutes</option>
-                {(
-                  Object.keys(MODALITY_LABELS) as Array<keyof typeof MODALITY_LABELS>
-                ).map((key) => (
-                  <option key={key} value={key}>
-                    {MODALITY_LABELS[key]}
-                  </option>
-                ))}
-              </select>
             </div>
             <div className="flex gap-2">
               <Button type="submit">Filtrer</Button>
@@ -293,6 +277,48 @@ export default async function FormationsListPage({
                 </Button>
               )}
             </div>
+          </div>
+
+          {/* Chips modalité — accès rapide en 1 clic (Gilles 2026-05-24) */}
+          <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-zinc-200 dark:border-zinc-800">
+            <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mr-1">
+              Modalité :
+            </span>
+            <Link
+              href={`/formations${buildQueryString(params, { modality: "" })}`}
+              className={cn(
+                "inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium border transition-colors",
+                modalityFilter === ""
+                  ? "bg-zinc-900 text-white border-zinc-900 dark:bg-white dark:text-zinc-900 dark:border-white"
+                  : "bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border-zinc-300 dark:border-zinc-700 hover:border-zinc-500",
+              )}
+            >
+              Toutes
+            </Link>
+            {(
+              Object.keys(MODALITY_LABELS) as Array<keyof typeof MODALITY_LABELS>
+            ).map((key) => {
+              const Icon = MODALITY_ICONS[key];
+              const isSelected = modalityFilter === key;
+              return (
+                <Link
+                  key={key}
+                  href={`/formations${buildQueryString(params, { modality: key })}`}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-all",
+                    isSelected
+                      ? cn(
+                          MODALITY_BADGE_CLASSES[key],
+                          "ring-2 ring-offset-1 ring-zinc-900 dark:ring-white shadow-sm",
+                        )
+                      : "bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border-zinc-300 dark:border-zinc-700 hover:border-zinc-500",
+                  )}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  {MODALITY_LABELS[key]}
+                </Link>
+              );
+            })}
           </div>
 
           {/* Toggle afficher archivées */}

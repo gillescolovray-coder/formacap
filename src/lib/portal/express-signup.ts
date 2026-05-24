@@ -1,0 +1,248 @@
+/**
+ * Saisie express — sous-traitance (Phase 1 MVP, Gilles 2026-05-24)
+ *
+ * Logique partagée admin + portail formateur + page publique QR.
+ * Crée un apprenant "temporaire" (is_temporary = true) avec son
+ * entreprise stockée en texte libre, l'inscrit à la session, et
+ * génère un token portail pour qu'il puisse jouer le quiz.
+ *
+ * Pas de fiche `companies` créée à ce stade : la promotion vers
+ * Entreprises est différée (Phase 2 du chantier sous-traitance).
+ */
+
+import { randomBytes } from "node:crypto";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+export type ExpressLearnerInput = {
+  /** Optionnel : Mme / M. */
+  civility?: string | null;
+  firstName: string;
+  lastName: string;
+  email?: string | null;
+  jobTitle?: string | null;
+  /** Texte libre, obligatoire (donneur d'ordre / société de l'apprenant) */
+  companyNameTemp: string;
+  companySiretTemp?: string | null;
+};
+
+export type ExpressLearnerResult = {
+  ok: boolean;
+  error?: string;
+  learnerId?: string;
+  enrollmentId?: string;
+  portalToken?: string;
+};
+
+function generateToken(): string {
+  return randomBytes(24).toString("hex");
+}
+
+function cleanText(s: string | null | undefined): string | null {
+  if (s === null || s === undefined) return null;
+  const t = String(s).trim();
+  return t === "" ? null : t;
+}
+
+function cleanSiret(s: string | null | undefined): string | null {
+  const t = cleanText(s);
+  if (!t) return null;
+  // Garde seulement les chiffres (SIRET = 14 chiffres en France)
+  return t.replace(/\D/g, "") || null;
+}
+
+/**
+ * Crée l'apprenant temporaire + session_enrollment + token portail.
+ * Si l'apprenant est déjà inscrit (même nom/prénom/société sur la
+ * session), on renvoie son token existant pour éviter les doublons.
+ */
+export async function createExpressLearnerForSession(
+  supabase: SupabaseClient,
+  params: {
+    sessionId: string;
+    organizationId: string;
+    input: ExpressLearnerInput;
+    /** Qui crée — null pour la page publique QR (apprenant lui-même) */
+    createdBy: string | null;
+  },
+): Promise<ExpressLearnerResult> {
+  const { sessionId, organizationId, input, createdBy } = params;
+
+  const firstName = cleanText(input.firstName);
+  const lastName = cleanText(input.lastName);
+  const companyName = cleanText(input.companyNameTemp);
+
+  if (!firstName || !lastName || !companyName) {
+    return {
+      ok: false,
+      error: "Nom, prénom et société sont obligatoires.",
+    };
+  }
+
+  // 1. Déduplication : un même nom+prénom+société sur la session ?
+  const { data: existingEnrollments } = await supabase
+    .from("session_enrollments")
+    .select(
+      "id, learner:learners(id, first_name, last_name, is_temporary, company_name_temp)",
+    )
+    .eq("session_id", sessionId);
+
+  type ExistingRow = {
+    id: string;
+    learner: {
+      id: string;
+      first_name: string | null;
+      last_name: string | null;
+      is_temporary: boolean | null;
+      company_name_temp: string | null;
+    } | null;
+  };
+  const existing = (existingEnrollments ?? []) as unknown as ExistingRow[];
+
+  const norm = (s: string | null | undefined) =>
+    (s ?? "").trim().toLowerCase();
+
+  const dupe = existing.find((e) => {
+    const l = e.learner;
+    if (!l) return false;
+    return (
+      norm(l.first_name) === norm(firstName) &&
+      norm(l.last_name) === norm(lastName) &&
+      norm(l.company_name_temp) === norm(companyName)
+    );
+  });
+
+  if (dupe && dupe.learner) {
+    // Réutilise / crée le token portail pour cet enrollment existant.
+    const portalToken = await ensureEnrollmentPortalToken(supabase, dupe.id);
+    return {
+      ok: true,
+      learnerId: dupe.learner.id,
+      enrollmentId: dupe.id,
+      portalToken,
+    };
+  }
+
+  // 2. Création du learner temporaire
+  const { data: newLearner, error: learnerErr } = await supabase
+    .from("learners")
+    .insert({
+      organization_id: organizationId,
+      civility: cleanText(input.civility),
+      first_name: firstName,
+      last_name: lastName,
+      email: cleanText(input.email),
+      job_title: cleanText(input.jobTitle),
+      is_temporary: true,
+      company_name_temp: companyName,
+      company_siret_temp: cleanSiret(input.companySiretTemp),
+      // Pas de company_id : la fiche entreprise sera créée à la promotion.
+      company_id: null,
+      created_by: createdBy,
+    })
+    .select("id")
+    .maybeSingle<{ id: string }>();
+
+  if (learnerErr || !newLearner) {
+    return {
+      ok: false,
+      error: learnerErr?.message ?? "Création de l'apprenant impossible.",
+    };
+  }
+
+  // 3. Inscription à la session — statut 'confirmed' car l'apprenant
+  // est physiquement présent le jour J (sous-traitance).
+  const { data: newEnrollment, error: enrollErr } = await supabase
+    .from("session_enrollments")
+    .insert({
+      session_id: sessionId,
+      learner_id: newLearner.id,
+      status: "confirmed",
+      enrolled_at: new Date().toISOString(),
+    })
+    .select("id")
+    .maybeSingle<{ id: string }>();
+
+  if (enrollErr || !newEnrollment) {
+    // Rollback partiel : on supprime le learner pour ne pas laisser
+    // une fiche orpheline qui apparaîtrait plus tard.
+    await supabase.from("learners").delete().eq("id", newLearner.id);
+    return {
+      ok: false,
+      error:
+        enrollErr?.message ?? "Inscription à la session impossible.",
+    };
+  }
+
+  // 4. Token portail apprenant (pour quiz + émargement)
+  const portalToken = await ensureEnrollmentPortalToken(
+    supabase,
+    newEnrollment.id,
+  );
+
+  return {
+    ok: true,
+    learnerId: newLearner.id,
+    enrollmentId: newEnrollment.id,
+    portalToken,
+  };
+}
+
+/**
+ * Récupère le token existant pour cet enrollment, sinon en crée un.
+ */
+export async function ensureEnrollmentPortalToken(
+  supabase: SupabaseClient,
+  enrollmentId: string,
+): Promise<string> {
+  const { data: existing } = await supabase
+    .from("enrollment_portal_tokens")
+    .select("token")
+    .eq("enrollment_id", enrollmentId)
+    .maybeSingle<{ token: string }>();
+  if (existing?.token) return existing.token;
+
+  const token = generateToken();
+  await supabase
+    .from("enrollment_portal_tokens")
+    .insert({ enrollment_id: enrollmentId, token });
+  return token;
+}
+
+/**
+ * Récupère / crée le token QR d'inscription rapide pour une session.
+ * Expiration : 7 jours après la fin de la session (large pour couvrir
+ * les retards de saisie).
+ */
+export async function ensureQuickSignupToken(
+  supabase: SupabaseClient,
+  params: {
+    sessionId: string;
+    sessionEndDate: string;
+    createdBy: string | null;
+  },
+): Promise<string> {
+  const { sessionId, sessionEndDate, createdBy } = params;
+
+  // Token actif déjà existant ?
+  const { data: existing } = await supabase
+    .from("session_quick_signup_tokens")
+    .select("token, expires_at")
+    .eq("session_id", sessionId)
+    .gt("expires_at", new Date().toISOString())
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ token: string; expires_at: string }>();
+  if (existing?.token) return existing.token;
+
+  const expiresAt = new Date(sessionEndDate);
+  expiresAt.setDate(expiresAt.getDate() + 7);
+
+  const token = generateToken();
+  await supabase.from("session_quick_signup_tokens").insert({
+    session_id: sessionId,
+    token,
+    expires_at: expiresAt.toISOString(),
+    created_by: createdBy,
+  });
+  return token;
+}

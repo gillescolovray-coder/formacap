@@ -37,6 +37,7 @@ Format JSON attendu :
   "technical_means": string | null,
   "evaluation_methods": string | null,
   "accessibility": string | null,
+  "modality": "presentiel" | "distanciel" | "hybride" | null,
   "programme_days": [
     { "morning": "texte plat avec sauts de ligne", "afternoon": "texte plat" }
   ]
@@ -48,6 +49,11 @@ Règles :
 - Pour operational_objectives : un élément par puce du document, sans le tiret.
 - Pour programme_days : un élément par journée, avec le contenu matin/après-midi.
 - Si le tarif est "Sur devis" ou similaire, mets ce texte dans pricing_note et public_price_excl_tax à null.
+- modality :
+    * "distanciel" si FOAD, e-learning, classe virtuelle, Zoom/Teams/Meet, ou mention "à distance".
+    * "presentiel" si "en salle", "sur site", "présentiel" uniquement.
+    * "hybride" si les deux sont mentionnées.
+    * null sinon.
 - Réponds STRICTEMENT en JSON, rien d'autre.`;
 
 function getLmStudioUrl(): string {

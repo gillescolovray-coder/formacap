@@ -6,6 +6,10 @@ import { headers } from "next/headers";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isResendConfigured, sendEmail } from "@/lib/email/resend";
 import {
+  createExpressLearnerForSession,
+  ensureQuickSignupToken,
+} from "@/lib/portal/express-signup";
+import {
   TRAINER_ADAPTATIONS,
   type PositioningTrainerObservation,
   type TrainerAdaptationValue,
@@ -952,4 +956,87 @@ export async function setAttendanceAsTrainer(
   }
 
   revalidatePath(`/formateur/${token}/sessions/${sessionId}/emargement`);
+}
+
+// ============================================================
+// Saisie express (sous-traitance, Gilles 2026-05-24)
+// ============================================================
+
+/**
+ * Crée un apprenant temporaire depuis le portail formateur (jour J
+ * sous-traitance). L'OF donneur d'ordre n'a pas transmis la liste,
+ * le formateur la saisit en direct. L'apprenant est inscrit sur la
+ * session et un token portail est créé pour qu'il puisse jouer le
+ * quiz et émarger.
+ */
+export async function createExpressLearnerFromPortal(
+  token: string,
+  sessionId: string,
+  formData: FormData,
+) {
+  const supabase = createAdminClient();
+  const ctx = await validateTrainerAccess(supabase, token, sessionId);
+  if (!ctx) {
+    redirect(
+      `/formateur/${token}/sessions/${sessionId}?error=${encodeURIComponent("Accès refusé")}`,
+    );
+  }
+
+  const result = await createExpressLearnerForSession(supabase, {
+    sessionId,
+    organizationId: ctx!.organizationId,
+    // Le formateur n'a pas de compte profiles — created_by reste null
+    createdBy: null,
+    input: {
+      civility: formData.get("civility") as string | null,
+      firstName: String(formData.get("first_name") ?? ""),
+      lastName: String(formData.get("last_name") ?? ""),
+      email: formData.get("email") as string | null,
+      jobTitle: formData.get("job_title") as string | null,
+      companyNameTemp: String(formData.get("company_name_temp") ?? ""),
+      companySiretTemp: formData.get("company_siret_temp") as string | null,
+    },
+  });
+
+  if (!result.ok) {
+    redirect(
+      `/formateur/${token}/sessions/${sessionId}?error=${encodeURIComponent(result.error ?? "Erreur saisie express")}`,
+    );
+  }
+
+  revalidatePath(`/formateur/${token}/sessions/${sessionId}`);
+  redirect(`/formateur/${token}/sessions/${sessionId}?expressOk=1`);
+}
+
+/**
+ * Génère (ou récupère) le token QR d'inscription rapide depuis le
+ * portail formateur. Retourne l'URL publique à afficher en QR.
+ */
+export async function generateQuickSignupTokenFromPortal(
+  token: string,
+  sessionId: string,
+): Promise<{ url: string; token: string } | { error: string }> {
+  const supabase = createAdminClient();
+  const ctx = await validateTrainerAccess(supabase, token, sessionId);
+  if (!ctx) return { error: "Accès refusé" };
+
+  const { data: session } = await supabase
+    .from("sessions")
+    .select("end_date")
+    .eq("id", sessionId)
+    .maybeSingle<{ end_date: string }>();
+  if (!session) return { error: "Session introuvable" };
+
+  const quickToken = await ensureQuickSignupToken(supabase, {
+    sessionId,
+    sessionEndDate: session.end_date,
+    createdBy: null,
+  });
+
+  const base =
+    process.env.NEXT_PUBLIC_APP_URL ?? "https://app.capnumerique.com";
+  return {
+    url: `${base}/inscription-rapide/${quickToken}`,
+    token: quickToken,
+  };
 }

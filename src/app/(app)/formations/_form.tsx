@@ -37,6 +37,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { UpperCaseInput } from "@/components/ui/uppercase-input";
+import { UpperCaseTextarea } from "@/components/ui/uppercase-textarea";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -102,7 +103,7 @@ export function FormationForm({
                 Obligatoire
               </span>
             </Label>
-            <UpperCaseInput
+            <UpperCaseTextarea
               id="title"
               name="title"
               required
