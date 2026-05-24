@@ -87,16 +87,22 @@ export function QuizPlay({
 
   // Affichage après submit immédiat
   if (justSubmitted) {
+    // Règle pédagogique (Gilles 2026-05-24) : le PRÉ-test ne montre PAS
+    // le corrigé à l'apprenant — il ne doit pas savoir les bonnes réponses
+    // avant le démarrage de la formation. Seul le POST-test affiche le
+    // corrigé détaillé. Côté formateur, les deux séries sont consultables.
+    if (justSubmitted.phase === "pre") {
+      return <PreQuizThanksView />;
+    }
+    // Ici justSubmitted.phase === "post" — affichage complet du corrigé.
     return (
       <ResultsView
         questions={questions}
         attempt={null}
         score={justSubmitted.score}
         maxScore={justSubmitted.maxScore}
-        phase={justSubmitted.phase}
-        otherAttempt={
-          justSubmitted.phase === "pre" ? postAttempt : preAttempt
-        }
+        phase="post"
+        otherAttempt={preAttempt}
         userAnswers={questions.map((q) => ({
           question_id: q.id,
           answer: answers[q.id] ?? null,
@@ -105,8 +111,31 @@ export function QuizPlay({
     );
   }
 
-  // Si rien à faire, mode lecture pure (pré + post déjà faits)
+  // Si rien à faire, mode lecture pure
   if (!phaseToPlay) {
+    // Cas 1 : seul le pré est fait, l'apprenant revient sur la page →
+    // on n'affiche QUE le score brut, surtout pas le corrigé. Le post
+    // viendra plus tard.
+    if (preAttempt && !postAttempt) {
+      return (
+        <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-5 text-center space-y-2">
+          <CheckCircle2 className="h-12 w-12 text-emerald-600 mx-auto mb-1" />
+          <h2 className="text-lg font-bold text-zinc-900">
+            Pré-test enregistré
+          </h2>
+          <p className="text-sm text-zinc-700">
+            Merci ! Votre auto-positionnement avant la formation est bien
+            enregistré.
+          </p>
+          <p className="text-xs text-zinc-500">
+            Le corrigé sera disponible après le quiz de fin de session, avec
+            la mesure de votre progression.
+          </p>
+        </div>
+      );
+    }
+    // Cas 2 : post fait → on montre le score pré (s'il existe), le
+    // post + le corrigé complet (post uniquement).
     return (
       <div className="space-y-4">
         <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-5 text-center">
@@ -122,7 +151,7 @@ export function QuizPlay({
             <ProgressBadge pre={preAttempt} post={postAttempt} />
           )}
         </div>
-        {/* Corrigé du post si dispo */}
+        {/* Corrigé du post uniquement (jamais du pré côté apprenant) */}
         {postAttempt && (
           <ResultsView
             questions={questions}
@@ -736,6 +765,35 @@ function ScoreCard({
           "fr-FR",
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Écran de remerciement après un PRÉ-test. Aucun corrigé n'est
+ * affiché — l'apprenant ne doit pas connaître les bonnes réponses
+ * avant le démarrage de la formation (règle pédagogique Gilles 2026-05-24).
+ */
+function PreQuizThanksView() {
+  return (
+    <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-6 text-center space-y-3">
+      <CheckCircle2 className="h-14 w-14 text-emerald-600 mx-auto" />
+      <h2 className="text-lg font-bold text-zinc-900">
+        Merci, vos réponses sont enregistrées !
+      </h2>
+      <p className="text-sm text-zinc-700">
+        Ce premier quiz est un <strong>auto-positionnement</strong> qui
+        permet au formateur d&apos;adapter le contenu à votre niveau de
+        départ.
+      </p>
+      <p className="text-xs text-zinc-600">
+        Vous rejouerez le même quiz à la fin de la session : c&apos;est à
+        ce moment-là que vous découvrirez les bonnes réponses, avec la
+        mesure de votre progression.
+      </p>
+      <p className="text-[11px] text-zinc-500 italic pt-2">
+        Bonne formation !
+      </p>
     </div>
   );
 }

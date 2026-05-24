@@ -13,7 +13,8 @@ import { PageHeader } from "@/components/page-header";
 import { BackButton } from "@/components/back-button";
 import { SessionTabs } from "../_session-tabs";
 import { SessionHeaderMeta } from "../_session-header-meta";
-import type { QuizAttempt } from "@/lib/quiz/types";
+import type { QuizAttempt, QuizQuestion } from "@/lib/quiz/types";
+import { QuizQuestionProgression } from "@/lib/quiz/question-progression";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -142,18 +143,27 @@ export default async function SessionQuizDashboardPage({
 
   const enrollmentIds = participants.map((p) => p.enrollmentId);
 
-  const { data: attemptsRaw } =
+  const [{ data: attemptsRaw }, { data: questionsRaw }] = await Promise.all([
     enrollmentIds.length > 0
-      ? await supabase
+      ? supabase
           .from("quiz_attempts")
           .select(
             "id, enrollment_id, quiz_template_id, phase, score, max_score, completed_at, started_at, data",
           )
           .in("enrollment_id", enrollmentIds)
           .eq("quiz_template_id", effectiveQuizId)
-      : { data: [] };
+      : Promise.resolve({ data: [] as QuizAttempt[] }),
+    supabase
+      .from("quiz_questions")
+      .select(
+        "id, quiz_template_id, position, type, text, options, correct_answer, points, explanation",
+      )
+      .eq("quiz_template_id", effectiveQuizId)
+      .order("position", { ascending: true }),
+  ]);
 
   const attempts = (attemptsRaw ?? []) as QuizAttempt[];
+  const quizQuestions = (questionsRaw ?? []) as QuizQuestion[];
 
   // Index : enrollment_id → { pre, post }
   const byEnrollment = new Map<
@@ -400,6 +410,14 @@ export default async function SessionQuizDashboardPage({
               </div>
             )}
           </section>
+        )}
+
+        {/* Progression détaillée par question (Gilles 2026-05-24) */}
+        {(nbPre > 0 || nbPost > 0) && quizQuestions.length > 0 && (
+          <QuizQuestionProgression
+            questions={quizQuestions}
+            attempts={attempts}
+          />
         )}
       </div>
     </>

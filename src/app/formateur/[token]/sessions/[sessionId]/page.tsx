@@ -18,6 +18,8 @@ import {
   Video,
 } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
+import type { QuizAttempt, QuizQuestion } from "@/lib/quiz/types";
+import { QuizQuestionProgression } from "@/lib/quiz/question-progression";
 import { labelLevel, type LevelValue } from "@/lib/positioning/types";
 import {
   buildEventDateTime,
@@ -346,17 +348,36 @@ export default async function FormateurSessionDetailPage({
         ) / 10
       : null;
 
-  // 6 ter. Quiz pré/post
+  // 6 ter. Quiz pré/post — on charge maintenant aussi le détail des
+  // réponses (`data`) et les questions du quiz pour calculer la
+  // progression PAR QUESTION (Gilles 2026-05-24).
   const effectiveQuizId =
     session.quiz_template_id ?? session.formation?.quiz_template_id ?? null;
-  const { data: quizAttemptsRaw } =
+  const [
+    { data: quizAttemptsRaw },
+    { data: quizQuestionsRaw },
+  ] = await Promise.all([
     effectiveQuizId && enrollmentIds.length > 0
-      ? await supabase
+      ? supabase
           .from("quiz_attempts")
-          .select("enrollment_id, phase, score, max_score")
+          .select(
+            "id, enrollment_id, quiz_template_id, phase, score, max_score, started_at, completed_at, data",
+          )
           .eq("quiz_template_id", effectiveQuizId)
           .in("enrollment_id", enrollmentIds)
-      : { data: [] };
+      : Promise.resolve({ data: [] as Array<unknown> }),
+    effectiveQuizId
+      ? supabase
+          .from("quiz_questions")
+          .select(
+            "id, quiz_template_id, position, type, text, options, correct_answer, points, explanation",
+          )
+          .eq("quiz_template_id", effectiveQuizId)
+          .order("position", { ascending: true })
+      : Promise.resolve({ data: [] as Array<unknown> }),
+  ]);
+  const quizAttempts = (quizAttemptsRaw ?? []) as unknown as QuizAttempt[];
+  const quizQuestions = (quizQuestionsRaw ?? []) as unknown as QuizQuestion[];
   const quizByEnrollment = new Map<
     string,
     {
@@ -367,12 +388,7 @@ export default async function FormateurSessionDetailPage({
   for (const eid of enrollmentIds) {
     quizByEnrollment.set(eid, { pre: null, post: null });
   }
-  for (const a of (quizAttemptsRaw ?? []) as Array<{
-    enrollment_id: string;
-    phase: string;
-    score: number | null;
-    max_score: number | null;
-  }>) {
+  for (const a of quizAttempts) {
     const slot = quizByEnrollment.get(a.enrollment_id);
     if (!slot) continue;
     if (a.score === null || a.max_score === null) continue;
@@ -381,6 +397,7 @@ export default async function FormateurSessionDetailPage({
     if (a.phase === "post")
       slot.post = { score: a.score, max: a.max_score };
   }
+  const hasAnyQuizAttempt = quizAttempts.length > 0;
 
   // 6 quater. Bilan formateur (Module 7). Fallback silencieux si la
   // table n'existe pas encore en prod (migration 0101 pas appliquée) :
@@ -986,6 +1003,19 @@ export default async function FormateurSessionDetailPage({
                   );
                 })}
               </ul>
+            )}
+
+            {/* Progression détaillée par question (Gilles 2026-05-24) :
+                pour chaque question, % bonnes réponses au pré vs post +
+                progression globale. Affichée seulement quand au moins une
+                tentative existe. */}
+            {hasAnyQuizAttempt && quizQuestions.length > 0 && (
+              <div className="mt-4">
+                <QuizQuestionProgression
+                  questions={quizQuestions}
+                  attempts={quizAttempts}
+                />
+              </div>
             )}
           </Module>
         )}
