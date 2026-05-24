@@ -26,6 +26,10 @@ type Props = {
   subcontractorName?: string | null;
   /** Bandeau d'aide contextuel (texte court) */
   helpText?: string;
+  /** Nombre de participants déjà inscrits. Si 0, on bascule en mode
+   *  'tour de table' avec un message d'action explicite et le QR mis
+   *  en avant comme bouton principal. */
+  participantCount?: number;
 };
 
 /**
@@ -43,7 +47,9 @@ export function ExpressSignupBlock({
   generateQuickSignupAction,
   subcontractorName,
   helpText,
+  participantCount = 0,
 }: Props) {
+  const noParticipantsYet = participantCount === 0;
   const [qrOpen, setQrOpen] = useState(false);
   const [qrFullscreen, setQrFullscreen] = useState(false);
   const [qrData, setQrData] = useState<QuickSignupResult | null>(null);
@@ -262,37 +268,94 @@ export function ExpressSignupBlock({
         </div>
       </header>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <button
-          type="button"
-          onClick={() => setFormOpen((v) => !v)}
-          className="flex flex-col items-start gap-1 rounded-lg bg-white border border-amber-300 hover:border-amber-500 hover:bg-amber-50 transition p-3 text-left"
-        >
-          <div className="flex items-center gap-2 text-amber-900 font-semibold text-sm">
-            <UserPlus className="h-4 w-4" />
-            Saisir un apprenant
+      {/* Encart pédagogique tour-de-table quand aucun participant
+          n'est encore inscrit. Le QR est mis en avant comme action
+          principale (Gilles 2026-05-24). */}
+      {noParticipantsYet && (
+        <div className="rounded-lg bg-white border-2 border-amber-400 p-4 space-y-3">
+          <div className="flex items-start gap-2.5">
+            <div className="rounded-full bg-amber-100 text-amber-700 h-7 w-7 flex items-center justify-center shrink-0 font-bold text-sm">
+              👋
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-sm font-bold text-amber-900">
+                Aucun apprenant inscrit pour le moment ?
+              </h3>
+              <p className="text-xs text-zinc-700 mt-1 leading-relaxed">
+                Au démarrage de la session, pendant le{" "}
+                <strong>tour de table</strong>, affichez le QR code «
+                inscription rapide » en grand sur votre écran ou
+                vidéo-projecteur.
+                <br />
+                <strong>Chaque apprenant</strong> :
+              </p>
+              <ol className="text-xs text-zinc-700 mt-1.5 ml-3 list-decimal space-y-0.5">
+                <li>scanne le QR avec son téléphone,</li>
+                <li>renseigne ses informations (société, nom, email…),</li>
+                <li>
+                  enchaîne directement par le{" "}
+                  <strong>quiz d&apos;entrée (pré-formation)</strong>.
+                </li>
+              </ol>
+              <p className="text-[11px] text-zinc-500 italic mt-1.5">
+                Pas de double saisie : leurs infos arrivent automatiquement
+                dans la liste Participants ci-dessous.
+              </p>
+            </div>
           </div>
-          <p className="text-[11px] text-zinc-600">
-            Formulaire rapide (6 champs). À utiliser quand vous êtes devant
-            l&apos;apprenant.
-          </p>
-        </button>
+          <button
+            type="button"
+            onClick={() => setQrOpen(true)}
+            className="w-full flex items-center justify-center gap-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-sm py-3 transition"
+          >
+            <QrCode className="h-5 w-5" />
+            Afficher le QR « inscription rapide » + Quiz
+          </button>
+          <button
+            type="button"
+            onClick={() => setFormOpen((v) => !v)}
+            className="w-full flex items-center justify-center gap-2 rounded-lg bg-white border border-amber-300 hover:bg-amber-50 text-amber-800 text-xs py-2 transition"
+          >
+            <UserPlus className="h-3.5 w-3.5" />
+            Ou saisir un apprenant manuellement (cas isolé)
+          </button>
+        </div>
+      )}
 
-        <button
-          type="button"
-          onClick={() => setQrOpen(true)}
-          className="flex flex-col items-start gap-1 rounded-lg bg-white border border-amber-300 hover:border-amber-500 hover:bg-amber-50 transition p-3 text-left"
-        >
-          <div className="flex items-center gap-2 text-amber-900 font-semibold text-sm">
-            <QrCode className="h-4 w-4" />
-            QR « inscription rapide »
-          </div>
-          <p className="text-[11px] text-zinc-600">
-            Les apprenants scannent, remplissent eux-mêmes et arrivent direct
-            sur le quiz pré-formation.
-          </p>
-        </button>
-      </div>
+      {/* Mode 'avec participants' : deux boutons équivalents */}
+      {!noParticipantsYet && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={() => setFormOpen((v) => !v)}
+            className="flex flex-col items-start gap-1 rounded-lg bg-white border border-amber-300 hover:border-amber-500 hover:bg-amber-50 transition p-3 text-left"
+          >
+            <div className="flex items-center gap-2 text-amber-900 font-semibold text-sm">
+              <UserPlus className="h-4 w-4" />
+              Saisir un apprenant
+            </div>
+            <p className="text-[11px] text-zinc-600">
+              Formulaire rapide (6 champs). À utiliser quand vous êtes devant
+              l&apos;apprenant.
+            </p>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setQrOpen(true)}
+            className="flex flex-col items-start gap-1 rounded-lg bg-white border border-amber-300 hover:border-amber-500 hover:bg-amber-50 transition p-3 text-left"
+          >
+            <div className="flex items-center gap-2 text-amber-900 font-semibold text-sm">
+              <QrCode className="h-4 w-4" />
+              QR « inscription rapide »
+            </div>
+            <p className="text-[11px] text-zinc-600">
+              Les apprenants scannent, remplissent eux-mêmes et arrivent direct
+              sur le quiz pré-formation.
+            </p>
+          </button>
+        </div>
+      )}
 
       {formOpen && (
         <form
