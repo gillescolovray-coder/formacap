@@ -60,14 +60,17 @@ export function SubcontractPrescriberFields({
         />
         {companies && companies.length > 0 && (
           <datalist id="subcontractor-companies">
-            {companies.map((c) => (
-              <option key={c.id} value={c.name} />
-            ))}
+            {companies
+              .filter((c) => c.type === "of")
+              .map((c) => (
+                <option key={c.id} value={c.name} />
+              ))}
           </datalist>
         )}
         <p className="text-xs text-zinc-500">
-          Tapez les premières lettres pour voir les OF déjà enregistrés dans
-          le module Entreprises, ou saisissez une raison sociale libre.
+          Tapez les premières lettres pour voir les <strong>OF</strong> déjà
+          enregistrés dans le module Entreprises (filtre type=OF), ou saisissez
+          une raison sociale libre.
         </p>
       </div>
 
