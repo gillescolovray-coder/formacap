@@ -3,10 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/page-header";
 import { BackButton } from "@/components/back-button";
 import { PositioningTemplateEditor } from "../../_editor";
-import {
-  PositioningFormBuilderEditor,
-  makeEmptyStructure,
-} from "../../_form-builder-editor";
+import { PositioningFormBuilderEditor } from "../../_form-builder-editor";
 import { updatePositioningTemplate } from "../../actions";
 import { PositioningFixedSectionsInfo } from "../../_fixed-sections-info";
 import {

@@ -16,7 +16,11 @@ import type {
   QuestionType,
   Section,
 } from "@/lib/positioning/form-structure";
-import { QUESTION_TYPE_LABELS } from "@/lib/positioning/form-structure";
+import {
+  QUESTION_TYPE_LABELS,
+  makeEmptyQuestion,
+  makeEmptyStructure,
+} from "@/lib/positioning/form-structure";
 
 type Props = {
   mode: "new" | "edit";
@@ -31,56 +35,6 @@ type Props = {
   submitLabel: string;
   initialError?: string;
 };
-
-/** Génère une structure vide pour démarrer. */
-export function makeEmptyStructure(): FormStructure {
-  return {
-    intro: { instructions: "", important_note: "" },
-    sections: [
-      {
-        title: "Votre expérience",
-        questions: [
-          {
-            type: "radio",
-            text: "Question 1 — modifier ce texte",
-            required: true,
-            options: ["Option 1", "Option 2", "Option 3"],
-          },
-        ],
-      },
-    ],
-  };
-}
-
-/** Génère une question vierge du type demandé. */
-function makeEmptyQuestion(type: QuestionType): Question {
-  switch (type) {
-    case "text_short":
-      return { type, text: "", required: false };
-    case "text_long":
-      return { type, text: "", required: false, rows: 4 };
-    case "radio":
-      return {
-        type,
-        text: "",
-        required: true,
-        options: ["Option 1", "Option 2"],
-      };
-    case "checkbox":
-      return { type, text: "", options: ["Option 1", "Option 2"], allow_other: false };
-    case "yes_no":
-      return { type, text: "", required: true };
-    case "yes_no_text":
-      return { type, text: "", required: true, followup_label: "Si oui, précisez :" };
-    case "matrix":
-      return {
-        type,
-        text: "",
-        rows: ["Ligne 1", "Ligne 2"],
-        cols: ["Colonne 1", "Colonne 2", "Colonne 3"],
-      };
-  }
-}
 
 export function PositioningFormBuilderEditor({
   mode,

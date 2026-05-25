@@ -2,10 +2,8 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/page-header";
 import { BackButton } from "@/components/back-button";
-import {
-  PositioningFormBuilderEditor,
-  makeEmptyStructure,
-} from "../_form-builder-editor";
+import { PositioningFormBuilderEditor } from "../_form-builder-editor";
+import { makeEmptyStructure } from "@/lib/positioning/form-structure";
 import { createPositioningTemplate } from "../actions";
 import { PositioningFixedSectionsInfo } from "../_fixed-sections-info";
 
