@@ -1,6 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { trainerHasAccessToSession } from "@/lib/portal/trainer-session-access";
+import {
+  buildEventDateTime,
+  formatUtcCalendarDate,
+} from "@/lib/calendar/event-links";
 
 export const runtime = "nodejs";
 
@@ -14,23 +18,6 @@ export const runtime = "nodejs";
  * Variante côté formateur : description orientée animation
  * (vs apprenant) + nombre d'apprenants inscrits.
  */
-function formatIcsDate(iso: string, time: string | null): string {
-  const d = new Date(iso);
-  const [hh, mm] = (time ?? "09:00").split(":").map((n) => Number(n));
-  d.setHours(hh || 9, mm || 0, 0, 0);
-  const pad = (n: number) => n.toString().padStart(2, "0");
-  return (
-    d.getUTCFullYear().toString() +
-    pad(d.getUTCMonth() + 1) +
-    pad(d.getUTCDate()) +
-    "T" +
-    pad(d.getUTCHours()) +
-    pad(d.getUTCMinutes()) +
-    pad(d.getUTCSeconds()) +
-    "Z"
-  );
-}
-
 function escapeIcsText(s: string): string {
   return s
     .replace(/\\/g, "\\\\")
@@ -107,17 +94,41 @@ export async function GET(
     .select("id", { count: "exact", head: true })
     .eq("session_id", sessionId);
 
+  // 3.b. Charger les jours de session pour obtenir les vrais horaires
+  // (sinon on tomberait sur les valeurs par defaut globales, fausses).
+  const { data: sessionDays } = await supabase
+    .from("session_days")
+    .select("day_date, morning_start, afternoon_end, morning_end")
+    .eq("session_id", sessionId)
+    .order("day_date", { ascending: true });
+  const firstDay = sessionDays?.[0] ?? null;
+  const lastDay = sessionDays?.[sessionDays.length - 1] ?? null;
+
   // 4. Composer l'événement
   const title = session.formation?.title ?? "Formation";
   const orgName = session.organization?.name ?? "";
 
-  const start = formatIcsDate(
-    session.start_date,
-    session.default_morning_start ?? "09:00",
+  // Horaires reels (jour 1 matin / dernier jour aprem), avec fallback
+  // sur les valeurs par defaut de session puis "09:00"/"17:00".
+  // Fix Gilles 2026-05-25 : avant on utilisait formatIcsDate local qui
+  // depend du fuseau du serveur (UTC sur Vercel) -> Google Calendar
+  // affichait +2h (CEST). Maintenant on passe par buildEventDateTime
+  // qui calcule explicitement l'offset Europe/Paris (DST aware).
+  const start = formatUtcCalendarDate(
+    buildEventDateTime(
+      session.start_date,
+      firstDay?.morning_start ?? session.default_morning_start,
+      "09:00",
+    ),
   );
-  const end = formatIcsDate(
-    session.end_date,
-    session.default_afternoon_end ?? "17:00",
+  const end = formatUtcCalendarDate(
+    buildEventDateTime(
+      session.end_date,
+      lastDay?.afternoon_end ??
+        lastDay?.morning_end ??
+        session.default_afternoon_end,
+      "17:00",
+    ),
   );
 
   let location = "";
@@ -158,7 +169,7 @@ export async function GET(
     .join("\n");
 
   const uid = `formacap-trainer-${sessionId}@capnumerique.com`;
-  const dtstamp = formatIcsDate(new Date().toISOString(), null);
+  const dtstamp = formatUtcCalendarDate(new Date());
 
   const ics = [
     "BEGIN:VCALENDAR",

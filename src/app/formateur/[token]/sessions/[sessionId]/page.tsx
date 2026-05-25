@@ -521,15 +521,23 @@ export default async function FormateurSessionDetailPage({
     : (fullAddress ?? "");
 
   // === Liens d'ajout au calendrier (Google / Outlook / .ics) ===
+  // On utilise les horaires REELS planifies dans session_days (1er
+  // jour pour le start, dernier jour pour le end). Bug Gilles
+  // 2026-05-26 : avant le calendrier prenait session.default_* qui
+  // peut differer des horaires reels planifies par jour (l'utilisateur
+  // voyait 8h45 sur la page mais 8h30 dans son agenda Google).
+  const lastDay = daysTyped[daysTyped.length - 1] ?? null;
   const orgName = session.organization?.name ?? "";
   const calStart = buildEventDateTime(
     session.start_date,
-    session.default_morning_start,
+    headerSchedule.morning_start,
     "09:00",
   );
   const calEnd = buildEventDateTime(
     session.end_date,
-    session.default_afternoon_end,
+    lastDay?.afternoon_end ??
+      lastDay?.morning_end ??
+      session.default_afternoon_end,
     "17:00",
   );
   const calAppBase =

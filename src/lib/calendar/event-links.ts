@@ -52,16 +52,60 @@ export function buildOutlookCalendarUrl(e: CalendarEvent): string {
 }
 
 /**
- * Construit un Date à partir d'une date ISO (YYYY-MM-DD) et d'un
- * horaire (HH:MM). Si time est null, applique le fallback.
+ * Calcule l'offset de Europe/Paris vs UTC (en heures) à une date donnée.
+ * Gère automatiquement le passage CET (+1, hiver) <-> CEST (+2, été).
+ *
+ * Méthode robuste sans dépendance externe : on formate une date UTC en
+ * Europe/Paris et on lit l'heure résultante.
+ */
+function parisOffsetHoursAt(dateIso: string): number {
+  // Date midi UTC, sûre pour la détection DST (pas de transition à midi).
+  const baseUtc = new Date(`${dateIso}T12:00:00Z`);
+  const parisHour = Number.parseInt(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "Europe/Paris",
+      hour: "2-digit",
+      hour12: false,
+    }).format(baseUtc),
+    10,
+  );
+  // Robustness : si format renvoie "24", on ramène à 0
+  const ph = parisHour === 24 ? 0 : parisHour;
+  return ph - baseUtc.getUTCHours();
+}
+
+/**
+ * Construit un Date qui représente "dateIso à HH:MM heure de Paris".
+ *
+ * Bug Gilles 2026-05-26 : avant, l'ancienne version utilisait
+ * `setHours(...)` qui dépend du fuseau du serveur. Sur Vercel (UTC),
+ * "08:45" était traité comme 08:45 UTC, puis Google Calendar
+ * l'affichait à +2h (= 10:45 Paris) → bug d'horaire visible.
+ *
+ * Nouvelle version : construit explicitement le moment UTC qui
+ * correspond à l'horaire Paris demandé, en tenant compte du DST.
  */
 export function buildEventDateTime(
   dateIso: string,
   time: string | null,
   fallbackHHMM: string,
 ): Date {
-  const d = new Date(dateIso);
-  const [hh, mm] = (time ?? fallbackHHMM).split(":").map((x) => Number(x));
-  d.setHours(hh || 9, mm || 0, 0, 0);
-  return d;
+  const [hh, mm] = (time ?? fallbackHHMM)
+    .split(":")
+    .map((x) => Number(x));
+  const offset = parisOffsetHoursAt(dateIso);
+  // Construit le moment UTC qui correspond à hh:mm Paris ce jour-là :
+  // UTC = ParisLocal - offset (CEST: -2h, CET: -1h)
+  const utc = new Date(`${dateIso}T${pad(hh)}:${pad(mm)}:00Z`);
+  utc.setUTCHours(utc.getUTCHours() - offset);
+  return utc;
+}
+
+/**
+ * Format ICS / Google : YYYYMMDDTHHMMSSZ depuis un objet Date.
+ * Exporté pour pouvoir être réutilisé par la route .ics publique
+ * (pour éviter de dupliquer la logique de format).
+ */
+export function formatUtcCalendarDate(d: Date): string {
+  return googleDate(d);
 }

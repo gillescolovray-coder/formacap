@@ -1,5 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  buildEventDateTime,
+  formatUtcCalendarDate,
+} from "@/lib/calendar/event-links";
 
 export const runtime = "nodejs";
 
@@ -12,24 +16,6 @@ export const runtime = "nodejs";
  *
  * Gilles 2026-05-22.
  */
-function formatIcsDate(iso: string, time: string | null): string {
-  const d = new Date(iso);
-  const [hh, mm] = (time ?? "09:00").split(":").map((n) => Number(n));
-  d.setHours(hh || 9, mm || 0, 0, 0);
-  // Format UTC : YYYYMMDDTHHMMSSZ
-  const pad = (n: number) => n.toString().padStart(2, "0");
-  return (
-    d.getUTCFullYear().toString() +
-    pad(d.getUTCMonth() + 1) +
-    pad(d.getUTCDate()) +
-    "T" +
-    pad(d.getUTCHours()) +
-    pad(d.getUTCMinutes()) +
-    pad(d.getUTCSeconds()) +
-    "Z"
-  );
-}
-
 function escapeIcsText(s: string): string {
   return s
     .replace(/\\/g, "\\\\")
@@ -87,8 +73,38 @@ export async function GET(
   const title = s.formation?.title ?? "Formation";
   const orgName = s.organization?.name ?? "";
 
-  const start = formatIcsDate(s.start_date, s.default_morning_start ?? "09:00");
-  const end = formatIcsDate(s.end_date, s.default_afternoon_end ?? "17:00");
+  // Horaires reels par jour (jour 1 matin / dernier jour aprem),
+  // sinon fallback sur les valeurs par defaut de la session puis
+  // "09:00"/"17:00".
+  const { data: sessionDays } = await supabase
+    .from("session_days")
+    .select("day_date, morning_start, afternoon_end, morning_end")
+    .eq("session_id", row.enrollment.session_id)
+    .order("day_date", { ascending: true });
+  const firstDay = sessionDays?.[0] ?? null;
+  const lastDay = sessionDays?.[sessionDays.length - 1] ?? null;
+
+  // Fix Gilles 2026-05-25 : avant on utilisait formatIcsDate local
+  // qui depend du fuseau du serveur (UTC sur Vercel) -> Google
+  // Calendar affichait +2h (CEST). Maintenant on passe par
+  // buildEventDateTime qui calcule explicitement l'offset
+  // Europe/Paris (DST aware).
+  const start = formatUtcCalendarDate(
+    buildEventDateTime(
+      s.start_date,
+      firstDay?.morning_start ?? s.default_morning_start,
+      "09:00",
+    ),
+  );
+  const end = formatUtcCalendarDate(
+    buildEventDateTime(
+      s.end_date,
+      lastDay?.afternoon_end ??
+        lastDay?.morning_end ??
+        s.default_afternoon_end,
+      "17:00",
+    ),
+  );
 
   // Lieu : adresse complète si présentiel, sinon URL visio
   let location = "";
@@ -121,7 +137,7 @@ export async function GET(
     .join("\n");
 
   const uid = `formacap-${row.enrollment_id}@capnumerique.com`;
-  const dtstamp = formatIcsDate(new Date().toISOString(), null);
+  const dtstamp = formatUtcCalendarDate(new Date());
 
   const ics = [
     "BEGIN:VCALENDAR",
