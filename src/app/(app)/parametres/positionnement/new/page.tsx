@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/page-header";
 import { BackButton } from "@/components/back-button";
 import { PositioningTemplateEditor } from "../_editor";
 import { createPositioningTemplate } from "../actions";
+import { PositioningFixedSectionsInfo } from "../_fixed-sections-info";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +37,8 @@ export default async function NewPositioningTemplatePage({
         actions={<BackButton fallbackHref="/parametres/positionnement" />}
       />
 
-      <div className="p-8 max-w-3xl">
+      <div className="p-8 max-w-3xl space-y-4">
+        <PositioningFixedSectionsInfo />
         <PositioningTemplateEditor
           mode="new"
           action={createPositioningTemplate}

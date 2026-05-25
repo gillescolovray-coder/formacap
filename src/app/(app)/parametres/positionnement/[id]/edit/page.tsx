@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/page-header";
 import { BackButton } from "@/components/back-button";
 import { PositioningTemplateEditor } from "../../_editor";
 import { updatePositioningTemplate } from "../../actions";
+import { PositioningFixedSectionsInfo } from "../../_fixed-sections-info";
 
 export const dynamic = "force-dynamic";
 
@@ -75,6 +76,8 @@ export default async function EditPositioningTemplatePage({
             enregistrez pour créer votre variante.
           </div>
         )}
+
+        <PositioningFixedSectionsInfo />
 
         <PositioningTemplateEditor
           mode="edit"

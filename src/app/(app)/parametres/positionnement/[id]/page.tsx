@@ -10,6 +10,7 @@ import {
   deletePositioningTemplate,
   duplicatePositioningTemplate,
 } from "../actions";
+import { PositioningFixedSectionsInfo } from "../_fixed-sections-info";
 
 export const dynamic = "force-dynamic";
 
@@ -219,6 +220,8 @@ export default async function PositioningTemplateDetailPage({
             {new Date(tpl.updated_at).toLocaleDateString("fr-FR")}
           </span>
         </div>
+
+        <PositioningFixedSectionsInfo />
 
         {/* Section 2 — Attentes proposées */}
         <section className="rounded-xl bg-white border border-zinc-200 p-5 space-y-3">
