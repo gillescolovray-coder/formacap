@@ -39,6 +39,9 @@ type Context = {
 type Props = {
   portalToken: string;
   context: Context;
+  /** Mode aperçu : le submit ne sauvegarde pas, affiche un message
+   *  "Aperçu — pas d'enregistrement" (Gilles 2026-05-25). */
+  previewMode?: boolean;
 };
 
 function modalityLabel(m: string | null): string {
@@ -59,7 +62,11 @@ function formatDateRange(start: string, end: string): string {
   return `du ${new Date(start).toLocaleDateString("fr-FR")} au ${new Date(end).toLocaleDateString("fr-FR")}`;
 }
 
-export function PositioningForm({ portalToken, context }: Props) {
+export function PositioningForm({
+  portalToken,
+  context,
+  previewMode = false,
+}: Props) {
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -121,6 +128,15 @@ export function PositioningForm({ portalToken, context }: Props) {
     setSubmitting(true);
     const signatureDataUrl = padRef.current?.getDataURL() ?? null;
 
+    // Mode aperçu : on simule un submit sans appel serveur
+    if (previewMode) {
+      await new Promise((r) => setTimeout(r, 300));
+      setSubmitting(false);
+      setSubmitted(true);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+
     const res = await submitPositioning({
       portalToken,
       data: {
@@ -154,10 +170,13 @@ export function PositioningForm({ portalToken, context }: Props) {
     return (
       <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-6 text-center space-y-3">
         <CheckCircle2 className="h-12 w-12 text-emerald-600 mx-auto" />
-        <h2 className="text-lg font-bold text-zinc-900">Merci !</h2>
+        <h2 className="text-lg font-bold text-zinc-900">
+          {previewMode ? "Aperçu — soumission simulée" : "Merci !"}
+        </h2>
         <p className="text-sm text-zinc-600">
-          Votre test de positionnement a bien été enregistré. Le formateur en
-          tiendra compte pour adapter la session.
+          {previewMode
+            ? "En conditions réelles, les réponses seraient enregistrées ici et accessibles au formateur. Rien n'a été sauvegardé en base."
+            : "Votre test de positionnement a bien été enregistré. Le formateur en tiendra compte pour adapter la session."}
         </p>
       </div>
     );

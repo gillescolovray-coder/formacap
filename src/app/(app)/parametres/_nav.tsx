@@ -10,6 +10,7 @@ import {
   FileText,
   Landmark,
   Tag,
+  Target,
   Wrench,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -106,6 +107,13 @@ const GROUPS: NavGroup[] = [
         description: "Quiz pré/post session, scoring automatique",
         icon: Brain,
         accent: "rose",
+      },
+      {
+        href: "/parametres/positionnement-preview",
+        label: "Test de positionnement (aperçu)",
+        description: "Voir le test tel que le verra l'apprenant",
+        icon: Target,
+        accent: "amber",
       },
     ],
   },
