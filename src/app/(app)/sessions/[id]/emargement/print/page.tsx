@@ -73,9 +73,11 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
 
 // Pagination par défaut (paysage = 5 apprenants × 5 jours).
 // Surchargées dynamiquement selon l'orientation auto (cf. plus bas) :
-//  - portrait (1-2 jours) → 7 apprenants × 2 jours par page
+//  - portrait (1-2 jours) → 5 apprenants × 2 jours par page
 //  - paysage (3+ jours)   → 5 apprenants × 5 jours par page
-const MAX_LEARNERS_PORTRAIT = 7;
+// 5 (au lieu de 7) en portrait pour garantir que le bloc signatures
+// rentre sur la même page A4 que le tableau (Gilles 2026-05-25).
+const MAX_LEARNERS_PORTRAIT = 5;
 const MAX_DAYS_PORTRAIT = 2;
 const MAX_LEARNERS_LANDSCAPE = 5;
 const MAX_DAYS_LANDSCAPE = 5;
@@ -464,16 +466,28 @@ export default async function EmargementPrintPage({
                  neutraliser pour utiliser toute la largeur du papier. */
               main { padding: 0 !important; margin: 0 !important; max-width: none !important; }
               html, body { margin: 0 !important; padding: 0 !important; }
-              /* Pagination feuille d'émargement : chaque page reste
-                 d'un seul tenant (jamais coupée entre apprenant et
-                 footer/signatures). */
-              .emargement-page { break-inside: avoid; page-break-inside: avoid; }
+              /* Pagination feuille d'émargement : chaque page React
+                 occupe exactement 1 page A4 physique, via flexbox +
+                 min-height = hauteur A4 utile. Le bloc signatures est
+                 poussé en bas via margin-top:auto. Résultat : le bloc
+                 "Formateur + Responsable" est imprimé en bas de CHAQUE
+                 page (Gilles 2026-05-25, exigence Qualiopi).
+                 - portrait : 297-10 = 287mm utiles
+                 - paysage  : 210-10 = 200mm utiles
+              */
+              .emargement-page {
+                min-height: ${orientation === "portrait" ? "287mm" : "200mm"};
+                display: flex !important;
+                flex-direction: column !important;
+              }
               /* Bloc signatures (formateur + responsable organisme) :
                  ne JAMAIS le couper en 2 — il doit toujours rester
-                 entier sur la même page. Gilles 2026-05-26. */
+                 entier sur la même page. Gilles 2026-05-26.
+                 margin-top:auto = collé en bas de la page A4. */
               .emargement-signatures-block {
                 break-inside: avoid !important;
                 page-break-inside: avoid !important;
+                margin-top: auto !important;
               }
               .legal-mentions-footer,
               .legal-mentions-footer * {
