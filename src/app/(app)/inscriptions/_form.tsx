@@ -237,6 +237,14 @@ export function InscriptionForm({
               (request as unknown as { prospect_mobile?: string | null } | null)
                 ?.prospect_mobile ?? null,
             prospectBirthDate: request?.prospect_birth_date ?? null,
+            // Civilité persistée sur l'inscription (migration 0098).
+            // Bug Gilles 2026-05-26 : la valeur n'était pas relue au
+            // chargement de la fiche, du coup le select repartait vide
+            // après save même si la BDD avait la bonne valeur.
+            prospectCivility:
+              (request as unknown as {
+                prospect_civility?: string | null;
+              } | null)?.prospect_civility ?? null,
           }}
           referentsSlot={referentsSlot}
         />
