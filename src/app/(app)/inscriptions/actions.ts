@@ -199,7 +199,9 @@ function buildPayload(formData: FormData) {
       // de l'utilisateur (bug constaté le 2026-05-13 par Gilles).
       const override = parseText(formData.get("financing_mode_override"));
       const selected = parseText(formData.get("financing_mode"));
-      return ((selected || override) as FinancingMode | null) ?? "autofinancement";
+      // Fallback "employeur" (Gilles 2026-05-26) — cohérent avec le
+      // défaut du draft et du state React de la section Financement.
+      return ((selected || override) as FinancingMode | null) ?? "employeur";
     })(),
     financing_details: parseText(formData.get("financing_details")),
     quote_amount_ht: parseFloat0(formData.get("quote_amount_ht")),
@@ -278,7 +280,12 @@ export async function createDraftInscription(
       target_session_id: preset?.sessionId ?? null,
       target_parcours_id: preset?.parcoursId ?? null,
       target_formation_id: preset?.formationId ?? null,
-      financing_mode: "autofinancement",
+      // Defaut "employeur" — cas le plus frequent pour CAP NUMERIQUE
+      // (formations financees par l'entreprise du salarie). Gilles
+      // 2026-05-26 — bug d'affichage : le draft cree en BDD avec
+      // 'autofinancement' s'affichait sur la fiche meme si le state
+      // React etait initialise sur 'employeur'.
+      financing_mode: "employeur",
       created_by: userId,
     })
     .select("id")
