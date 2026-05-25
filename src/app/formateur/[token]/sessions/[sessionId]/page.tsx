@@ -32,6 +32,7 @@ import {
   type TrainerReport,
 } from "@/lib/trainer-report/types";
 import { TrainerReportForm } from "./_trainer-report-form";
+import { TrainerQrEvaluationButton } from "./_trainer-qr-evaluation-button";
 import {
   createExpressLearnerFromPortal,
   deleteExpressLearnerFromPortal,
@@ -1008,6 +1009,36 @@ export default async function FormateurSessionDetailPage({
           }
           subcontractedManagedByOf={session.is_subcontracted === true}
         >
+          {/* Bandeau QR code à projeter en fin de session
+              (Gilles 2026-05-25). Affichage identique à celui du QR
+              émargement, en violet pour rester cohérent avec le code
+              couleur Évaluation à chaud. */}
+          <div className="rounded-xl bg-gradient-to-br from-violet-50 to-purple-50 border-2 border-violet-300 p-4 space-y-2 mb-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex-1 min-w-[260px]">
+                <div className="text-[10px] uppercase tracking-widest text-violet-700 font-bold mb-0.5">
+                  Fin de session
+                </div>
+                <h3 className="font-bold text-base text-violet-900 mb-1">
+                  QR code évaluation à chaud
+                </h3>
+                <p className="text-xs text-violet-800 leading-relaxed">
+                  Affichez ce QR code à vos apprenants en{" "}
+                  <strong>plein écran</strong> sur votre ordinateur ou
+                  vidéo-projecteur. Chacun le scanne avec son téléphone,
+                  sélectionne son nom et remplit le questionnaire Qualiopi
+                  avant de quitter la salle.
+                </p>
+              </div>
+              <div className="shrink-0">
+                <TrainerQrEvaluationButton
+                  token={token}
+                  sessionId={sessionId}
+                />
+              </div>
+            </div>
+          </div>
+
           {(hotEvals?.length ?? 0) === 0 ? (
             <p className="text-xs text-zinc-500 italic">
               Aucune évaluation remplie pour le moment.

@@ -767,6 +767,105 @@ export async function regenerateSessionQrTokenAsTrainer(
 }
 
 // ============================================================
+// QR code évaluation à chaud (Gilles 2026-05-25)
+// Variante trainer de getOrCreateSessionEvaluationToken /
+// regenerateSessionEvaluationToken — auth par token portail.
+// Le QR pointe vers /evaluation/[token] (questionnaire Qualiopi).
+// ============================================================
+
+export async function getOrCreateSessionEvaluationTokenAsTrainer(
+  token: string,
+  sessionId: string,
+): Promise<TrainerSessionQrTokenResult> {
+  const supabase = createAdminClient();
+  const ctx = await validateTrainerAccess(supabase, token, sessionId);
+  if (!ctx) return { ok: false, error: "Accès refusé." };
+
+  const { data: session } = await supabase
+    .from("sessions")
+    .select("id, end_date")
+    .eq("id", sessionId)
+    .maybeSingle<{ id: string; end_date: string }>();
+  if (!session) return { ok: false, error: "Session introuvable." };
+
+  // Token actif existant ?
+  const { data: existing } = await supabase
+    .from("session_evaluation_tokens")
+    .select("token, expires_at")
+    .eq("session_id", sessionId)
+    .gt("expires_at", new Date().toISOString())
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ token: string; expires_at: string }>();
+
+  const origin = await getAppOriginFromHeaders();
+  if (existing) {
+    return {
+      ok: true,
+      token: existing.token,
+      publicUrl: `${origin}/evaluation/${existing.token}`,
+      expiresAt: existing.expires_at,
+    };
+  }
+
+  // TTL mutualisé avec émargement (même fenêtre fin de session)
+  const { data: org } = await supabase
+    .from("organizations")
+    .select("emargement_token_ttl_days")
+    .eq("id", ctx.organizationId)
+    .maybeSingle<{ emargement_token_ttl_days: number | null }>();
+  const ttlDays = org?.emargement_token_ttl_days ?? 7;
+
+  const endDate = new Date(session.end_date);
+  endDate.setHours(23, 59, 59, 999);
+  const expiresAt = new Date(
+    endDate.getTime() + ttlDays * 24 * 60 * 60 * 1000,
+  );
+
+  const newToken = generateRandomToken();
+  const { error: insertError } = await supabase
+    .from("session_evaluation_tokens")
+    .insert({
+      session_id: sessionId,
+      token: newToken,
+      expires_at: expiresAt.toISOString(),
+      created_by: null,
+    });
+  if (insertError) return { ok: false, error: insertError.message };
+
+  return {
+    ok: true,
+    token: newToken,
+    publicUrl: `${origin}/evaluation/${newToken}`,
+    expiresAt: expiresAt.toISOString(),
+  };
+}
+
+export async function regenerateSessionEvaluationTokenAsTrainer(
+  token: string,
+  sessionId: string,
+): Promise<TrainerSessionQrTokenResult> {
+  const supabase = createAdminClient();
+  const ctx = await validateTrainerAccess(supabase, token, sessionId);
+  if (!ctx) return { ok: false, error: "Accès refusé." };
+
+  await supabase
+    .from("session_evaluation_tokens")
+    .update({ expires_at: new Date(Date.now() - 1000).toISOString() })
+    .eq("session_id", sessionId)
+    .gt("expires_at", new Date().toISOString());
+
+  const result = await getOrCreateSessionEvaluationTokenAsTrainer(
+    token,
+    sessionId,
+  );
+  if (result.ok) {
+    revalidatePath(`/formateur/${token}/sessions/${sessionId}`);
+  }
+  return result;
+}
+
+// ============================================================
 // Phase B — Envoi du lien de signature par email (distanciel)
 // (variante de sendSignatureLink côté admin)
 // ============================================================
