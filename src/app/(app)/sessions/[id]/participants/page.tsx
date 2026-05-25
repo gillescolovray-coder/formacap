@@ -14,7 +14,10 @@ import type {
   InscriptionRequest,
   InscriptionStage,
 } from "@/lib/inscriptions/types";
-import { healEnrollmentsForSession } from "@/lib/inscriptions/sync";
+import {
+  healCompanyLinksForSession,
+  healEnrollmentsForSession,
+} from "@/lib/inscriptions/sync";
 import { cleanupUserEmptyDrafts } from "@/lib/inscriptions/cleanup";
 
 // Force le rechargement à chaque accès pour que la liste des inscriptions
@@ -41,13 +44,14 @@ export default async function ParticipantsPage({
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  // Self-healing : répare automatiquement les inscription_requests
-  // confirmées qui n'ont pas d'enrollment correspondant.
+  // Self-healing en 2 étapes : liens entreprises + enrollments
+  // (Gilles 2026-05-26).
   try {
+    await healCompanyLinksForSession(supabase, id);
     await healEnrollmentsForSession(supabase, id);
   } catch (e) {
     console.warn(
-      "[participants/page] healEnrollmentsForSession failed",
+      "[participants/page] heal failed",
       (e as Error).message,
     );
   }

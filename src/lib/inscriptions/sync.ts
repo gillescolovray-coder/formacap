@@ -351,6 +351,150 @@ export async function createMirroredEnrollmentForRequest(
  * (Conventions, Convocations, Émargement, Documents, etc.) — silencieux,
  * pas d'erreur côté UI. Renvoie le nombre d'enrollments réparés.
  */
+/**
+ * Self-healing companies : pour une session donnée, répare les
+ * inscription_requests qui ont un `company_name_freetext` mais pas de
+ * `company_id`, et synchronise le `company_id` sur le learner lié.
+ *
+ * Sans ça, le tableau Conventions / Convocations groupe par
+ * `learner.company_id` et ignore les apprenants sans entreprise
+ * rattachée — alors que le module Inscriptions les affiche
+ * correctement via le fallback `company_name_freetext`.
+ *
+ * Stratégie :
+ *  1) Pour chaque inscription cassée (company_id NULL + freetext) :
+ *     - chercher une entreprise homonyme dans l'organisation
+ *     - sinon, en créer une (type "client", nom = freetext)
+ *     - lier inscription.company_id ET learner.company_id (si null)
+ *  2) Pour chaque enrollment dont le learner n'a pas de company_id
+ *     mais dont la request liée en a un : recopier le company_id sur
+ *     le learner.
+ *
+ * Silencieux : log juste les erreurs côté serveur, ne casse pas l'UI.
+ * Renvoie le nombre d'enregistrements modifiés.
+ *
+ * Gilles 2026-05-26 : sur une session de 9 inscriptions, seules 2
+ * apparaissaient dans Conventions car les autres avaient juste un
+ * nom d'entreprise en freetext (sans company_id).
+ */
+export async function healCompanyLinksForSession(
+  supabase: SupabaseClient,
+  sessionId: string,
+): Promise<{ companiesCreated: number; linkedLearners: number }> {
+  let companiesCreated = 0;
+  let linkedLearners = 0;
+
+  try {
+    // 1) Inscriptions avec freetext mais sans company_id
+    const { data: broken } = await supabase
+      .from("inscription_requests")
+      .select(
+        "id, organization_id, learner_id, company_name_freetext",
+      )
+      .eq("target_session_id", sessionId)
+      .is("company_id", null)
+      .not("company_name_freetext", "is", null);
+
+    for (const ins of (broken ?? []) as Array<{
+      id: string;
+      organization_id: string;
+      learner_id: string | null;
+      company_name_freetext: string | null;
+    }>) {
+      const name = (ins.company_name_freetext ?? "").trim();
+      if (!name) continue;
+
+      // a) Cherche un homonyme existant
+      const { data: existing } = await supabase
+        .from("companies")
+        .select("id")
+        .eq("organization_id", ins.organization_id)
+        .ilike("name", name)
+        .limit(1)
+        .maybeSingle<{ id: string }>();
+
+      let companyId = existing?.id ?? null;
+
+      // b) Sinon crée une fiche minimale (l'utilisateur enrichira)
+      if (!companyId) {
+        const { data: created, error: createErr } = await supabase
+          .from("companies")
+          .insert({
+            organization_id: ins.organization_id,
+            name,
+            type: "client",
+            is_active: true,
+          })
+          .select("id")
+          .single();
+        if (createErr) {
+          console.warn(
+            "[healCompanyLinksForSession] create company failed",
+            { name, error: createErr.message },
+          );
+          continue;
+        }
+        companyId = created?.id ?? null;
+        if (companyId) companiesCreated++;
+      }
+
+      if (!companyId) continue;
+
+      // c) Lie l'inscription
+      await supabase
+        .from("inscription_requests")
+        .update({ company_id: companyId })
+        .eq("id", ins.id);
+
+      // d) Lie le learner SEULEMENT s'il n'a pas déjà une entreprise
+      if (ins.learner_id) {
+        const { data: updated } = await supabase
+          .from("learners")
+          .update({ company_id: companyId })
+          .eq("id", ins.learner_id)
+          .is("company_id", null)
+          .select("id");
+        if ((updated ?? []).length > 0) linkedLearners++;
+      }
+    }
+
+    // 2) Learners de la session sans company_id mais dont la request
+    //    associée a un company_id → recopie
+    const { data: enrollments } = await supabase
+      .from("session_enrollments")
+      .select(
+        "learner_id, request:inscription_requests!inscription_request_id(company_id)",
+      )
+      .eq("session_id", sessionId);
+
+    for (const e of (enrollments ?? []) as Array<{
+      learner_id: string | null;
+      request:
+        | { company_id: string | null }
+        | Array<{ company_id: string | null }>
+        | null;
+    }>) {
+      const reqRel = Array.isArray(e.request) ? e.request[0] : e.request;
+      const reqCompanyId = reqRel?.company_id ?? null;
+      if (!reqCompanyId || !e.learner_id) continue;
+      const { data: updated } = await supabase
+        .from("learners")
+        .update({ company_id: reqCompanyId })
+        .eq("id", e.learner_id)
+        .is("company_id", null)
+        .select("id");
+      if ((updated ?? []).length > 0) linkedLearners++;
+    }
+  } catch (err) {
+    console.warn(
+      "[healCompanyLinksForSession] failed silently",
+      (err as Error).message,
+    );
+  }
+
+  return { companiesCreated, linkedLearners };
+}
+
 export async function healEnrollmentsForSession(
   supabase: SupabaseClient,
   sessionId: string,

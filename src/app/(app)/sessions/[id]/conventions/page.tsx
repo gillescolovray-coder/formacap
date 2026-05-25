@@ -7,7 +7,10 @@ import { BackButton } from "@/components/back-button";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { isResendConfigured } from "@/lib/email/resend";
-import { healEnrollmentsForSession } from "@/lib/inscriptions/sync";
+import {
+  healCompanyLinksForSession,
+  healEnrollmentsForSession,
+} from "@/lib/inscriptions/sync";
 import {
   computeConventionAmount,
   type SessionPricingConfig,
@@ -96,14 +99,16 @@ export default async function ConventionsPage({
     }>();
   if (!session) notFound();
 
-  // Self-healing : répare automatiquement les enrollments manquants
-  // avant de lister (Gilles 2026-05-22 : fix bug 3 inscriptions confirmées
-  // mais 1 seul participant visible dans Conventions). Silencieux.
+  // Self-healing en 2 étapes (silencieux) :
+  // 1) Répare les liens entreprises manquants (Gilles 2026-05-26 :
+  //    inscriptions avec company_name_freetext mais sans company_id).
+  // 2) Répare les enrollments manquants (Gilles 2026-05-22).
   try {
+    await healCompanyLinksForSession(supabase, id);
     await healEnrollmentsForSession(supabase, id);
   } catch (e) {
     console.warn(
-      "[conventions/page] healEnrollmentsForSession failed",
+      "[conventions/page] heal failed",
       (e as Error).message,
     );
   }
@@ -757,17 +762,17 @@ export default async function ConventionsPage({
                           "bg-cyan-50/30 hover:bg-cyan-50",
                       )}
                     >
-                      <td className="px-4 py-3 align-top">
-                        <div className="font-bold text-zinc-900">
+                      <td className="px-4 py-3 align-top max-w-[240px]">
+                        <div className="font-bold text-zinc-900 leading-tight break-words">
                           {c.companyName}
                         </div>
                         {c.industry && (
-                          <div className="text-xs text-zinc-500 mt-0.5">
+                          <div className="text-xs text-zinc-500 mt-0.5 break-words">
                             {c.industry}
                           </div>
                         )}
                         {(c.postalCode || c.city) && (
-                          <div className="text-xs text-zinc-500">
+                          <div className="text-xs text-zinc-500 break-words">
                             {[c.postalCode, c.city].filter(Boolean).join(" ")}
                           </div>
                         )}

@@ -20,7 +20,10 @@ import { QrButton } from "./electronique/_qr-button";
 import { QrEvaluationButton } from "./electronique/_qr-evaluation-button";
 import { SessionTabs } from "../_session-tabs";
 import { isResendConfigured } from "@/lib/email/resend";
-import { healEnrollmentsForSession } from "@/lib/inscriptions/sync";
+import {
+  healCompanyLinksForSession,
+  healEnrollmentsForSession,
+} from "@/lib/inscriptions/sync";
 import type { SessionDay, TrainingSession } from "@/lib/sessions/types";
 import type {
   AttendanceMoment,
@@ -97,15 +100,16 @@ export default async function EmargementPage({
   if (error) throw error;
   if (!session) notFound();
 
-  // Self-healing : remplace l'ancienne auto-conversion ad hoc par
-  // l'appel centralisé à healEnrollmentsForSession (Gilles 2026-05-22).
-  // L'ancienne version créait des enrollments orphelins (sans
-  // inscription_request_id) ce qui cassait la sync bidirectionnelle.
+  // Self-healing en 2 étapes : liens entreprises (Gilles 2026-05-26)
+  // + enrollments (Gilles 2026-05-22). L'ancienne version créait des
+  // enrollments orphelins (sans inscription_request_id) cassant la
+  // sync bidirectionnelle.
   try {
+    await healCompanyLinksForSession(supabase, id);
     await healEnrollmentsForSession(supabase, id);
   } catch (e) {
     console.warn(
-      "[emargement/page] healEnrollmentsForSession failed",
+      "[emargement/page] heal failed",
       (e as Error).message,
     );
   }

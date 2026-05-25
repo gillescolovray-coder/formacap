@@ -7,7 +7,10 @@ import { BackButton } from "@/components/back-button";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { isResendConfigured } from "@/lib/email/resend";
-import { healEnrollmentsForSession } from "@/lib/inscriptions/sync";
+import {
+  healCompanyLinksForSession,
+  healEnrollmentsForSession,
+} from "@/lib/inscriptions/sync";
 import { SessionTabs } from "../_session-tabs";
 import { SessionHeaderMeta } from "../_session-header-meta";
 import {
@@ -114,14 +117,15 @@ export default async function ConvocationsPage({
     }>();
   if (!session) notFound();
 
-  // Self-healing : répare les enrollments manquants avant de lister
-  // (Gilles 2026-05-22 : fix bug 3 inscriptions confirmées mais 1 seul
-  // participant visible dans Convocations). Silencieux.
+  // Self-healing en 2 étapes (silencieux) :
+  // 1) Liens entreprises manquants (Gilles 2026-05-26).
+  // 2) Enrollments manquants (Gilles 2026-05-22).
   try {
+    await healCompanyLinksForSession(supabase, id);
     await healEnrollmentsForSession(supabase, id);
   } catch (e) {
     console.warn(
-      "[convocations/page] healEnrollmentsForSession failed",
+      "[convocations/page] heal failed",
       (e as Error).message,
     );
   }
