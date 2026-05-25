@@ -200,13 +200,45 @@ export function PlanningSection({
   /**
    * Mise à jour d'un jour par sa clé locale (la date peut elle-même
    * être éditée — pas utilisable comme identifiant stable).
+   *
+   * IMPORTANT (Bug Gilles 2026-05-26) :
+   * 1) On NE TRIE PAS la liste après une modification. Le tri provoquait
+   *    la fermeture intempestive du date picker natif quand l'utilisateur
+   *    changeait la date du 1er jour vers un mois ultérieur (la ligne
+   *    était déplacée dans le DOM, ce qui déconnecte le widget de son
+   *    input source). Le serveur trie de toute façon par day_date ASC
+   *    à l'enregistrement.
+   *
+   * 2) CASCADE : si l'utilisateur modifie la date d'un jour, on décale
+   *    tous les jours SUIVANTS (en position dans la liste) du même
+   *    nombre de jours. Préserve les écarts (ex. session lundi+mardi
+   *    → user change lundi en mercredi → mardi devient automatiquement
+   *    jeudi). L'utilisateur peut toujours réajuster chaque jour ensuite.
    */
   function updateDay(key: string, patch: Partial<DayPlan>) {
     customizedRef.current.add(key);
     setDayPlans((prev) => {
-      const next = prev.map((p) => (p.key === key ? { ...p, ...patch } : p));
-      // Tri par date ascendante pour cohérence visuelle
-      return [...next].sort((a, b) => a.date.localeCompare(b.date));
+      const idx = prev.findIndex((p) => p.key === key);
+      if (idx === -1) return prev;
+      const old = prev[idx];
+      // Calcul du delta en jours si la date a changé
+      let deltaDays = 0;
+      if (patch.date && patch.date !== old.date && old.date) {
+        const oldTs = new Date(old.date).getTime();
+        const newTs = new Date(patch.date).getTime();
+        if (Number.isFinite(oldTs) && Number.isFinite(newTs)) {
+          deltaDays = Math.round((newTs - oldTs) / 86_400_000);
+        }
+      }
+      return prev.map((p, i) => {
+        if (i === idx) return { ...p, ...patch };
+        // Cascade : décale les jours suivants du même delta. Préserve
+        // l'écart entre jours.
+        if (i > idx && deltaDays !== 0 && p.date) {
+          return { ...p, date: addDays(p.date, deltaDays) };
+        }
+        return p;
+      });
     });
   }
 
