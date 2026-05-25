@@ -174,6 +174,13 @@ function buildPayload(formData: FormData) {
     prospect_phone: parseText(formData.get("prospect_phone")),
     prospect_mobile: parseText(formData.get("prospect_mobile")),
     prospect_birth_date: parseText(formData.get("prospect_birth_date")),
+    // Civilité (migration 0098). Bug Gilles 2026-05-26 : la valeur
+    // saisie n'était pas reportée sur la colonne, donc l'affichage
+    // de l'inscription après save montrait toujours une civilité vide.
+    prospect_civility: (() => {
+      const raw = parseText(formData.get("prospect_civility"));
+      return raw === "M." || raw === "Mme" || raw === "Autre" ? raw : null;
+    })(),
 
     company_id: parseText(formData.get("company_id")),
     company_name_freetext: parseText(formData.get("company_name_freetext")),
@@ -369,40 +376,46 @@ export async function createInscription(formData: FormData) {
       .eq("id", payload.learner_id)
       .maybeSingle();
     if (learner) {
-      // a) Sync demande → apprenant. Règle (Gilles 2026-05-21) : si
-      //    l'utilisateur saisit une valeur non-vide ET différente de
-      //    ce qui est sur la fiche apprenant, on ÉCRASE la fiche. Sinon
-      //    le RH qui corrige une civilité ou un mobile depuis la fiche
-      //    inscription voyait sa modif perdue (le code conservateur
-      //    précédent ne mettait à jour QUE si le champ était vide).
-      //    On ne touche jamais quand la valeur saisie est vide / null.
-      const learnerUpdates: Record<string, unknown> = {};
-      if (
-        payload.prospect_email &&
-        payload.prospect_email !== learner.email
-      )
-        learnerUpdates.email = payload.prospect_email;
-      if (
-        payload.prospect_phone &&
-        payload.prospect_phone !== learner.phone
-      )
-        learnerUpdates.phone = payload.prospect_phone;
+      // a) Sync demande → apprenant. Règle évoluée Gilles 2026-05-26 :
+      //    l'utilisateur peut désormais choisir si la modification des
+      //    coordonnées doit aussi mettre à jour la fiche apprenant (radio
+      //    "OUI / NON" affiché côté form-picker quand des changements
+      //    sont détectés). Si NON, on saute toute la sync vers learners
+      //    et seul l'inscription_request stocke les nouvelles valeurs.
+      const userChoseToUpdateLearner =
+        parseText(formData.get("update_learner_contact")) !== "no";
+      // Hoisted ici car réutilisé dans le bloc "snapshot" plus bas.
       const learnerMobile = (learner as unknown as { mobile?: string | null })
         .mobile;
-      if (
-        payload.prospect_mobile &&
-        payload.prospect_mobile !== learnerMobile
-      )
-        learnerUpdates.mobile = payload.prospect_mobile;
-      if (
-        payload.prospect_birth_date &&
-        payload.prospect_birth_date !== learner.birth_date
-      )
-        learnerUpdates.birth_date = payload.prospect_birth_date;
-      if (prospectJobTitle && prospectJobTitle !== learner.job_title)
-        learnerUpdates.job_title = prospectJobTitle;
-      if (prospectCivility && prospectCivility !== learner.civility)
-        learnerUpdates.civility = prospectCivility;
+      const learnerUpdates: Record<string, unknown> = {};
+      if (userChoseToUpdateLearner) {
+        if (
+          payload.prospect_email &&
+          payload.prospect_email !== learner.email
+        )
+          learnerUpdates.email = payload.prospect_email;
+        if (
+          payload.prospect_phone &&
+          payload.prospect_phone !== learner.phone
+        )
+          learnerUpdates.phone = payload.prospect_phone;
+        if (
+          payload.prospect_mobile &&
+          payload.prospect_mobile !== learnerMobile
+        )
+          learnerUpdates.mobile = payload.prospect_mobile;
+        if (
+          payload.prospect_birth_date &&
+          payload.prospect_birth_date !== learner.birth_date
+        )
+          learnerUpdates.birth_date = payload.prospect_birth_date;
+        if (prospectJobTitle && prospectJobTitle !== learner.job_title)
+          learnerUpdates.job_title = prospectJobTitle;
+        if (prospectCivility && prospectCivility !== learner.civility)
+          learnerUpdates.civility = prospectCivility;
+      }
+      // company_id : reste synchronisé même si "non" (pas une coordonnée
+      // de contact, mais un rattachement structurel)
       if (payload.company_id && payload.company_id !== learner.company_id)
         learnerUpdates.company_id = payload.company_id;
       if (Object.keys(learnerUpdates).length > 0) {
@@ -815,25 +828,31 @@ export async function updateInscription(id: string, formData: FormData) {
       .maybeSingle();
     if (learner) {
       // Sync demande → apprenant : ecrase la fiche si la valeur saisie
-      // differe de l'existante (Gilles 2026-05-21).
+      // differe de l'existante. L'utilisateur peut DESACTIVER cette
+      // sync via le radio "NON, uniquement sur cette inscription"
+      // (Bug Gilles 2026-05-26).
+      const userChoseToUpdateLearner =
+        parseText(formData.get("update_learner_contact")) !== "no";
       const learnerUpdates: Record<string, unknown> = {};
-      if (payload.prospect_email && payload.prospect_email !== learner.email)
-        learnerUpdates.email = payload.prospect_email;
-      if (payload.prospect_phone && payload.prospect_phone !== learner.phone)
-        learnerUpdates.phone = payload.prospect_phone;
-      const learnerMobile = (learner as unknown as { mobile?: string | null })
-        .mobile;
-      if (payload.prospect_mobile && payload.prospect_mobile !== learnerMobile)
-        learnerUpdates.mobile = payload.prospect_mobile;
-      if (
-        payload.prospect_birth_date &&
-        payload.prospect_birth_date !== learner.birth_date
-      )
-        learnerUpdates.birth_date = payload.prospect_birth_date;
-      if (prospectJobTitle && prospectJobTitle !== learner.job_title)
-        learnerUpdates.job_title = prospectJobTitle;
-      if (prospectCivility && prospectCivility !== learner.civility)
-        learnerUpdates.civility = prospectCivility;
+      if (userChoseToUpdateLearner) {
+        if (payload.prospect_email && payload.prospect_email !== learner.email)
+          learnerUpdates.email = payload.prospect_email;
+        if (payload.prospect_phone && payload.prospect_phone !== learner.phone)
+          learnerUpdates.phone = payload.prospect_phone;
+        const learnerMobile = (learner as unknown as { mobile?: string | null })
+          .mobile;
+        if (payload.prospect_mobile && payload.prospect_mobile !== learnerMobile)
+          learnerUpdates.mobile = payload.prospect_mobile;
+        if (
+          payload.prospect_birth_date &&
+          payload.prospect_birth_date !== learner.birth_date
+        )
+          learnerUpdates.birth_date = payload.prospect_birth_date;
+        if (prospectJobTitle && prospectJobTitle !== learner.job_title)
+          learnerUpdates.job_title = prospectJobTitle;
+        if (prospectCivility && prospectCivility !== learner.civility)
+          learnerUpdates.civility = prospectCivility;
+      }
       if (payload.company_id && payload.company_id !== learner.company_id)
         learnerUpdates.company_id = payload.company_id;
       if (Object.keys(learnerUpdates).length > 0) {

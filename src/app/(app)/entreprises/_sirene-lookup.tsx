@@ -132,6 +132,15 @@ export function SireneLookup({
     }
     // Mode 2 : on patche directement les inputs du formulaire parent
     // via leurs `id` (mode DOM, formulaire non contrôlé).
+    //
+    // IMPORTANT : on ne peut pas faire `el.value = ...` directement car
+    // ça ne déclenche pas le onChange de React (les composants comme
+    // <PostalCodeCity> gardent leur state interne et l'input visible
+    // n'est PAS mis à jour). On utilise le setter natif du prototype
+    // HTMLInputElement (technique React standard) pour que React voit
+    // bien le changement et synchronise son state.
+    // (Gilles bug 2026-05-26 : CP + ville pas remplis lors de la
+    // recherche SIRENE dans le formulaire entreprise.)
     const setValue = (id: string, value: string | null) => {
       const el = document.getElementById(id) as
         | HTMLInputElement
@@ -139,7 +148,15 @@ export function SireneLookup({
         | HTMLTextAreaElement
         | null;
       if (!el) return;
-      el.value = value ?? "";
+      const newValue = value ?? "";
+      const proto = (el as HTMLInputElement | HTMLTextAreaElement)
+        .constructor.prototype;
+      const descriptor = Object.getOwnPropertyDescriptor(proto, "value");
+      if (descriptor && descriptor.set) {
+        descriptor.set.call(el, newValue);
+      } else {
+        el.value = newValue;
+      }
       el.dispatchEvent(new Event("input", { bubbles: true }));
       el.dispatchEvent(new Event("change", { bubbles: true }));
     };
@@ -238,7 +255,13 @@ export function SireneLookup({
                     <p className="text-[11px] text-slate-500 truncate">
                       SIREN {c.siren}
                       {c.legal_form && ` · ${c.legal_form}`}
-                      {c.city && ` · ${c.city}`}
+                      {(c.postal_code || c.city) && (
+                        <>
+                          {" · "}
+                          {c.postal_code ? `${c.postal_code} ` : ""}
+                          {c.city ?? ""}
+                        </>
+                      )}
                     </p>
                   </div>
                   <span

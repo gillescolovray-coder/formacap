@@ -286,11 +286,12 @@ export function SessionInscriptionsTable({
                       )}
                     </Link>
                     {(() => {
-                      // Téléphone : règle 2026-05-13 — fiche apprenant
-                      // prioritaire si elle existe, sinon snapshot.
-                      const phone = hasLearner
-                        ? (joined.learner?.phone ?? r.prospect_phone ?? null)
-                        : (r.prospect_phone ?? null);
+                      // Téléphone : règle 2026-05-26 — l'override LOCAL
+                      // (prospect_phone) est prioritaire sur la fiche
+                      // apprenant. Sinon le user qui choisit "NON" pour
+                      // ne pas écraser la fiche voyait quand même
+                      // l'ancien téléphone dans le tableau.
+                      const phone = r.prospect_phone ?? joined.learner?.phone ?? null;
                       if (!phone) return null;
                       return (
                         <p className="text-sm text-slate-800 font-mono font-semibold mt-1 break-all">
@@ -299,10 +300,8 @@ export function SessionInscriptionsTable({
                       );
                     })()}
                     {(() => {
-                      // Email : idem — fiche apprenant prioritaire.
-                      const email = hasLearner
-                        ? (joined.learner?.email ?? r.prospect_email ?? null)
-                        : (r.prospect_email ?? null);
+                      // Email : même règle.
+                      const email = r.prospect_email ?? joined.learner?.email ?? null;
                       if (!email) return null;
                       return (
                         <p className="text-sm text-slate-800 font-medium break-all leading-tight mt-0.5">

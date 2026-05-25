@@ -63,8 +63,8 @@ export function FinancingSection({
               details={
                 <ul className="space-y-1 list-disc list-inside">
                   <li>
-                    Par défaut <strong>Autofinancement</strong> pour une
-                    nouvelle inscription.
+                    Par défaut <strong>Employeur</strong> pour une
+                    nouvelle inscription (cas le plus fréquent).
                   </li>
                   <li>
                     Si vous sélectionnez <strong>OPCO</strong> : un menu
@@ -86,11 +86,16 @@ export function FinancingSection({
             onChange={(e) => setMode(e.target.value as FinancingMode)}
             className="flex h-9 w-full rounded-md border border-slate-300 bg-transparent px-3 py-1 text-sm shadow-sm"
           >
-            {Object.entries(FINANCING_MODE_LABELS).map(([k, l]) => (
-              <option key={k} value={k}>
-                {l}
-              </option>
-            ))}
+            {/* On affiche Employeur en TÊTE car c'est le défaut (Gilles
+                2026-05-26) — puis le reste dans l'ordre du référentiel. */}
+            <option value="employeur">Employeur (par défaut)</option>
+            {Object.entries(FINANCING_MODE_LABELS)
+              .filter(([k]) => k !== "employeur")
+              .map(([k, l]) => (
+                <option key={k} value={k}>
+                  {l}
+                </option>
+              ))}
           </select>
         </div>
         <div className="space-y-1.5">

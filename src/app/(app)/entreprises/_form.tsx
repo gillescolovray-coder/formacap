@@ -468,8 +468,14 @@ export function CompanyForm({
             </div>
           </div>
 
-          {/* Coordonnées GPS + carte (calculées depuis l'adresse) */}
-          <CompanyGpsSection company={company} />
+          {/* Coordonnées GPS + carte (calculées depuis l'adresse).
+              On passe le fieldPrefix pour que le composant lise les
+              bons inputs quand le formulaire entreprise est embarqué
+              dans une inscription (fields prefixés new_company_). */}
+          <CompanyGpsSection
+            company={company}
+            fieldPrefix={fieldPrefix}
+          />
         </div>
       </CollapsibleSection>
 

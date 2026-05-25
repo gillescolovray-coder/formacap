@@ -16,6 +16,11 @@ import type { Company } from "@/lib/companies/types";
 
 type Props = {
   company?: Company;
+  /** Préfixe des champs (address, postal_code, city) dans le formulaire
+   *  parent. Utilisé quand le formulaire entreprise est embarqué dans
+   *  un autre formulaire (ex. inscription, où les champs sont préfixés
+   *  `new_company_`). (Bug GPS Gilles 2026-05-26.) */
+  fieldPrefix?: string;
 };
 
 type GeocodeResult = {
@@ -55,7 +60,7 @@ async function geocodeFR(query: string): Promise<GeocodeResult | null> {
   }
 }
 
-export function CompanyGpsSection({ company }: Props) {
+export function CompanyGpsSection({ company, fieldPrefix = "" }: Props) {
   const [lat, setLat] = useState<string>(
     company?.latitude !== null && company?.latitude !== undefined
       ? String(company.latitude)
@@ -79,16 +84,20 @@ export function CompanyGpsSection({ company }: Props) {
   async function handleGeocode() {
     setError(null);
     setInfo(null);
-    const form =
-      typeof document !== "undefined"
-        ? (document.querySelector("form#form-company") as HTMLFormElement | null) ??
-          (document.querySelector("form") as HTMLFormElement | null)
-        : null;
-    if (!form) return;
-    const fd = new FormData(form);
-    const address = String(fd.get("address") ?? "").trim();
-    const postal = String(fd.get("postal_code") ?? "").trim();
-    const city = String(fd.get("city") ?? "").trim();
+    // Lecture directe des inputs par id (plus robuste qu'un FormData
+    // du form, qui peut récupérer le mauvais form quand le composant
+    // est embarqué dans une inscription). Les champs sont préfixés
+    // par fieldPrefix dans le cas embarqué (`new_company_`).
+    const readInput = (suffix: string): string => {
+      if (typeof document === "undefined") return "";
+      const el = document.getElementById(
+        `${fieldPrefix}${suffix}`,
+      ) as HTMLInputElement | null;
+      return (el?.value ?? "").trim();
+    };
+    const address = readInput("address");
+    const postal = readInput("postal_code");
+    const city = readInput("city");
     const query = [address, postal, city].filter(Boolean).join(" ");
     if (!query) {
       setError(
@@ -170,10 +179,14 @@ export function CompanyGpsSection({ company }: Props) {
         </Button>
       </div>
 
-      <input type="hidden" name="latitude" value={lat} />
-      <input type="hidden" name="longitude" value={lng} />
-      <input type="hidden" name="gps_source" value={source} />
-      <input type="hidden" name="gps_updated_at" value={updatedAt} />
+      <input type="hidden" name={`${fieldPrefix}latitude`} value={lat} />
+      <input type="hidden" name={`${fieldPrefix}longitude`} value={lng} />
+      <input type="hidden" name={`${fieldPrefix}gps_source`} value={source} />
+      <input
+        type="hidden"
+        name={`${fieldPrefix}gps_updated_at`}
+        value={updatedAt}
+      />
 
       <div className="grid gap-3 md:grid-cols-2">
         <div className="space-y-1.5">

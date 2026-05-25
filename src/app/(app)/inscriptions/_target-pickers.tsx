@@ -281,11 +281,37 @@ export function TargetPickers({
       : "");
   const [civility, setCivility] = useState(initialCivility);
 
+  // Choix utilisateur : si l'apprenant existe déjà ET que l'utilisateur
+  // modifie une coordonnée, doit-on aussi mettre à jour la fiche
+  // apprenant dans le module Apprenants ?
+  // - "yes"  → on écrase la fiche apprenant (comportement historique)
+  // - "no"   → on ne touche pas la fiche apprenant, seule l'inscription
+  //            stocke les nouvelles infos (et le tableau les affiche)
+  // (Bug Gilles 2026-05-26)
+  const [updateLearnerContact, setUpdateLearnerContact] = useState<
+    "yes" | "no"
+  >("yes");
+
   // --- Sélections ---
   const selectedLearner = learners.find((l) => l.id === learnerId);
   const selectedCompany = companies.find((c) => c.id === companyId);
   const selectedSession = sessions.find((s) => s.id === sessionId);
   const selectedParcours = parcoursOptions.find((p) => p.id === parcoursId);
+
+  // Détecte si l'utilisateur a modifié au moins une coordonnée par
+  // rapport à la fiche apprenant sélectionnée. N'a de sens que si un
+  // apprenant existant est sélectionné (sinon il sera créé avec les
+  // valeurs saisies).
+  function norm(s: string | null | undefined): string {
+    return (s ?? "").trim().toLowerCase();
+  }
+  const hasContactChanges = selectedLearner
+    ? norm(email) !== norm(selectedLearner.email) ||
+      norm(phone) !== norm(selectedLearner.phone) ||
+      norm(mobile) !== norm(selectedLearner.mobile) ||
+      norm(jobTitle) !== norm(selectedLearner.job_title) ||
+      norm(civility) !== norm(selectedLearner.civility)
+    : false;
 
   function pickLearner(l: LearnerOption) {
     setLearnerId(l.id);
@@ -532,12 +558,64 @@ export function TargetPickers({
         </div>
       </div>
 
-      {/* === Info coordonnées : sync vers la fiche apprenant === */}
-      <p className="text-[11px] text-slate-500 italic bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-md px-3 py-2">
-        💡 <strong>Bon à savoir</strong> : les modifications de civilité,
-        email, téléphone, fonction faites ici sont propagées
-        automatiquement à la fiche apprenant.
-      </p>
+      {/* === Info coordonnées + choix de propagation === */}
+      {/* Hidden : envoyé au serveur pour décider si l'on met à jour
+          la fiche apprenant ou pas. */}
+      <input
+        type="hidden"
+        name="update_learner_contact"
+        value={updateLearnerContact}
+      />
+      {hasContactChanges ? (
+        <div className="rounded-md bg-amber-50 dark:bg-amber-950/40 border-2 border-amber-300 dark:border-amber-900 px-3 py-2.5 space-y-2">
+          <p className="text-xs text-amber-900 dark:text-amber-200 font-semibold">
+            ⚠ Vous avez modifié les coordonnées de l&apos;apprenant{" "}
+            {selectedLearner?.first_name} {selectedLearner?.last_name}.
+          </p>
+          <p className="text-[11px] text-amber-800 dark:text-amber-300">
+            Souhaitez-vous mettre à jour aussi la fiche apprenant dans le
+            module Apprenants ?
+          </p>
+          <div className="flex items-center gap-3 text-xs">
+            <label className="inline-flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="radio"
+                checked={updateLearnerContact === "yes"}
+                onChange={() => setUpdateLearnerContact("yes")}
+                className="h-3.5 w-3.5"
+              />
+              <span className="font-medium">
+                OUI, mettre à jour la fiche apprenant
+              </span>
+            </label>
+            <label className="inline-flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="radio"
+                checked={updateLearnerContact === "no"}
+                onChange={() => setUpdateLearnerContact("no")}
+                className="h-3.5 w-3.5"
+              />
+              <span className="font-medium">
+                NON, uniquement sur cette inscription
+              </span>
+            </label>
+          </div>
+          {updateLearnerContact === "no" && (
+            <p className="text-[10px] text-amber-700 italic">
+              Les nouvelles coordonnées seront enregistrées sur cette
+              inscription uniquement — la fiche apprenant garde ses
+              valeurs précédentes.
+            </p>
+          )}
+        </div>
+      ) : (
+        <p className="text-[11px] text-slate-500 italic bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-md px-3 py-2">
+          💡 <strong>Bon à savoir</strong> : si vous modifiez les
+          coordonnées d&apos;un apprenant existant, une question
+          apparaîtra pour savoir si la fiche apprenant doit être mise à
+          jour ou non.
+        </p>
+      )}
 
       {/* === Ligne 2 : Email seul, pleine largeur === */}
       <div className="space-y-1.5">
