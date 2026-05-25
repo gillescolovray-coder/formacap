@@ -3,8 +3,23 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { parseFormStructure } from "@/lib/positioning/form-structure";
 
 type Choice = { key: string; label: string };
+
+/** Parse + valide la structure form-builder envoyée par l'éditeur.
+ *  Retourne `null` si invalide ou si la chaîne est absente. */
+function parseStructureField(raw: FormDataEntryValue | null) {
+  if (raw === null) return null;
+  const s = String(raw).trim();
+  if (s === "") return null;
+  try {
+    const obj = JSON.parse(s);
+    return parseFormStructure(obj);
+  } catch {
+    return null;
+  }
+}
 
 async function getOrgCtx() {
   const supabase = await createClient();
@@ -129,10 +144,15 @@ export async function createPositioningTemplate(formData: FormData) {
   const isDefault = formData.get("is_default") === "on";
   const expectations = parseChoices(formData.get("expectation_choices"));
   const criteria = parseChoices(formData.get("mastery_criteria"));
+  // Migration 0106 : form-builder structure (priorite sur les listes
+  // legacy si presente)
+  const structure = parseStructureField(formData.get("structure"));
 
-  if (expectations.length === 0 || criteria.length === 0) {
+  // Validation : on doit avoir soit la structure form-builder, soit
+  // les 2 listes legacy
+  if (!structure && (expectations.length === 0 || criteria.length === 0)) {
     redirect(
-      `/parametres/positionnement/new?error=${encodeURIComponent("Le template doit contenir au moins une attente et une compétence.")}`,
+      `/parametres/positionnement/new?error=${encodeURIComponent("Le template doit contenir au moins une section avec questions (ou une attente et une compétence en mode legacy).")}`,
     );
   }
 
@@ -147,8 +167,18 @@ export async function createPositioningTemplate(formData: FormData) {
       title,
       description,
       is_default: isDefault,
-      expectation_choices: expectations,
-      mastery_criteria: criteria,
+      // En mode form-builder on remplit quand meme les listes legacy
+      // avec des valeurs minimales (rétrocompat) pour ne pas casser
+      // les anciens lecteurs qui pourraient encore en dépendre.
+      expectation_choices:
+        expectations.length > 0
+          ? expectations
+          : [{ key: "placeholder", label: "—" }],
+      mastery_criteria:
+        criteria.length > 0
+          ? criteria
+          : [{ key: "placeholder", label: "—" }],
+      structure: structure ?? null,
       status: "published",
       created_by: userId,
     })
@@ -197,10 +227,12 @@ export async function updatePositioningTemplate(
   const isDefault = formData.get("is_default") === "on";
   const expectations = parseChoices(formData.get("expectation_choices"));
   const criteria = parseChoices(formData.get("mastery_criteria"));
+  // Migration 0106 — form-builder
+  const structure = parseStructureField(formData.get("structure"));
 
-  if (expectations.length === 0 || criteria.length === 0) {
+  if (!structure && (expectations.length === 0 || criteria.length === 0)) {
     redirect(
-      `/parametres/positionnement/${id}/edit?error=${encodeURIComponent("Le template doit contenir au moins une attente et une compétence.")}`,
+      `/parametres/positionnement/${id}/edit?error=${encodeURIComponent("Le template doit contenir au moins une section avec questions (ou une attente et une compétence en mode legacy).")}`,
     );
   }
 
@@ -209,15 +241,27 @@ export async function updatePositioningTemplate(
     await clearOtherDefaults(supabase, organizationId, id);
   }
 
+  const updatePayload: Record<string, unknown> = {
+    title,
+    description,
+    is_default: isDefault,
+  };
+  if (structure) {
+    updatePayload.structure = structure;
+    // Keep the legacy lists too (avec valeurs si fournies, sinon
+    // on ne touche pas)
+    if (expectations.length > 0) updatePayload.expectation_choices = expectations;
+    if (criteria.length > 0) updatePayload.mastery_criteria = criteria;
+  } else {
+    // Mode legacy uniquement
+    updatePayload.expectation_choices = expectations;
+    updatePayload.mastery_criteria = criteria;
+    updatePayload.structure = null;
+  }
+
   const { error } = await supabase
     .from("positioning_templates")
-    .update({
-      title,
-      description,
-      is_default: isDefault,
-      expectation_choices: expectations,
-      mastery_criteria: criteria,
-    })
+    .update(updatePayload)
     .eq("id", id);
 
   if (error) {
@@ -240,7 +284,9 @@ export async function duplicatePositioningTemplate(id: string) {
 
   const { data: src } = await supabase
     .from("positioning_templates")
-    .select("organization_id, title, description, expectation_choices, mastery_criteria")
+    .select(
+      "organization_id, title, description, expectation_choices, mastery_criteria, structure",
+    )
     .eq("id", id)
     .maybeSingle<{
       organization_id: string;
@@ -248,6 +294,7 @@ export async function duplicatePositioningTemplate(id: string) {
       description: string | null;
       expectation_choices: Choice[] | null;
       mastery_criteria: Choice[] | null;
+      structure: unknown;
     }>();
   if (!src || src.organization_id !== organizationId) {
     redirect("/parametres/positionnement?error=Template+introuvable");
@@ -262,6 +309,8 @@ export async function duplicatePositioningTemplate(id: string) {
       is_default: false,
       expectation_choices: src!.expectation_choices ?? [],
       mastery_criteria: src!.mastery_criteria ?? [],
+      // On duplique aussi la structure form-builder si elle existe
+      structure: src!.structure ?? null,
       status: "published",
       created_by: userId,
     })

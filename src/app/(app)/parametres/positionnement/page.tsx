@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CheckCircle2, Eye, Plus, Star, Target } from "lucide-react";
+import { Brain, CheckCircle2, Eye, Plus, Star, Target } from "lucide-react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/page-header";
@@ -76,6 +76,16 @@ export default async function PositioningTemplatesListPage({
         actions={
           <>
             <BackButton fallbackHref="/parametres" />
+            <Button
+              nativeButton={false}
+              render={<Link href="/parametres/positionnement/import" />}
+              variant="outline"
+              size="sm"
+              title="Importer un test depuis un PDF ou Word via Gemini"
+            >
+              <Brain className="h-4 w-4" />
+              Importer (IA)
+            </Button>
             <Button
               nativeButton={false}
               render={<Link href="/parametres/positionnement/new" />}

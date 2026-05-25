@@ -2,7 +2,10 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/page-header";
 import { BackButton } from "@/components/back-button";
-import { PositioningTemplateEditor } from "../_editor";
+import {
+  PositioningFormBuilderEditor,
+  makeEmptyStructure,
+} from "../_form-builder-editor";
 import { createPositioningTemplate } from "../actions";
 import { PositioningFixedSectionsInfo } from "../_fixed-sections-info";
 
@@ -39,7 +42,7 @@ export default async function NewPositioningTemplatePage({
 
       <div className="p-8 max-w-3xl space-y-4">
         <PositioningFixedSectionsInfo />
-        <PositioningTemplateEditor
+        <PositioningFormBuilderEditor
           mode="new"
           action={createPositioningTemplate}
           submitLabel="Créer le template"
@@ -48,20 +51,7 @@ export default async function NewPositioningTemplatePage({
             title: "",
             description: "",
             isDefault: false,
-            // Pré-remplissage utile pour démarrer (l'utilisateur peut
-            // tout effacer s'il veut partir de zéro).
-            expectationChoices: [
-              { key: "discover", label: "Découvrir le sujet" },
-              { key: "consolidate", label: "Consolider mes bases" },
-              { key: "autonomy", label: "Gagner en autonomie" },
-            ],
-            masteryCriteria: [
-              { key: "basics", label: "Comprendre les notions de base" },
-              {
-                key: "best_practices",
-                label: "Appliquer les bonnes pratiques",
-              },
-            ],
+            structure: makeEmptyStructure(),
           }}
         />
       </div>
