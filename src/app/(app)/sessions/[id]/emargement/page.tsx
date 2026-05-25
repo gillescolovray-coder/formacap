@@ -23,6 +23,7 @@ import { isResendConfigured } from "@/lib/email/resend";
 import {
   healCompanyLinksForSession,
   healEnrollmentsForSession,
+  healLearnersForSession,
 } from "@/lib/inscriptions/sync";
 import type { SessionDay, TrainingSession } from "@/lib/sessions/types";
 import type {
@@ -100,11 +101,10 @@ export default async function EmargementPage({
   if (error) throw error;
   if (!session) notFound();
 
-  // Self-healing en 2 étapes : liens entreprises (Gilles 2026-05-26)
-  // + enrollments (Gilles 2026-05-22). L'ancienne version créait des
-  // enrollments orphelins (sans inscription_request_id) cassant la
-  // sync bidirectionnelle.
+  // Self-healing en 3 étapes : learners → company_id → enrollments
+  // (Gilles 2026-05-26).
   try {
+    await healLearnersForSession(supabase, id);
     await healCompanyLinksForSession(supabase, id);
     await healEnrollmentsForSession(supabase, id);
   } catch (e) {

@@ -495,6 +495,114 @@ export async function healCompanyLinksForSession(
   return { companiesCreated, linkedLearners };
 }
 
+/**
+ * Self-healing learners : crée les learners MANQUANTS pour les
+ * inscriptions de la session qui n'ont pas de `learner_id` mais qui
+ * ont les infos minimales (prénom + nom). Sans ça, healEnrollmentsForSession
+ * skip ces inscriptions (parce qu'il filtre sur learner_id NOT NULL),
+ * donc aucun enrollment n'est créé → invisible côté Conventions /
+ * Convocations / Émargement.
+ *
+ * Gilles 2026-05-26 : session de 9 inscriptions toutes "Confirmé" côté
+ * Participants, mais seules 2 visibles côté Conventions car les 7 autres
+ * avaient inscription_request.learner_id = NULL (probablement un bug
+ * antérieur de la création d'inscription).
+ *
+ * Silencieux. Renvoie le nombre de learners créés + liés.
+ */
+export async function healLearnersForSession(
+  supabase: SupabaseClient,
+  sessionId: string,
+): Promise<{ created: number; checked: number }> {
+  let created = 0;
+  try {
+    const { data: broken } = await supabase
+      .from("inscription_requests")
+      .select(
+        "id, organization_id, company_id, prospect_first_name, prospect_last_name, prospect_email, prospect_phone, prospect_mobile, prospect_birth_date, prospect_civility",
+      )
+      .eq("target_session_id", sessionId)
+      .is("learner_id", null)
+      .not("prospect_first_name", "is", null)
+      .not("prospect_last_name", "is", null);
+
+    const list = (broken ?? []) as Array<{
+      id: string;
+      organization_id: string;
+      company_id: string | null;
+      prospect_first_name: string | null;
+      prospect_last_name: string | null;
+      prospect_email: string | null;
+      prospect_phone: string | null;
+      prospect_mobile: string | null;
+      prospect_birth_date: string | null;
+      prospect_civility: string | null;
+    }>;
+
+    for (const ins of list) {
+      // a) Cherche un learner existant par email (dans l'org)
+      let learnerId: string | null = null;
+      if (ins.prospect_email) {
+        const { data: byEmail } = await supabase
+          .from("learners")
+          .select("id")
+          .eq("organization_id", ins.organization_id)
+          .ilike("email", ins.prospect_email)
+          .limit(1)
+          .maybeSingle<{ id: string }>();
+        learnerId = byEmail?.id ?? null;
+      }
+      // b) Sinon crée le learner
+      if (!learnerId) {
+        const civility =
+          ins.prospect_civility === "M." ||
+          ins.prospect_civility === "Mme" ||
+          ins.prospect_civility === "Autre"
+            ? ins.prospect_civility
+            : null;
+        const { data: createdLearner, error: createErr } = await supabase
+          .from("learners")
+          .insert({
+            organization_id: ins.organization_id,
+            first_name: ins.prospect_first_name,
+            last_name: ins.prospect_last_name,
+            email: ins.prospect_email,
+            phone: ins.prospect_phone,
+            mobile: ins.prospect_mobile,
+            birth_date: ins.prospect_birth_date,
+            civility,
+            company_id: ins.company_id,
+            is_active: true,
+          })
+          .select("id")
+          .single();
+        if (createErr) {
+          console.warn(
+            "[healLearnersForSession] create learner failed",
+            { inscription_id: ins.id, error: createErr.message },
+          );
+          continue;
+        }
+        learnerId = createdLearner?.id ?? null;
+        if (learnerId) created++;
+      }
+      // c) Lie l'inscription
+      if (learnerId) {
+        await supabase
+          .from("inscription_requests")
+          .update({ learner_id: learnerId })
+          .eq("id", ins.id);
+      }
+    }
+  } catch (err) {
+    console.warn(
+      "[healLearnersForSession] failed silently",
+      (err as Error).message,
+    );
+  }
+  return { created, checked: 0 };
+}
+
 export async function healEnrollmentsForSession(
   supabase: SupabaseClient,
   sessionId: string,

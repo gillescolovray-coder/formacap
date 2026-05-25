@@ -10,6 +10,7 @@ import { isResendConfigured } from "@/lib/email/resend";
 import {
   healCompanyLinksForSession,
   healEnrollmentsForSession,
+  healLearnersForSession,
 } from "@/lib/inscriptions/sync";
 import { SessionTabs } from "../_session-tabs";
 import { SessionHeaderMeta } from "../_session-header-meta";
@@ -117,10 +118,10 @@ export default async function ConvocationsPage({
     }>();
   if (!session) notFound();
 
-  // Self-healing en 2 étapes (silencieux) :
-  // 1) Liens entreprises manquants (Gilles 2026-05-26).
-  // 2) Enrollments manquants (Gilles 2026-05-22).
+  // Self-healing en 3 étapes (ordre important) :
+  // 1) learners manquants → 2) company_id manquants → 3) enrollments.
   try {
+    await healLearnersForSession(supabase, id);
     await healCompanyLinksForSession(supabase, id);
     await healEnrollmentsForSession(supabase, id);
   } catch (e) {

@@ -17,6 +17,7 @@ import type {
 import {
   healCompanyLinksForSession,
   healEnrollmentsForSession,
+  healLearnersForSession,
 } from "@/lib/inscriptions/sync";
 import { cleanupUserEmptyDrafts } from "@/lib/inscriptions/cleanup";
 
@@ -44,9 +45,10 @@ export default async function ParticipantsPage({
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  // Self-healing en 2 étapes : liens entreprises + enrollments
+  // Self-healing en 3 étapes : learners → company_id → enrollments
   // (Gilles 2026-05-26).
   try {
+    await healLearnersForSession(supabase, id);
     await healCompanyLinksForSession(supabase, id);
     await healEnrollmentsForSession(supabase, id);
   } catch (e) {

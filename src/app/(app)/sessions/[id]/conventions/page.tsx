@@ -10,6 +10,7 @@ import { isResendConfigured } from "@/lib/email/resend";
 import {
   healCompanyLinksForSession,
   healEnrollmentsForSession,
+  healLearnersForSession,
 } from "@/lib/inscriptions/sync";
 import {
   computeConventionAmount,
@@ -99,11 +100,13 @@ export default async function ConventionsPage({
     }>();
   if (!session) notFound();
 
-  // Self-healing en 2 étapes (silencieux) :
-  // 1) Répare les liens entreprises manquants (Gilles 2026-05-26 :
-  //    inscriptions avec company_name_freetext mais sans company_id).
-  // 2) Répare les enrollments manquants (Gilles 2026-05-22).
+  // Self-healing en 3 étapes (silencieux, ordre important) :
+  // 1) Crée les learners manquants (inscriptions avec prospect_*
+  //    mais sans learner_id). Gilles 2026-05-26.
+  // 2) Crée les company_id manquants (freetext seul). Gilles 2026-05-26.
+  // 3) Crée les enrollments manquants. Gilles 2026-05-22.
   try {
+    await healLearnersForSession(supabase, id);
     await healCompanyLinksForSession(supabase, id);
     await healEnrollmentsForSession(supabase, id);
   } catch (e) {
