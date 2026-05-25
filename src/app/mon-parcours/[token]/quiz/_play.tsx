@@ -12,6 +12,12 @@ type Props = {
   questions: QuizQuestion[];
   preAttempt: QuizAttempt | null;
   postAttempt: QuizAttempt | null;
+  /** Phase forcee par l'horaire Paris (Gilles 2026-05-25) :
+   *  - "pre"  entre 7h30 et 11h
+   *  - "post" entre 13h et 19h
+   *  - null   hors fenetre -> fallback sur l'auto-detect.
+   *  Empeche un apprenant de jouer le quiz de sortie a 10h. */
+  forcedPhase?: "pre" | "post" | null;
 };
 
 export function QuizPlay({
@@ -20,14 +26,28 @@ export function QuizPlay({
   questions,
   preAttempt,
   postAttempt,
+  forcedPhase = null,
 }: Props) {
   const router = useRouter();
-  // Détermine la phase à jouer maintenant
-  const phaseToPlay: "pre" | "post" | null = !preAttempt
+  // Détermine la phase à jouer maintenant.
+  // - Si une phase est forcee par l'horaire, on respecte cette phase.
+  //   Si elle est deja faite, on bascule en mode lecture.
+  // - Sinon (hors fenetre matin/aprem), on auto-detecte la phase
+  //   manquante : pre si manquant, sinon post.
+  const autoPhase: "pre" | "post" | null = !preAttempt
     ? "pre"
     : !postAttempt
       ? "post"
       : null;
+  const phaseToPlay: "pre" | "post" | null = forcedPhase
+    ? forcedPhase === "pre"
+      ? preAttempt
+        ? null
+        : "pre"
+      : postAttempt
+        ? null
+        : "post"
+    : autoPhase;
 
   const [answers, setAnswers] = useState<
     Record<string, string | string[] | boolean | number | null>
@@ -175,6 +195,15 @@ export function QuizPlay({
         </strong>{" "}
         — {questions.length} question{questions.length > 1 ? "s" : ""} ·
         Aucune note ne sera communiquée à votre employeur.
+        {forcedPhase && (
+          <div className="text-[11px] text-violet-700 mt-1 italic">
+            Détecté automatiquement selon l&apos;heure :{" "}
+            {forcedPhase === "pre"
+              ? "quiz du matin (jouable jusqu'à 11h)"
+              : "quiz de sortie (jouable jusqu'à 19h)"}
+            .
+          </div>
+        )}
       </div>
 
       {questions.map((q, idx) => (

@@ -127,6 +127,26 @@ export default async function QuizPlayPage({
   const preAttempt = attempts.find((a) => a.phase === "pre") ?? null;
   const postAttempt = attempts.find((a) => a.phase === "post") ?? null;
 
+  // Forcage de la phase par horaire Paris (Gilles 2026-05-25) :
+  //   07:30 → 11:00 = quiz d'entree (matin) uniquement
+  //   13:00 → 19:00 = quiz de sortie uniquement
+  // Hors fenetre : on retombe sur la logique par defaut (auto-detect).
+  const parisHourMinute = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Europe/Paris",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date());
+  const [pH, pM] = parisHourMinute.split(":").map((x) => Number(x));
+  const minutesNow = pH * 60 + pM;
+  const inMorningWindow = minutesNow >= 7 * 60 + 30 && minutesNow < 11 * 60;
+  const inAfternoonWindow = minutesNow >= 13 * 60 && minutesNow < 19 * 60;
+  const forcedPhase: "pre" | "post" | null = inMorningWindow
+    ? "pre"
+    : inAfternoonWindow
+      ? "post"
+      : null;
+
   const fullName = [
     enrollment.learner?.first_name,
     enrollment.learner?.last_name,
@@ -176,6 +196,7 @@ export default async function QuizPlayPage({
           questions={questions}
           preAttempt={preAttempt}
           postAttempt={postAttempt}
+          forcedPhase={forcedPhase}
         />
 
         <footer className="text-center text-[11px] text-zinc-400">
