@@ -71,8 +71,14 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
   return out.length > 0 ? out : [[]];
 }
 
-const MAX_LEARNERS_PER_PAGE = 5;
-const MAX_DAYS_PER_PAGE = 5;
+// Pagination par défaut (paysage = 5 apprenants × 5 jours).
+// Surchargées dynamiquement selon l'orientation auto (cf. plus bas) :
+//  - portrait (1-2 jours) → 7 apprenants × 2 jours par page
+//  - paysage (3+ jours)   → 5 apprenants × 5 jours par page
+const MAX_LEARNERS_PORTRAIT = 7;
+const MAX_DAYS_PORTRAIT = 2;
+const MAX_LEARNERS_LANDSCAPE = 5;
+const MAX_DAYS_LANDSCAPE = 5;
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -351,8 +357,20 @@ export default async function EmargementPrintPage({
   })();
 
   // ============================================================
-  // Pagination : max 5 apprenants × 5 jours par page imprimée.
+  // Orientation auto + pagination adaptative (Gilles 2026-05-26)
+  // - 1 ou 2 jours → portrait : zones de signature plus grandes
+  // - 3+ jours → paysage : plus de colonnes affichées d'un coup
   // ============================================================
+  const totalDays = periodDates.length;
+  const orientation: "portrait" | "landscape" =
+    totalDays <= 2 ? "portrait" : "landscape";
+  const maxLearnersPerPage =
+    orientation === "portrait"
+      ? MAX_LEARNERS_PORTRAIT
+      : MAX_LEARNERS_LANDSCAPE;
+  const maxDaysPerPage =
+    orientation === "portrait" ? MAX_DAYS_PORTRAIT : MAX_DAYS_LANDSCAPE;
+
   const allEnrollments = (enrollments ?? []) as unknown as Array<{
     id: string;
     learner: {
@@ -361,8 +379,8 @@ export default async function EmargementPrintPage({
       company?: { name: string; siret?: string | null } | null;
     } | null;
   }>;
-  const enrollmentChunks = chunkArray(allEnrollments, MAX_LEARNERS_PER_PAGE);
-  const dayChunks = chunkArray(periodDates, MAX_DAYS_PER_PAGE);
+  const enrollmentChunks = chunkArray(allEnrollments, maxLearnersPerPage);
+  const dayChunks = chunkArray(periodDates, maxDaysPerPage);
   const pages: Array<{
     pageEnrollments: typeof allEnrollments;
     pageDates: string[];
@@ -434,7 +452,7 @@ export default async function EmargementPrintPage({
               line-height: 1.25 !important;
             }
             @media print {
-              @page { margin: 5mm 10mm; size: landscape; }
+              @page { margin: 5mm 10mm; size: ${orientation}; }
               body { background: white !important; }
               .no-print { display: none !important; }
               /* Masque la sidebar de l'app FORMACAP, le header, etc.
@@ -446,9 +464,17 @@ export default async function EmargementPrintPage({
                  neutraliser pour utiliser toute la largeur du papier. */
               main { padding: 0 !important; margin: 0 !important; max-width: none !important; }
               html, body { margin: 0 !important; padding: 0 !important; }
-              /* Pagination feuille d'émargement : max 5 apprenants × 5
-                 jours par page. */
-              .emargement-page { break-inside: avoid; }
+              /* Pagination feuille d'émargement : chaque page reste
+                 d'un seul tenant (jamais coupée entre apprenant et
+                 footer/signatures). */
+              .emargement-page { break-inside: avoid; page-break-inside: avoid; }
+              /* Bloc signatures (formateur + responsable organisme) :
+                 ne JAMAIS le couper en 2 — il doit toujours rester
+                 entier sur la même page. Gilles 2026-05-26. */
+              .emargement-signatures-block {
+                break-inside: avoid !important;
+                page-break-inside: avoid !important;
+              }
               .legal-mentions-footer,
               .legal-mentions-footer * {
                 font-size: 6.5pt !important;
@@ -487,8 +513,8 @@ export default async function EmargementPrintPage({
             {page.dayChunkCount > 1 && (
               <>
                 {" "}
-                · Jours {page.dayChunkIndex * MAX_DAYS_PER_PAGE + 1}–
-                {page.dayChunkIndex * MAX_DAYS_PER_PAGE +
+                · Jours {page.dayChunkIndex * maxDaysPerPage + 1}–
+                {page.dayChunkIndex * maxDaysPerPage +
                   page.pageDates.length}
               </>
             )}
@@ -496,8 +522,8 @@ export default async function EmargementPrintPage({
               <>
                 {" "}
                 · Apprenants{" "}
-                {page.enrollmentChunkIndex * MAX_LEARNERS_PER_PAGE + 1}–
-                {page.enrollmentChunkIndex * MAX_LEARNERS_PER_PAGE +
+                {page.enrollmentChunkIndex * maxLearnersPerPage + 1}–
+                {page.enrollmentChunkIndex * maxLearnersPerPage +
                   page.pageEnrollments.length}
               </>
             )}
@@ -778,62 +804,80 @@ export default async function EmargementPrintPage({
           </table>
         </div>
 
-        <div className="mt-4 text-[11px] text-slate-500 italic">
-          <strong className="not-italic font-semibold text-slate-600">
-            Légende :
-          </strong>{" "}
-          ✓ Présent · ✗ Absent · E Excusé · R En retard · — Non renseigné
-        </div>
+        {/* Bloc Légende + texte certifié + signatures + footer légal
+            regroupé pour ne JAMAIS être coupé en 2 par le saut de page. */}
+        <div className="emargement-signatures-block">
+          <div className="mt-4 text-[11px] text-slate-500 italic">
+            <strong className="not-italic font-semibold text-slate-600">
+              Légende :
+            </strong>{" "}
+            ✓ Présent · ✗ Absent · E Excusé · R En retard · — Non renseigné
+          </div>
 
-        {/* Texte de pied personnalisable (template émargement) */}
-        {template.blocks.footer_html && (
+          {/* Texte de pied personnalisable (template émargement) */}
+          {template.blocks.footer_html && (
+            <div
+              className="mt-6 text-xs text-slate-700 leading-relaxed rich-block"
+              dangerouslySetInnerHTML={{ __html: template.blocks.footer_html }}
+            />
+          )}
+
           <div
-            className="mt-6 text-xs text-slate-700 leading-relaxed rich-block"
-            dangerouslySetInnerHTML={{ __html: template.blocks.footer_html }}
-          />
-        )}
+            className={
+              "mt-8 grid gap-8 text-xs " +
+              (orientation === "portrait" ? "grid-cols-1" : "grid-cols-2")
+            }
+          >
+            <div>
+              <div
+                className="border-t border-slate-300 pt-2"
+                style={{
+                  // En portrait on agrandit les blocs signature (objet
+                  // de la refonte : zones plus grandes pour signer)
+                  minHeight: orientation === "portrait" ? "3.5cm" : "1.5cm",
+                }}
+              >
+                <strong className="text-slate-700">Formateur</strong>
+                <br />
+                <span className="text-slate-600">
+                  {trainerDisplayName ?? ""}
+                </span>
+                <br />
+                <span className="text-slate-500 text-[11px] italic">
+                  {trainerSignaturesByDateMoment.size > 0
+                    ? "Signature électronique recueillie ci-dessus."
+                    : "Signature et date :"}
+                </span>
+              </div>
+            </div>
+            <div>
+              <div
+                className="border-t border-slate-300 pt-2"
+                style={{
+                  minHeight: orientation === "portrait" ? "3.5cm" : "1.5cm",
+                }}
+              >
+                <strong className="text-slate-700">
+                  Responsable de l&apos;organisme
+                </strong>
+                <br />
+                <span className="text-slate-600">{orgName}</span>
+                <br />
+                <span className="text-slate-500 text-[11px] italic">
+                  Signature et date :
+                </span>
+              </div>
+            </div>
+          </div>
 
-        <div className="mt-10 grid grid-cols-2 gap-8 text-xs">
-          <div>
-            <div className="border-t border-slate-300 pt-2">
-              <strong className="text-slate-700">Formateur</strong>
-              <br />
-              <span className="text-slate-600">
-                {trainerDisplayName ?? ""}
-              </span>
-              <br />
-              <span className="text-slate-500 text-[11px] italic">
-                {trainerSignaturesByDateMoment.size > 0
-                  ? "Signature électronique recueillie ci-dessus."
-                  : "Signature et date :"}
-              </span>
-            </div>
-          </div>
-          <div>
-            <div className="border-t border-slate-300 pt-2">
-              <strong className="text-slate-700">
-                Responsable de l&apos;organisme
-              </strong>
-              <br />
-              <span className="text-slate-600">{orgName}</span>
-              <br />
-              <span className="text-slate-500 text-[11px] italic">
-                Signature et date :
-              </span>
-            </div>
-          </div>
+          {/* Pied de page : mentions légales de l'organisme. */}
+          {orgLegalMentions && (
+            <footer
+              className="mt-4 pt-1.5 border-t border-zinc-300 legal-mentions-footer"
+              dangerouslySetInnerHTML={{ __html: orgLegalMentions }}
+            />
+          )}
         </div>
-
-        {/* Pied de page : mentions légales de l'organisme. Repris depuis
-            Paramètres > Organisation > Mentions légales. Le contenu est
-            stocké en HTML (mise en forme par l'éditeur de texte riche)
-            et rendu tel quel ici. */}
-        {orgLegalMentions && (
-          <footer
-            className="mt-4 pt-1.5 border-t border-zinc-300 legal-mentions-footer"
-            dangerouslySetInnerHTML={{ __html: orgLegalMentions }}
-          />
-        )}
         </div>
         ))}
         <style
