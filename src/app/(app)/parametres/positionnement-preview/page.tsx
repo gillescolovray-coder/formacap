@@ -8,7 +8,9 @@ import {
   loadDefaultPositioningTemplate,
   type PositioningTemplate,
 } from "@/lib/positioning/templates";
+import { parseFormStructure } from "@/lib/positioning/form-structure";
 import { PositioningForm } from "@/app/mon-parcours/[token]/positionnement/_form";
+import { DynamicPositioningForm } from "@/app/mon-parcours/[token]/positionnement/_dynamic-form";
 
 export const dynamic = "force-dynamic";
 
@@ -62,7 +64,7 @@ export default async function PositioningPreviewPage({
       const { data } = await supabase
         .from("positioning_templates")
         .select(
-          "id, title, description, is_default, expectation_choices, mastery_criteria",
+          "id, title, description, is_default, expectation_choices, mastery_criteria, structure",
         )
         .eq("id", templateIdParam)
         .eq("organization_id", orgMember.organization_id)
@@ -73,6 +75,7 @@ export default async function PositioningPreviewPage({
           is_default: boolean | null;
           expectation_choices: Array<{ key: string; label: string }> | null;
           mastery_criteria: Array<{ key: string; label: string }> | null;
+          structure: unknown;
         }>();
       if (data) {
         template = {
@@ -88,6 +91,7 @@ export default async function PositioningPreviewPage({
             data.mastery_criteria && data.mastery_criteria.length > 0
               ? data.mastery_criteria
               : FALLBACK_TEMPLATE.mastery_criteria,
+          structure: parseFormStructure(data.structure),
         };
       }
     } else if (orgMember?.organization_id) {
@@ -162,23 +166,42 @@ export default async function PositioningPreviewPage({
           )}
         </div>
 
-        <PositioningForm
-          portalToken="__preview__"
-          previewMode
-          expectationChoices={template.expectation_choices}
-          masteryCriteria={template.mastery_criteria}
-          context={{
-            orgName,
-            formationTitle: "Exemple de formation (aperçu)",
-            startDate: today.toISOString().slice(0, 10),
-            endDate: inTwoWeeks.toISOString().slice(0, 10),
-            modality: "presentiel",
-            learnerName: "Marie DUPONT",
-            civility: "Mme",
-            companyName: "SARL Exemple",
-            jobTitle: "Responsable projet",
-          }}
-        />
+        {template.structure ? (
+          <DynamicPositioningForm
+            portalToken="__preview__"
+            previewMode
+            structure={template.structure}
+            context={{
+              orgName,
+              formationTitle: "Exemple de formation (aperçu)",
+              startDate: today.toISOString().slice(0, 10),
+              endDate: inTwoWeeks.toISOString().slice(0, 10),
+              modality: "presentiel",
+              learnerName: "Marie DUPONT",
+              civility: "Mme",
+              companyName: "SARL Exemple",
+              jobTitle: "Responsable projet",
+            }}
+          />
+        ) : (
+          <PositioningForm
+            portalToken="__preview__"
+            previewMode
+            expectationChoices={template.expectation_choices}
+            masteryCriteria={template.mastery_criteria}
+            context={{
+              orgName,
+              formationTitle: "Exemple de formation (aperçu)",
+              startDate: today.toISOString().slice(0, 10),
+              endDate: inTwoWeeks.toISOString().slice(0, 10),
+              modality: "presentiel",
+              learnerName: "Marie DUPONT",
+              civility: "Mme",
+              companyName: "SARL Exemple",
+              jobTitle: "Responsable projet",
+            }}
+          />
+        )}
 
         <footer className="text-center text-[11px] text-zinc-400 mt-8">
           Aperçu réservé à l&apos;équipe — vu par le formateur ou

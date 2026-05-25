@@ -13,6 +13,10 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  parseFormStructure,
+  type FormStructure,
+} from "./form-structure";
 
 export type PositioningChoice = { key: string; label: string };
 
@@ -23,6 +27,10 @@ export type PositioningTemplate = {
   is_default: boolean;
   expectation_choices: PositioningChoice[];
   mastery_criteria: PositioningChoice[];
+  /** Form-builder structure (migration 0106). Si non-null, le
+   *  formulaire apprenant rend cette structure dynamiquement et
+   *  ignore expectation_choices + mastery_criteria. */
+  structure: FormStructure | null;
 };
 
 /** Fallback codé en dur — utilisé seulement si la migration 0105
@@ -52,6 +60,7 @@ export const FALLBACK_TEMPLATE: PositioningTemplate = {
     { key: "best_practices", label: "Appliquer les bonnes pratiques" },
     { key: "errors", label: "Repérer les erreurs ou pièges à éviter" },
   ],
+  structure: null,
 };
 
 type Row = {
@@ -61,6 +70,9 @@ type Row = {
   is_default: boolean | null;
   expectation_choices: PositioningChoice[] | null;
   mastery_criteria: PositioningChoice[] | null;
+  /** Migration 0106 — peut être absent si la migration n'a pas
+   *  encore été appliquée (on récupérera null dans ce cas). */
+  structure?: unknown;
 };
 
 function toTemplate(row: Row): PositioningTemplate {
@@ -77,6 +89,7 @@ function toTemplate(row: Row): PositioningTemplate {
       Array.isArray(row.mastery_criteria) && row.mastery_criteria.length > 0
         ? row.mastery_criteria
         : FALLBACK_TEMPLATE.mastery_criteria,
+    structure: parseFormStructure(row.structure),
   };
 }
 
@@ -113,7 +126,7 @@ export async function loadPositioningTemplateForSession(
       const { data: tpl } = await supabase
         .from("positioning_templates")
         .select(
-          "id, title, description, is_default, expectation_choices, mastery_criteria",
+          "id, title, description, is_default, expectation_choices, mastery_criteria, structure",
         )
         .eq("id", tplId)
         .maybeSingle<Row>();
@@ -124,7 +137,7 @@ export async function loadPositioningTemplateForSession(
     const { data: def } = await supabase
       .from("positioning_templates")
       .select(
-        "id, title, description, is_default, expectation_choices, mastery_criteria",
+        "id, title, description, is_default, expectation_choices, mastery_criteria, structure",
       )
       .eq("organization_id", session.organization_id)
       .eq("is_default", true)
@@ -149,7 +162,7 @@ export async function loadDefaultPositioningTemplate(
     const { data: def } = await supabase
       .from("positioning_templates")
       .select(
-        "id, title, description, is_default, expectation_choices, mastery_criteria",
+        "id, title, description, is_default, expectation_choices, mastery_criteria, structure",
       )
       .eq("organization_id", organizationId)
       .eq("is_default", true)

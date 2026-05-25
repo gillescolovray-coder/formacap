@@ -4,6 +4,7 @@ import { ChevronLeft } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadPositioningTemplateForSession } from "@/lib/positioning/templates";
 import { PositioningForm } from "./_form";
+import { DynamicPositioningForm } from "./_dynamic-form";
 
 export const dynamic = "force-dynamic";
 
@@ -124,7 +125,27 @@ export default async function PositionnementPage({
               En cas d&apos;erreur, contactez votre formateur.
             </p>
           </div>
+        ) : template.structure ? (
+          // Mode FORM-BUILDER (migration 0106) : on rend la structure
+          // personnalisée du template avec tous les types de questions.
+          <DynamicPositioningForm
+            portalToken={token}
+            structure={template.structure}
+            context={{
+              orgName,
+              formationTitle: session.formation?.title ?? "—",
+              startDate: session.start_date,
+              endDate: session.end_date,
+              modality: session.modality,
+              learnerName: fullName,
+              civility: learner?.civility ?? null,
+              companyName: learner?.company?.name ?? null,
+              jobTitle: learner?.job_title ?? null,
+            }}
+          />
         ) : (
+          // Mode LEGACY (templates avant migration 0106) : ancien
+          // formulaire fixe avec juste les 2 listes éditables.
           <PositioningForm
             portalToken={token}
             expectationChoices={template.expectation_choices}
