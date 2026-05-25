@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { CheckCircle2, Eye, Star, Target } from "lucide-react";
+import { CheckCircle2, Eye, Plus, Star, Target } from "lucide-react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/page-header";
 import { BackButton } from "@/components/back-button";
+import { Button } from "@/components/ui/button";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,12 @@ type TemplateRow = {
   updated_at: string;
 };
 
-export default async function PositioningTemplatesListPage() {
+export default async function PositioningTemplatesListPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ deleted?: string; error?: string }>;
+}) {
+  const sp = await searchParams;
   const supabase = await createClient();
   const {
     data: { user },
@@ -67,10 +73,34 @@ export default async function PositioningTemplatesListPage() {
           { label: "Paramètres", href: "/parametres" },
           { label: "Tests de positionnement" },
         ]}
-        actions={<BackButton fallbackHref="/parametres" />}
+        actions={
+          <>
+            <BackButton fallbackHref="/parametres" />
+            <Button
+              nativeButton={false}
+              render={<Link href="/parametres/positionnement/new" />}
+              size="sm"
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+              title="Créer un nouveau test de positionnement"
+            >
+              <Plus className="h-4 w-4" />
+              Nouveau test
+            </Button>
+          </>
+        }
       />
 
       <div className="p-8 max-w-4xl space-y-4">
+        {sp.deleted && (
+          <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-800">
+            Template supprimé.
+          </div>
+        )}
+        {sp.error && (
+          <div className="rounded-xl bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+            {sp.error}
+          </div>
+        )}
         {tableMissing && (
           <div className="rounded-xl bg-amber-50 border-2 border-amber-300 p-4 text-sm text-amber-900">
             <strong>Migration BDD à appliquer.</strong> La table{" "}
@@ -147,19 +177,27 @@ export default async function PositioningTemplatesListPage() {
 
         <div className="rounded-xl bg-blue-50 border border-blue-200 p-4 text-xs text-blue-900 space-y-1.5">
           <p>
-            <strong>📝 Édition à venir (Phase 2)</strong>
+            <strong>💡 Comment ça marche</strong>
           </p>
           <p>
-            Aujourd&apos;hui les templates sont en{" "}
-            <strong>lecture seule</strong>. La création / modification
-            des compétences et attentes par template arrivera dans la
-            prochaine itération (Sprint Édition).
+            Le template <strong>par défaut</strong> ⭐ s&apos;applique
+            automatiquement à toutes les sessions sans assignation
+            spécifique. Vous pouvez créer d&apos;autres templates pour des
+            thématiques particulières (BTP, Excel, IA…) et les rattacher :
           </p>
+          <ul className="list-disc ml-5 space-y-0.5">
+            <li>
+              Sur une <strong>formation</strong> : s&apos;applique
+              automatiquement aux sessions issues de cette formation.
+            </li>
+            <li>
+              Sur une <strong>session</strong> : surcharge le template
+              de la formation pour cette session uniquement.
+            </li>
+          </ul>
           <p>
-            En attendant : le template par défaut s&apos;applique
-            automatiquement à toutes les sessions, et la résolution{" "}
-            <em>session &gt; formation &gt; default</em> fonctionne déjà
-            si vous attribuez un template via SQL.
+            Hiérarchie de résolution :{" "}
+            <em>session &gt; formation &gt; default</em>.
           </p>
         </div>
       </div>

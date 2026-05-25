@@ -1,10 +1,15 @@
 import Link from "next/link";
-import { ChevronLeft, Eye, Star, Target } from "lucide-react";
+import { Archive, ArchiveRestore, ChevronLeft, Copy, Eye, Pencil, Star, Target, Trash2 } from "lucide-react";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/page-header";
 import { BackButton } from "@/components/back-button";
 import { Button } from "@/components/ui/button";
+import {
+  archivePositioningTemplate,
+  deletePositioningTemplate,
+  duplicatePositioningTemplate,
+} from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -13,10 +18,19 @@ const UUID_REGEX =
 
 export default async function PositioningTemplateDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{
+    created?: string;
+    updated?: string;
+    archived?: string;
+    unarchived?: string;
+    error?: string;
+  }>;
 }) {
   const { id } = await params;
+  const sp = await searchParams;
   if (!UUID_REGEX.test(id)) notFound();
 
   const supabase = await createClient();
@@ -46,6 +60,10 @@ export default async function PositioningTemplateDetailPage({
 
   const expectations = tpl.expectation_choices ?? [];
   const criteria = tpl.mastery_criteria ?? [];
+  const archive = archivePositioningTemplate.bind(null, id);
+  const duplicate = duplicatePositioningTemplate.bind(null, id);
+  const remove = deletePositioningTemplate.bind(null, id);
+  const isArchived = tpl.status === "archived";
 
   return (
     <>
@@ -81,18 +99,107 @@ export default async function PositioningTemplateDetailPage({
                   href={`/parametres/positionnement-preview?template=${tpl.id}`}
                 />
               }
-              variant="default"
+              variant="outline"
               size="sm"
               title="Voir le test tel que le verra l'apprenant"
             >
               <Eye className="h-4 w-4" />
-              Aperçu apprenant
+              Aperçu
+            </Button>
+            <form action={duplicate}>
+              <Button
+                type="submit"
+                variant="outline"
+                size="sm"
+                title="Créer une copie modifiable de ce template"
+              >
+                <Copy className="h-4 w-4" />
+                Dupliquer
+              </Button>
+            </form>
+            <form action={archive}>
+              <Button
+                type="submit"
+                variant="outline"
+                size="sm"
+                title={
+                  isArchived
+                    ? "Désarchiver pour le réafficher dans les dropdowns"
+                    : "Archiver pour le masquer des dropdowns (les sessions historiques continuent d'y référer)"
+                }
+              >
+                {isArchived ? (
+                  <>
+                    <ArchiveRestore className="h-4 w-4" />
+                    Désarchiver
+                  </>
+                ) : (
+                  <>
+                    <Archive className="h-4 w-4" />
+                    Archiver
+                  </>
+                )}
+              </Button>
+            </form>
+            {!tpl.is_default && (
+              <form action={remove}>
+                <Button
+                  type="submit"
+                  variant="outline"
+                  size="sm"
+                  title="Supprimer définitivement ce template (les sessions qui le référencent passeront en mode 'héritage')"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Supprimer
+                </Button>
+              </form>
+            )}
+            <Button
+              nativeButton={false}
+              render={
+                <Link href={`/parametres/positionnement/${tpl.id}/edit`} />
+              }
+              size="sm"
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+              title="Modifier le contenu de ce template"
+            >
+              <Pencil className="h-4 w-4" />
+              Modifier
             </Button>
           </>
         }
       />
 
       <div className="p-8 max-w-3xl space-y-4">
+        {sp.created && (
+          <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-800">
+            ✓ Template créé. Vous pouvez maintenant le rattacher à une
+            formation ou à une session.
+          </div>
+        )}
+        {sp.updated && (
+          <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-800">
+            ✓ Modifications enregistrées.
+          </div>
+        )}
+        {sp.archived && (
+          <div className="rounded-xl bg-zinc-50 border border-zinc-200 p-3 text-sm text-zinc-700">
+            Template archivé : il n&apos;apparaît plus dans les dropdowns
+            formation/session, mais les sessions historiques qui le
+            référencent restent intactes.
+          </div>
+        )}
+        {sp.unarchived && (
+          <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-800">
+            Template désarchivé.
+          </div>
+        )}
+        {sp.error && (
+          <div className="rounded-xl bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+            {sp.error}
+          </div>
+        )}
+
         {tpl.description && (
           <p className="text-sm text-zinc-600">{tpl.description}</p>
         )}
@@ -186,17 +293,6 @@ export default async function PositioningTemplateDetailPage({
           )}
         </section>
 
-        <div className="rounded-xl bg-blue-50 border border-blue-200 p-4 text-xs text-blue-900 space-y-1.5">
-          <p>
-            <strong>📝 Édition à venir (Phase 2)</strong>
-          </p>
-          <p>
-            Pour modifier les attentes et compétences de ce template,
-            l&apos;éditeur visuel arrivera dans la prochaine itération.
-            En attendant, utilisez le SQL Editor de Supabase (table{" "}
-            <code>positioning_templates</code>).
-          </p>
-        </div>
       </div>
     </>
   );
