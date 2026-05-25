@@ -7,6 +7,8 @@ import {
   ChevronLeft,
   ClipboardList,
   Clock,
+  Eye,
+  EyeOff,
   FileText,
   Folder,
   Lock,
@@ -1270,9 +1272,10 @@ export default async function FormateurSessionDetailPage({
                           <button
                             type="submit"
                             className={
-                              isShared
-                                ? "text-indigo-700 underline cursor-pointer hover:text-indigo-900"
-                                : "text-zinc-500 underline cursor-pointer hover:text-zinc-800"
+                              "inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-semibold border-2 transition shadow-sm cursor-pointer " +
+                              (isShared
+                                ? "bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200"
+                                : "bg-amber-100 text-amber-800 border-amber-400 hover:bg-amber-200")
                             }
                             title={
                               isShared
@@ -1280,13 +1283,29 @@ export default async function FormateurSessionDetailPage({
                                 : "Cliquer pour PARTAGER avec les apprenants"
                             }
                           >
-                            {isShared ? "Partagé" : "Interne"}
+                            {isShared ? (
+                              <>
+                                <Eye className="h-3 w-3" />
+                                Partagé
+                              </>
+                            ) : (
+                              <>
+                                <EyeOff className="h-3 w-3" />
+                                Interne — cliquer pour partager
+                              </>
+                            )}
                           </button>
                         </form>
                       ) : isShared ? (
-                        <span className="text-indigo-700">Partagé</span>
+                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                          <Eye className="h-3 w-3" />
+                          Partagé
+                        </span>
                       ) : (
-                        <span className="text-zinc-400">Interne</span>
+                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-semibold bg-zinc-100 text-zinc-600 border border-zinc-300">
+                          <EyeOff className="h-3 w-3" />
+                          Interne
+                        </span>
                       )}
                       {isShared && (
                         <form action={deleteAction}>
