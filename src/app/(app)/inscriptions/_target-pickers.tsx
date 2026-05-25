@@ -248,38 +248,69 @@ export function TargetPickers({
   const [parcoursId, setParcoursId] = useState(defaults.parcoursId ?? "");
   const [parcoursQuery, setParcoursQuery] = useState("");
 
+  // Apprenant initialement rattaché à l'inscription (au moment du
+  // mount). Sert de SOURCE de pré-remplissage des coordonnées :
+  // - en priorité on prend les overrides locaux `prospect_*` de
+  //   l'inscription (modifs antérieures non synchronisées vers le
+  //   learner) ;
+  // - sinon on prend les valeurs du learner.
+  // Avant ce fix, on n'utilisait que les prospect_* → les fiches
+  // sauvegardées AVANT la migration 0098 n'avaient pas de prospect_*
+  // donc les champs apparaissaient vides à l'écran alors que la
+  // table affichait correctement le fallback learner.* (Gilles 2026-05-26).
+  const initialLinkedLearner = defaults.learnerId
+    ? (learners.find((l) => l.id === defaults.learnerId) ?? null)
+    : null;
+
   // Champs prospect (édition manuelle, mais auto-remplis quand on choisit un apprenant)
   const [firstName, setFirstName] = useState(
-    defaults.prospectFirstName ?? "",
+    defaults.prospectFirstName ??
+      initialLinkedLearner?.first_name ??
+      "",
   );
   const [lastName, setLastName] = useState(
-    (defaults.prospectLastName ?? "").toLocaleUpperCase("fr-FR"),
+    (
+      defaults.prospectLastName ??
+      initialLinkedLearner?.last_name ??
+      ""
+    ).toLocaleUpperCase("fr-FR"),
   );
-  const [email, setEmail] = useState(defaults.prospectEmail ?? "");
-  const [phone, setPhone] = useState(defaults.prospectPhone ?? "");
-  const [mobile, setMobile] = useState(defaults.prospectMobile ?? "");
+  const [email, setEmail] = useState(
+    defaults.prospectEmail ?? initialLinkedLearner?.email ?? "",
+  );
+  const [phone, setPhone] = useState(
+    defaults.prospectPhone ?? initialLinkedLearner?.phone ?? "",
+  );
+  const [mobile, setMobile] = useState(
+    defaults.prospectMobile ?? initialLinkedLearner?.mobile ?? "",
+  );
   const [birthDate, setBirthDate] = useState(
     defaults.prospectBirthDate ?? "",
   );
-  // Pré-remplit la fonction depuis le learner sélectionné si disponible
-  // (les inscription_requests ne stockent pas le job_title — il vient
-  // toujours du learner rattaché).
+  // Fonction : non stockée sur inscription_requests, vient toujours
+  // du learner (sinon ce qui a été saisi pour la fiche).
   const initialJobTitle =
-    defaults.prospectJobTitle ??
-    (defaults.learnerId
-      ? (learners.find((l) => l.id === defaults.learnerId)?.job_title ?? "")
-      : "");
+    defaults.prospectJobTitle ?? initialLinkedLearner?.job_title ?? "";
   const [jobTitle, setJobTitle] = useState(initialJobTitle);
-  // Civilité du prospect — saisie explicite (M. / Mme / Autre).
-  // Évite que la fiche apprenant créée depuis l'inscription ait ce
-  // champ vide (donc le tableau Apprenants reste cohérent).
-  // Pré-remplie depuis le learner sélectionné si disponible.
+  // Civilité : priorité au prospect_* (modif locale), fallback learner.
   const initialCivility =
-    defaults.prospectCivility ??
-    (defaults.learnerId
-      ? (learners.find((l) => l.id === defaults.learnerId)?.civility ?? "")
-      : "");
+    defaults.prospectCivility ?? initialLinkedLearner?.civility ?? "";
   const [civility, setCivility] = useState(initialCivility);
+
+  // Snapshot des valeurs INITIALES au mount. Sert à détecter ce que
+  // l'utilisateur a réellement modifié DEPUIS l'ouverture de la fiche,
+  // au lieu de comparer avec les valeurs du learner (qui peuvent déjà
+  // différer si une précédente modif a été enregistrée avec "NON" pour
+  // la sync vers le learner). Le bandeau jaune n'apparaît qu'à partir
+  // d'une vraie nouvelle modif. Gilles 2026-05-26.
+  const initialContactRef = useRef({
+    email: defaults.prospectEmail ?? initialLinkedLearner?.email ?? "",
+    phone: defaults.prospectPhone ?? initialLinkedLearner?.phone ?? "",
+    mobile: defaults.prospectMobile ?? initialLinkedLearner?.mobile ?? "",
+    jobTitle: initialJobTitle,
+    civility: initialCivility,
+    learnerId: defaults.learnerId ?? "",
+  });
 
   // Choix utilisateur : si l'apprenant existe déjà ET que l'utilisateur
   // modifie une coordonnée, doit-on aussi mettre à jour la fiche
@@ -298,20 +329,25 @@ export function TargetPickers({
   const selectedSession = sessions.find((s) => s.id === sessionId);
   const selectedParcours = parcoursOptions.find((p) => p.id === parcoursId);
 
-  // Détecte si l'utilisateur a modifié au moins une coordonnée par
-  // rapport à la fiche apprenant sélectionnée. N'a de sens que si un
-  // apprenant existant est sélectionné (sinon il sera créé avec les
-  // valeurs saisies).
+  // Détecte si l'utilisateur a modifié au moins une coordonnée
+  // DEPUIS L'OUVERTURE DE LA FICHE (= comparaison avec le snapshot
+  // initial pris au mount). N'a de sens que si un apprenant existant
+  // est sélectionné — pour un nouvel apprenant, pas besoin de demander
+  // la sync, il sera créé avec les valeurs saisies.
+  // Gilles 2026-05-26 : avant on comparait avec selectedLearner, ce qui
+  // déclenchait le bandeau dès l'ouverture si une précédente modif
+  // n'avait pas été synchronisée (prospect_* ≠ learner.*).
   function norm(s: string | null | undefined): string {
     return (s ?? "").trim().toLowerCase();
   }
-  const hasContactChanges = selectedLearner
-    ? norm(email) !== norm(selectedLearner.email) ||
-      norm(phone) !== norm(selectedLearner.phone) ||
-      norm(mobile) !== norm(selectedLearner.mobile) ||
-      norm(jobTitle) !== norm(selectedLearner.job_title) ||
-      norm(civility) !== norm(selectedLearner.civility)
-    : false;
+  const hasContactChanges =
+    selectedLearner &&
+    initialContactRef.current.learnerId === learnerId &&
+    (norm(email) !== norm(initialContactRef.current.email) ||
+      norm(phone) !== norm(initialContactRef.current.phone) ||
+      norm(mobile) !== norm(initialContactRef.current.mobile) ||
+      norm(jobTitle) !== norm(initialContactRef.current.jobTitle) ||
+      norm(civility) !== norm(initialContactRef.current.civility));
 
   function pickLearner(l: LearnerOption) {
     setLearnerId(l.id);
@@ -336,6 +372,19 @@ export function TargetPickers({
       setCompanyId(l.company_id);
       setCompanyFreetext("");
     }
+    // Réinitialise le snapshot de détection de modif sur les NOUVELLES
+    // valeurs du learner choisi. Sans ça, le bandeau "Vous avez modifié…"
+    // se déclencherait dès la sélection (state passe des anciennes
+    // valeurs aux nouvelles). Gilles 2026-05-26.
+    initialContactRef.current = {
+      learnerId: l.id,
+      email: email || (l.email ?? ""),
+      phone: phone || (l.phone ?? ""),
+      mobile: mobile || (l.mobile ?? ""),
+      jobTitle: jobTitle || (l.job_title ?? ""),
+      civility: civility || (l.civility ?? ""),
+    };
+    setUpdateLearnerContact("yes");
   }
 
   function pickCompany(c: CompanyOption) {
