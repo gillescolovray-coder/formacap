@@ -3,6 +3,7 @@ import Link from "next/link";
 import {
   Calendar,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ClipboardList,
   Clock,
@@ -859,13 +860,16 @@ export default async function FormateurSessionDetailPage({
           )}
         </Module>
 
-        {/* Module 2 — Test de positionnement */}
+        {/* Module 2 — Test de positionnement (replié par défaut,
+            Gilles 2026-05-25 : info secondaire pour le formateur en
+            cours de session). */}
         <Module
           icon={<Target className="h-5 w-5" />}
           color="amber"
           title={`Tests de positionnement (${positioningRows?.length ?? 0}/${participants.length})`}
           description="Auto-évaluations remplies par les apprenants avant la formation."
           subcontractedManagedByOf={session.is_subcontracted === true}
+          collapsible
         >
           {participants.length === 0 ? (
             <p className="text-xs text-zinc-500 italic">Aucun apprenant.</p>
@@ -912,13 +916,15 @@ export default async function FormateurSessionDetailPage({
               avec toutes les réponses + champ observation formateur. */}
         </Module>
 
-        {/* Module 3 — Convocations envoyées */}
+        {/* Module 3 — Convocations envoyées (replié par défaut,
+            Gilles 2026-05-25 : suivi technique secondaire). */}
         <Module
           icon={<Mail className="h-5 w-5" />}
           color="indigo"
           title="Convocations envoyées"
           description="État d'envoi des convocations apprenants par email."
           subcontractedManagedByOf={session.is_subcontracted === true}
+          collapsible
         >
           {participants.length === 0 ? (
             <p className="text-xs text-zinc-500 italic">
@@ -1441,6 +1447,13 @@ function Module({
    *  donneur d'ordre — on les grise visuellement pour que le formateur
    *  comprenne qu'il n'a rien à faire ici. Gilles 2026-05-24. */
   subcontractedManagedByOf,
+  /** Plie le bloc derrière un <details>. Par défaut replié — le
+   *  formateur clique sur le header pour voir le contenu. Utilisé pour
+   *  les modules secondaires (positionnement, convocations) que le
+   *  formateur n'a pas besoin de voir à chaque ouverture de la page.
+   *  Gilles 2026-05-25. */
+  collapsible,
+  defaultOpen,
 }: {
   icon: React.ReactNode;
   color: ModuleColor;
@@ -1449,6 +1462,8 @@ function Module({
   actionButton?: React.ReactNode;
   children: React.ReactNode;
   subcontractedManagedByOf?: boolean;
+  collapsible?: boolean;
+  defaultOpen?: boolean;
 }) {
   const colors = MODULE_COLORS[color];
   if (subcontractedManagedByOf) {
@@ -1470,6 +1485,39 @@ function Module({
       </section>
     );
   }
+
+  if (collapsible) {
+    return (
+      <section className="rounded-xl bg-white shadow-sm border border-zinc-200">
+        <details open={defaultOpen} className="group">
+          <summary className="flex items-start gap-3 p-4 cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+            <div
+              className={`shrink-0 h-10 w-10 rounded-lg ${colors.bg} ${colors.text} flex items-center justify-center`}
+            >
+              {icon}
+            </div>
+            <div className="flex-1 min-w-0">
+              <h2 className="font-bold text-zinc-900 text-sm">{title}</h2>
+              <p className="text-xs text-zinc-600 mt-0.5">{description}</p>
+            </div>
+            {actionButton && (
+              <div
+                className="shrink-0"
+                onClick={(e) => e.preventDefault()}
+              >
+                {actionButton}
+              </div>
+            )}
+            <ChevronDown className="h-4 w-4 text-zinc-400 mt-3 shrink-0 transition-transform group-open:rotate-180" />
+          </summary>
+          <div className="px-4 pb-4 pt-1 border-t border-zinc-100">
+            {children}
+          </div>
+        </details>
+      </section>
+    );
+  }
+
   return (
     <section className="rounded-xl bg-white shadow-sm border border-zinc-200 p-4">
       <div className="flex items-start gap-3 mb-3">
