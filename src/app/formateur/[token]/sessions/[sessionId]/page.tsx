@@ -33,6 +33,7 @@ import {
 } from "@/lib/trainer-report/types";
 import { TrainerReportForm } from "./_trainer-report-form";
 import { TrainerQrEvaluationButton } from "./_trainer-qr-evaluation-button";
+import { TrainerQrQuizButton } from "./_trainer-qr-quiz-button";
 import {
   createExpressLearnerFromPortal,
   deleteExpressLearnerFromPortal,
@@ -1081,6 +1082,33 @@ export default async function FormateurSessionDetailPage({
             title="Quiz d'évaluation (pré / post)"
             description="Pour chaque apprenant : date et score du quiz d'entrée, du quiz de sortie, et progression mesurée."
           >
+            {/* Bandeau QR code partagé : un seul QR pour toute la session,
+                chaque apprenant choisit son nom puis joue (Gilles 2026-05-25,
+                remplace le QR par participant). Anti-rejeu pre/post hérité
+                de /mon-parcours/[token]/quiz. */}
+            <div className="rounded-xl bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-300 p-4 space-y-2 mb-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="flex-1 min-w-[260px]">
+                  <div className="text-[10px] uppercase tracking-widest text-amber-700 font-bold mb-0.5">
+                    Quiz partagé — 1 seul QR pour toute la session
+                  </div>
+                  <h3 className="font-bold text-base text-amber-900 mb-1">
+                    QR code quiz entrée / sortie
+                  </h3>
+                  <p className="text-xs text-amber-800 leading-relaxed">
+                    Affichez ce QR code en{" "}
+                    <strong>plein écran</strong> en début et en fin de session.
+                    Chaque apprenant scanne, choisit son nom dans la liste,
+                    puis répond aux questions. Le système empêche
+                    automatiquement de jouer 2 fois le même quiz.
+                  </p>
+                </div>
+                <div className="shrink-0">
+                  <TrainerQrQuizButton token={token} sessionId={sessionId} />
+                </div>
+              </div>
+            </div>
+
             {participants.length === 0 ? (
               <p className="text-xs text-zinc-500 italic">Aucun apprenant.</p>
             ) : (
