@@ -883,8 +883,11 @@ export default async function ConventionsPage({
                         })()}
                       </td>
 
-                      {/* === Source d'inscription (Gilles 2026-05-22) === */}
-                      <td className="px-4 py-3 align-top text-xs">
+                      {/* === Source d'inscription ===
+                          Format aligne sur l'onglet Participants (badge
+                          type + nom partenaire en sous-ligne, plus compact)
+                          Gilles 2026-05-26. */}
+                      <td className="px-4 py-3 align-top text-xs max-w-[200px]">
                         {(() => {
                           const computed = computedByCompany.get(c.companyId);
                           const channels = computed?.channels ?? ["direct"];
@@ -892,27 +895,48 @@ export default async function ConventionsPage({
                             c.companyId,
                           );
                           return (
-                            <div className="space-y-1">
+                            <div className="space-y-1.5">
                               {channels.map((ch) => {
-                                // Si on connaît le nom du partenaire et que
-                                // le canal est partenaire, on affiche le NOM
-                                // (ex: "BATYS COMPETENCES PACA"). Sinon, on
-                                // retombe sur le label générique.
-                                const label =
-                                  (ch === "of" || ch === "prescripteur") &&
-                                  partnerName
-                                    ? partnerName
-                                    : channelLabel(ch);
+                                // Direct (CAP NUMERIQUE) = un seul badge vert
+                                if (ch === "direct") {
+                                  return (
+                                    <span
+                                      key={ch}
+                                      className={cn(
+                                        "inline-block px-1.5 py-0.5 rounded border font-bold text-[11px] whitespace-nowrap",
+                                        channelClass(ch),
+                                      )}
+                                    >
+                                      {channelLabel(ch)}
+                                    </span>
+                                  );
+                                }
+                                // OF / Prescripteur = badge + nom societe
+                                // en sous-ligne, comme l'onglet Participants
                                 return (
-                                  <span
+                                  <div
                                     key={ch}
-                                    className={cn(
-                                      "inline-block px-1.5 py-0.5 rounded text-[10px] font-bold border whitespace-nowrap",
-                                      channelClass(ch),
-                                    )}
+                                    className="leading-tight"
+                                    title={`Canal : ${channelLabel(ch)}${partnerName ? " · " + partnerName : ""}`}
                                   >
-                                    {label}
-                                  </span>
+                                    <span
+                                      className={cn(
+                                        "inline-block px-1.5 py-0.5 rounded border font-bold text-[11px] whitespace-nowrap",
+                                        channelClass(ch),
+                                      )}
+                                    >
+                                      {channelLabel(ch)}
+                                    </span>
+                                    {partnerName ? (
+                                      <div className="text-[11px] text-slate-700 mt-0.5 break-words">
+                                        {partnerName}
+                                      </div>
+                                    ) : (
+                                      <div className="text-[10px] uppercase font-bold text-red-700 mt-0.5">
+                                        à compléter
+                                      </div>
+                                    )}
+                                  </div>
                                 );
                               })}
                             </div>

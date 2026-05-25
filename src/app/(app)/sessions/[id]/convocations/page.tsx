@@ -426,22 +426,26 @@ export default async function ConvocationsPage({
                     : undefined;
                   const phone = r.learner?.phone ?? null;
                   const mobile = r.learner?.mobile ?? null;
-                  // Label SOURCE : si le partenaire est connu (OF /
-                  // prescripteur), on affiche son NOM. Sinon, "CAP NUMERIQUE".
-                  // (Gilles 2026-05-22)
-                  const channelLabel =
-                    (r.channel === "of" || r.channel === "prescripteur") &&
-                    r.partner_name
-                      ? r.partner_name
+                  // Label SOURCE : on aligne sur l'onglet Participants
+                  // (Gilles 2026-05-26) — badge type + nom partenaire en
+                  // sous-ligne (au lieu d'un seul gros badge qui prenait
+                  // toute la colonne pour les noms d'OF longs).
+                  const channelKey =
+                    r.channel === "of"
+                      ? "of"
                       : r.channel === "prescripteur"
-                        ? "Prescripteur"
-                        : r.channel === "of"
-                          ? "OF"
-                          : "CAP NUMERIQUE";
+                        ? "prescripteur"
+                        : "direct";
+                  const channelLabel =
+                    channelKey === "prescripteur"
+                      ? "Prescripteur"
+                      : channelKey === "of"
+                        ? "OF"
+                        : "CAP NUMERIQUE";
                   const channelCls =
-                    r.channel === "prescripteur"
+                    channelKey === "prescripteur"
                       ? "bg-blue-100 text-blue-800 border-blue-200"
-                      : r.channel === "of"
+                      : channelKey === "of"
                         ? "bg-violet-100 text-violet-800 border-violet-200"
                         : "bg-emerald-100 text-emerald-800 border-emerald-200";
                   const markSentBound = markConvocationSent.bind(
@@ -488,16 +492,43 @@ export default async function ConvocationsPage({
                           </div>
                         )}
                       </td>
-                      {/* Source d'inscription (canal) */}
-                      <td className="px-4 py-3 align-top text-xs">
-                        <span
-                          className={cn(
-                            "inline-block px-1.5 py-0.5 rounded text-[10px] font-bold border whitespace-nowrap",
-                            channelCls,
-                          )}
-                        >
-                          {channelLabel}
-                        </span>
+                      {/* Source d'inscription (canal) — format aligné
+                          sur l'onglet Participants : badge type + nom
+                          partenaire en sous-ligne. */}
+                      <td className="px-4 py-3 align-top text-xs max-w-[200px]">
+                        {channelKey === "direct" ? (
+                          <span
+                            className={cn(
+                              "inline-block px-1.5 py-0.5 rounded border font-bold text-[11px] whitespace-nowrap",
+                              channelCls,
+                            )}
+                          >
+                            {channelLabel}
+                          </span>
+                        ) : (
+                          <div
+                            className="leading-tight"
+                            title={`Canal : ${channelLabel}${r.partner_name ? " · " + r.partner_name : ""}`}
+                          >
+                            <span
+                              className={cn(
+                                "inline-block px-1.5 py-0.5 rounded border font-bold text-[11px] whitespace-nowrap",
+                                channelCls,
+                              )}
+                            >
+                              {channelLabel}
+                            </span>
+                            {r.partner_name ? (
+                              <div className="text-[11px] text-slate-700 mt-0.5 break-words">
+                                {r.partner_name}
+                              </div>
+                            ) : (
+                              <div className="text-[10px] uppercase font-bold text-red-700 mt-0.5">
+                                à compléter
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </td>
                       {/* Référents pédagogiques */}
                       <td className="px-4 py-3 align-top text-xs">
