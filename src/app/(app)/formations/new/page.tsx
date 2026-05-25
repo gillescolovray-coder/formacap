@@ -22,6 +22,38 @@ export default async function NewFormationPage({
     .select("*")
     .order("name", { ascending: true });
 
+  // Templates de positionnement disponibles (migration 0105, best-effort)
+  let availablePositioningTemplates: Array<{
+    id: string;
+    title: string;
+    is_default: boolean;
+  }> = [];
+  try {
+    const { data: orgMember } = await supabase
+      .from("organization_members")
+      .select("organization_id")
+      .eq("profile_id", user.id)
+      .eq("is_active", true)
+      .limit(1)
+      .maybeSingle<{ organization_id: string }>();
+    if (orgMember) {
+      const { data } = await supabase
+        .from("positioning_templates")
+        .select("id, title, is_default")
+        .eq("organization_id", orgMember.organization_id)
+        .neq("status", "archived")
+        .order("is_default", { ascending: false })
+        .order("title", { ascending: true });
+      availablePositioningTemplates = (data ?? []) as Array<{
+        id: string;
+        title: string;
+        is_default: boolean;
+      }>;
+    }
+  } catch {
+    /* migration 0105 absente */
+  }
+
   const params = await searchParams;
 
   return (
@@ -44,6 +76,7 @@ export default async function NewFormationPage({
         <PdfImportCard />
         <FormationForm
           categories={(categories ?? []) as FormationCategory[]}
+          availablePositioningTemplates={availablePositioningTemplates}
           action={createFormation}
           submitLabel="Créer la formation"
         />

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { loadPositioningTemplateForSession } from "@/lib/positioning/templates";
 import { PositioningForm } from "./_form";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +26,7 @@ export default async function PositionnementPage({
   const { data: portalRow } = await supabase
     .from("enrollment_portal_tokens")
     .select(
-      "enrollment_id, enrollment:session_enrollments(id, session:sessions(start_date, end_date, modality, formation:formations(title), organization:organizations(name, logo_url)), learner:learners(civility, first_name, last_name, job_title, company:companies(name)))",
+      "enrollment_id, enrollment:session_enrollments(id, session:sessions(id, start_date, end_date, modality, formation:formations(title), organization:organizations(name, logo_url)), learner:learners(civility, first_name, last_name, job_title, company:companies(name)))",
     )
     .eq("token", token)
     .maybeSingle<{
@@ -33,6 +34,7 @@ export default async function PositionnementPage({
       enrollment: {
         id: string;
         session: {
+          id: string;
           start_date: string;
           end_date: string;
           modality: string | null;
@@ -64,6 +66,12 @@ export default async function PositionnementPage({
     .select("learner_submitted_at")
     .eq("enrollment_id", enrollment.id)
     .maybeSingle<{ learner_submitted_at: string }>();
+
+  // 3. Template positionnement effectif (session > formation > default org)
+  const template = await loadPositioningTemplateForSession(
+    supabase,
+    session.id,
+  );
 
   const fullName = [learner?.first_name, learner?.last_name]
     .filter(Boolean)
@@ -119,6 +127,8 @@ export default async function PositionnementPage({
         ) : (
           <PositioningForm
             portalToken={token}
+            expectationChoices={template.expectation_choices}
+            masteryCriteria={template.mastery_criteria}
             context={{
               orgName,
               formationTitle: session.formation?.title ?? "—",

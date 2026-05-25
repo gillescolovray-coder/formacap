@@ -78,6 +78,10 @@ export type TrainingSession = {
   /** Quiz d'évaluation pré/post rattaché à la session (migration 0084).
    *  Override du quiz par défaut de la formation parent. */
   quiz_template_id?: string | null;
+  /** Test de positionnement Qualiopi rattaché à cette session
+   *  (migration 0105). NULL = hérite de la formation, puis du
+   *  template default de l'organisation. */
+  positioning_template_id?: string | null;
   min_participants: number | null;
   max_participants: number | null;
   status: SessionStatus;

@@ -8,6 +8,7 @@ import {
   Brain,
   Euro,
   ShieldCheck,
+  Target,
   Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -93,6 +94,20 @@ type SessionFormProps = {
   existingDays?: SessionDay[];
   /** Quiz disponibles (statut 'published') pour rattachement à la session. */
   availableQuizzes?: Array<{ id: string; title: string }>;
+  /** Templates de positionnement disponibles pour rattachement
+   *  (migration 0105). Le 1er est généralement le template par défaut. */
+  availablePositioningTemplates?: Array<{
+    id: string;
+    title: string;
+    is_default: boolean;
+  }>;
+  /** Template de positionnement hérité de la formation (utilisé comme
+   *  placeholder pour expliquer le fallback : "session = ce template"
+   *  sinon "session = template de la formation X" sinon "default org"). */
+  formationPositioningTemplate?: {
+    id: string;
+    title: string;
+  } | null;
   action: (formData: FormData) => void | Promise<void>;
   submitLabel: string;
 };
@@ -110,6 +125,8 @@ export function SessionForm({
   defaultFormationId,
   existingDays,
   availableQuizzes,
+  availablePositioningTemplates,
+  formationPositioningTemplate,
   action,
   submitLabel,
 }: SessionFormProps) {
@@ -627,6 +644,56 @@ export function SessionForm({
                 puis le publier pour le voir apparaître ici.
               </>
             )}
+          </p>
+        </div>
+      </CollapsibleSection>
+
+      {/* Test de positionnement (Qualiopi) — override par session
+          (Gilles 2026-05-25). Migration 0105. */}
+      <CollapsibleSection
+        icon={Target}
+        title="Test de positionnement (Qualiopi)"
+        description="Modèle de questionnaire d'auto-positionnement rempli par l'apprenant avant la session. Par défaut on hérite de la formation, ou du modèle 'par défaut' de l'organisation."
+        accent="amber"
+        defaultOpen={!!session?.positioning_template_id}
+        id="positionnement"
+      >
+        <div className="space-y-2">
+          <Label htmlFor="positioning_template_id">
+            Modèle pour cette session
+          </Label>
+          <select
+            id="positioning_template_id"
+            name="positioning_template_id"
+            defaultValue={session?.positioning_template_id ?? ""}
+            className="flex h-9 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-transparent px-3 py-1 text-sm shadow-sm"
+          >
+            <option value="">
+              — Hériter
+              {formationPositioningTemplate
+                ? ` (formation : ${formationPositioningTemplate.title})`
+                : " (modèle par défaut de l'organisme)"}{" "}
+              —
+            </option>
+            {(availablePositioningTemplates ?? []).map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.title}
+                {t.is_default ? " (par défaut)" : ""}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-slate-500">
+            Laissez vide pour utiliser le modèle hérité de la formation ;
+            sélectionnez un modèle pour <strong>forcer un test spécifique</strong>{" "}
+            sur cette session uniquement.{" "}
+            <a
+              href="/parametres/positionnement"
+              target="_blank"
+              className="text-cyan-700 underline"
+            >
+              Voir la bibliothèque des tests
+            </a>
+            .
           </p>
         </div>
       </CollapsibleSection>

@@ -70,6 +70,29 @@ export default async function FormationDetailPage({
       .eq("formation_id", id),
   ]);
 
+  // Templates de positionnement (migration 0105, best-effort)
+  let availablePositioningTemplates: Array<{
+    id: string;
+    title: string;
+    is_default: boolean;
+  }> = [];
+  try {
+    const { data } = await supabase
+      .from("positioning_templates")
+      .select("id, title, is_default")
+      .eq("organization_id", formation.organization_id)
+      .neq("status", "archived")
+      .order("is_default", { ascending: false })
+      .order("title", { ascending: true });
+    availablePositioningTemplates = (data ?? []) as Array<{
+      id: string;
+      title: string;
+      is_default: boolean;
+    }>;
+  } catch {
+    /* migration absente */
+  }
+
   const update = updateFormation.bind(null, id);
   const archive = archiveFormation.bind(null, id);
   const remove = deleteFormation.bind(null, id);
@@ -232,6 +255,7 @@ export default async function FormationDetailPage({
           <FormationForm
             formation={formation}
             categories={(categories ?? []) as FormationCategory[]}
+            availablePositioningTemplates={availablePositioningTemplates}
             action={update}
             submitLabel="Enregistrer"
           />

@@ -130,6 +130,10 @@ function buildPayload(formData: FormData) {
     // Lot 3 — Comptabilité
     accounting_product_code: parseText(formData.get("accounting_product_code")),
     accounting_analytic_code: parseText(formData.get("accounting_analytic_code")),
+    // Test de positionnement Qualiopi (migration 0105)
+    positioning_template_id: parseText(
+      formData.get("positioning_template_id"),
+    ),
   };
 }
 

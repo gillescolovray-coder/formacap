@@ -22,6 +22,7 @@ import {
   type PracticeValue,
   type PrereqValue,
 } from "@/lib/positioning/types";
+import type { PositioningChoice } from "@/lib/positioning/templates";
 import { submitPositioning } from "./actions";
 
 type Context = {
@@ -42,6 +43,13 @@ type Props = {
   /** Mode aperçu : le submit ne sauvegarde pas, affiche un message
    *  "Aperçu — pas d'enregistrement" (Gilles 2026-05-25). */
   previewMode?: boolean;
+  /** Choix proposés à la section 2 'Attentes' — issus du template
+   *  positionnement assigné à la session. Fallback : valeurs hardcodées
+   *  d'origine (migration 0105). */
+  expectationChoices?: PositioningChoice[];
+  /** Critères de la section 5 'Compétences à auto-évaluer' — idem,
+   *  issus du template positionnement assigné à la session. */
+  masteryCriteria?: PositioningChoice[];
 };
 
 function modalityLabel(m: string | null): string {
@@ -66,7 +74,28 @@ export function PositioningForm({
   portalToken,
   context,
   previewMode = false,
+  expectationChoices,
+  masteryCriteria,
 }: Props) {
+  // Fallback sur les valeurs hardcodées historiques si aucun template
+  // n'a été fourni (compat ascendante + sécurité).
+  const expectationOpts: ReadonlyArray<{
+    key?: string;
+    value?: string;
+    label: string;
+  }> =
+    expectationChoices && expectationChoices.length > 0
+      ? expectationChoices
+      : (EXPECTATION_CHOICES as ReadonlyArray<{ value: string; label: string }>);
+  const masteryItems: ReadonlyArray<{ key: string; label: string }> =
+    masteryCriteria && masteryCriteria.length > 0
+      ? masteryCriteria
+      : (MASTERY_CRITERIA as ReadonlyArray<{ key: string; label: string }>);
+
+  // Helper : extrait la "key" depuis un item d'expectation choices,
+  // qu'il vienne du template (key) ou des constantes historiques (value).
+  const expKey = (o: { key?: string; value?: string }) =>
+    (o.key ?? o.value ?? "") as ExpectationValue;
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -228,19 +257,22 @@ export function PositioningForm({
             choix possibles)
           </div>
           <div className="space-y-1.5">
-            {EXPECTATION_CHOICES.map((o) => (
-              <label
-                key={o.value}
-                className="flex items-center gap-2 text-sm cursor-pointer p-1.5 rounded hover:bg-zinc-50"
-              >
-                <input
-                  type="checkbox"
-                  checked={(data.expectations ?? []).includes(o.value)}
-                  onChange={() => toggleExpectation(o.value)}
-                />
-                <span>{o.label}</span>
-              </label>
-            ))}
+            {expectationOpts.map((o) => {
+              const k = expKey(o);
+              return (
+                <label
+                  key={k}
+                  className="flex items-center gap-2 text-sm cursor-pointer p-1.5 rounded hover:bg-zinc-50"
+                >
+                  <input
+                    type="checkbox"
+                    checked={(data.expectations ?? []).includes(k)}
+                    onChange={() => toggleExpectation(k)}
+                  />
+                  <span>{o.label}</span>
+                </label>
+              );
+            })}
           </div>
         </div>
         <CommentField
@@ -329,17 +361,20 @@ export function PositioningForm({
       {/* Section 5 — Auto-évaluation */}
       <Section number={5} title="Auto-évaluation rapide">
         <div className="space-y-3">
-          {MASTERY_CRITERIA.map((c) => (
+          {masteryItems.map((c) => (
             <div key={c.key} className="space-y-1.5">
               <div className="text-sm font-medium text-zinc-800">{c.label}</div>
               <div className="grid grid-cols-3 gap-1.5">
                 {MASTERY_OPTIONS.map((o) => {
-                  const checked = data.mastery?.[c.key] === o.value;
+                  const checked =
+                    data.mastery?.[c.key as MasteryCriteriaKey] === o.value;
                   return (
                     <button
                       key={o.value}
                       type="button"
-                      onClick={() => setMastery(c.key, o.value)}
+                      onClick={() =>
+                        setMastery(c.key as MasteryCriteriaKey, o.value)
+                      }
                       className={
                         checked
                           ? "text-xs px-2.5 py-2 rounded-lg bg-cyan-600 text-white font-semibold"

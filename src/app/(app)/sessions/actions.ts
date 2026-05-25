@@ -73,6 +73,9 @@ function buildPayload(formData: FormData) {
     trainer_name: parseText(formData.get("trainer_name")),
     trainer_notes: parseText(formData.get("trainer_notes")),
     quiz_template_id: parseText(formData.get("quiz_template_id")),
+    positioning_template_id: parseText(
+      formData.get("positioning_template_id"),
+    ),
     min_participants: parseInt(formData.get("min_participants")),
     max_participants: parseInt(formData.get("max_participants")),
     status:

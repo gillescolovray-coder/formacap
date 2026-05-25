@@ -172,6 +172,50 @@ export default async function SessionDetailPage({
     title: string;
   }>;
 
+  // Templates de positionnement (migration 0105 — peut ne pas exister
+  // en local, on charge en mode best-effort)
+  let availablePositioningTemplates: Array<{
+    id: string;
+    title: string;
+    is_default: boolean;
+  }> = [];
+  let formationPositioningTemplate: { id: string; title: string } | null =
+    null;
+  try {
+    const [{ data: tplList }, { data: formationRow }] = await Promise.all([
+      supabase
+        .from("positioning_templates")
+        .select("id, title, is_default")
+        .eq("organization_id", session.organization_id)
+        .neq("status", "archived")
+        .order("is_default", { ascending: false })
+        .order("title", { ascending: true }),
+      session.formation?.id
+        ? supabase
+            .from("formations")
+            .select(
+              "positioning_template_id, positioning_template:positioning_templates!positioning_template_id(id, title)",
+            )
+            .eq("id", session.formation.id)
+            .maybeSingle<{
+              positioning_template_id: string | null;
+              positioning_template: { id: string; title: string } | null;
+            }>()
+        : Promise.resolve({ data: null }),
+    ]);
+    availablePositioningTemplates = (tplList ?? []) as Array<{
+      id: string;
+      title: string;
+      is_default: boolean;
+    }>;
+    formationPositioningTemplate =
+      (formationRow?.positioning_template as
+        | { id: string; title: string }
+        | null) ?? null;
+  } catch {
+    /* migration 0105 absente — fallback silencieux */
+  }
+
   const orgDefaultHours: OrgDefaultHours = {
     morning_start: trimTime(orgRow?.default_morning_start as string | null),
     morning_end: trimTime(orgRow?.default_morning_end as string | null),
@@ -528,6 +572,8 @@ export default async function SessionDetailPage({
           currentNbApprenants={currentNbApprenants}
           existingDays={(sessionDays ?? []) as SessionDay[]}
           availableQuizzes={availableQuizzes}
+          availablePositioningTemplates={availablePositioningTemplates}
+          formationPositioningTemplate={formationPositioningTemplate}
           action={update}
           submitLabel="Enregistrer"
         />

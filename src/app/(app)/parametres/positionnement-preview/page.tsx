@@ -3,6 +3,11 @@ import Link from "next/link";
 import { ChevronLeft, Eye } from "lucide-react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import {
+  FALLBACK_TEMPLATE,
+  loadDefaultPositioningTemplate,
+  type PositioningTemplate,
+} from "@/lib/positioning/templates";
 import { PositioningForm } from "@/app/mon-parcours/[token]/positionnement/_form";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +25,12 @@ export const metadata: Metadata = {
  * Le formulaire fonctionne en `previewMode` : rien n'est sauvegardé,
  * le submit affiche juste un message de confirmation simulée.
  */
-export default async function PositioningPreviewPage() {
+export default async function PositioningPreviewPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ template?: string }>;
+}) {
+  const { template: templateIdParam } = await searchParams;
   const supabase = await createClient();
   const {
     data: { user },
@@ -31,17 +41,64 @@ export default async function PositioningPreviewPage() {
   // réaliste (logo + nom affichés dans l'entête comme côté apprenant)
   const { data: orgMember } = await supabase
     .from("organization_members")
-    .select(
-      "organization:organizations(name, logo_url)",
-    )
+    .select("organization_id, organization:organizations(name, logo_url)")
     .eq("profile_id", user.id)
     .eq("is_active", true)
     .limit(1)
     .maybeSingle<{
+      organization_id: string;
       organization: { name: string; logo_url: string | null } | null;
     }>();
 
   const orgName = orgMember?.organization?.name ?? "CAP NUMERIQUE";
+
+  // Charge le template à prévisualiser :
+  // - si ?template=<id> en querystring : ce template précis
+  // - sinon : le template par défaut de l'organisation
+  // - sinon : fallback hardcodé (si table absente)
+  let template: PositioningTemplate = FALLBACK_TEMPLATE;
+  try {
+    if (templateIdParam && orgMember?.organization_id) {
+      const { data } = await supabase
+        .from("positioning_templates")
+        .select(
+          "id, title, description, is_default, expectation_choices, mastery_criteria",
+        )
+        .eq("id", templateIdParam)
+        .eq("organization_id", orgMember.organization_id)
+        .maybeSingle<{
+          id: string;
+          title: string;
+          description: string | null;
+          is_default: boolean | null;
+          expectation_choices: Array<{ key: string; label: string }> | null;
+          mastery_criteria: Array<{ key: string; label: string }> | null;
+        }>();
+      if (data) {
+        template = {
+          id: data.id,
+          title: data.title,
+          description: data.description,
+          is_default: data.is_default === true,
+          expectation_choices:
+            data.expectation_choices && data.expectation_choices.length > 0
+              ? data.expectation_choices
+              : FALLBACK_TEMPLATE.expectation_choices,
+          mastery_criteria:
+            data.mastery_criteria && data.mastery_criteria.length > 0
+              ? data.mastery_criteria
+              : FALLBACK_TEMPLATE.mastery_criteria,
+        };
+      }
+    } else if (orgMember?.organization_id) {
+      template = await loadDefaultPositioningTemplate(
+        supabase,
+        orgMember.organization_id,
+      );
+    }
+  } catch {
+    /* on garde le fallback */
+  }
 
   // Contexte factice — ce sont les valeurs qu'un apprenant verrait
   // en haut de son formulaire (auto-rempli à partir de sa fiche).
@@ -83,9 +140,33 @@ export default async function PositioningPreviewPage() {
           </h1>
         </header>
 
+        {/* Indique quel template est prévisualisé */}
+        <div className="rounded-lg bg-zinc-50 border border-zinc-200 px-3 py-2 text-[11px] text-zinc-600">
+          Template prévisualisé :{" "}
+          <strong className="text-zinc-900">{template.title}</strong>
+          {template.is_default && (
+            <span className="ml-2 bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider">
+              Par défaut
+            </span>
+          )}
+          {!templateIdParam && (
+            <>
+              <br />
+              <Link
+                href="/parametres/positionnement"
+                className="text-cyan-700 hover:underline"
+              >
+                Choisir un autre template
+              </Link>
+            </>
+          )}
+        </div>
+
         <PositioningForm
           portalToken="__preview__"
           previewMode
+          expectationChoices={template.expectation_choices}
+          masteryCriteria={template.mastery_criteria}
           context={{
             orgName,
             formationTitle: "Exemple de formation (aperçu)",

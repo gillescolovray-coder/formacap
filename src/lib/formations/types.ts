@@ -63,6 +63,10 @@ export type Formation = {
   // Lot 3 — Comptabilité
   accounting_product_code: string | null;
   accounting_analytic_code: string | null;
+  /** Template de test de positionnement Qualiopi attache a la formation
+   *  (migration 0105). Null = utilise le template default de l'organisme.
+   *  Override possible au niveau session via sessions.positioning_template_id. */
+  positioning_template_id?: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;

@@ -101,6 +101,31 @@ export default async function NewSessionPage({
     title: string;
   }>;
 
+  // Templates de positionnement (migration 0105, best-effort)
+  let availablePositioningTemplates: Array<{
+    id: string;
+    title: string;
+    is_default: boolean;
+  }> = [];
+  if (orgRaw) {
+    try {
+      const { data } = await supabase
+        .from("positioning_templates")
+        .select("id, title, is_default")
+        .eq("organization_id", orgRaw.id)
+        .neq("status", "archived")
+        .order("is_default", { ascending: false })
+        .order("title", { ascending: true });
+      availablePositioningTemplates = (data ?? []) as Array<{
+        id: string;
+        title: string;
+        is_default: boolean;
+      }>;
+    } catch {
+      /* migration 0105 absente, on garde la liste vide */
+    }
+  }
+
   // Tarifs ORG par défaut → bloc Tarification de la fiche session (R7).
   const { data: orgPricingRow } = orgRaw
     ? await supabase
@@ -161,6 +186,7 @@ export default async function NewSessionPage({
             currentNbApprenants={0}
             defaultFormationId={params.formation_id}
             availableQuizzes={availableQuizzes}
+            availablePositioningTemplates={availablePositioningTemplates}
             action={createSession}
             submitLabel="Créer la session"
           />

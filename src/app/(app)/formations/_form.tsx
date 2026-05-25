@@ -64,6 +64,12 @@ import { ProgrammePdfCard } from "./[id]/_programme-pdf-card";
 type FormationFormProps = {
   formation?: Formation;
   categories: FormationCategory[];
+  /** Templates de positionnement disponibles (migration 0105). */
+  availablePositioningTemplates?: Array<{
+    id: string;
+    title: string;
+    is_default: boolean;
+  }>;
   action: (formData: FormData) => void | Promise<void>;
   submitLabel: string;
   headerSlot?: React.ReactNode;
@@ -72,6 +78,7 @@ type FormationFormProps = {
 export function FormationForm({
   formation,
   categories,
+  availablePositioningTemplates,
   action,
   submitLabel,
   headerSlot,
@@ -527,6 +534,51 @@ export function FormationForm({
               placeholder="Ex: Évaluation des acquis sur exercices, attestation d'assiduité, quiz…"
               className="bg-white dark:bg-zinc-900"
             />
+          </div>
+
+          {/* Test de positionnement (Qualiopi) — migration 0105.
+              Permet de rattacher un template specifique a la formation,
+              qui sera applique automatiquement aux sessions creees a
+              partir de celle-ci (sauf override sur la session). */}
+          <div className="rounded-xl border border-amber-200/70 dark:border-amber-900/50 bg-gradient-to-br from-amber-50/60 to-white dark:from-amber-950/20 dark:to-zinc-900 p-4 space-y-2">
+            <Label
+              htmlFor="positioning_template_id"
+              className="flex items-center gap-2 font-semibold text-amber-900 dark:text-amber-200"
+            >
+              <span className="h-7 w-7 rounded-lg bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300 flex items-center justify-center">
+                <Target className="h-4 w-4" />
+              </span>
+              Test de positionnement (Qualiopi)
+            </Label>
+            <select
+              id="positioning_template_id"
+              name="positioning_template_id"
+              defaultValue={formation?.positioning_template_id ?? ""}
+              className="flex h-9 w-full rounded-md border border-amber-300 dark:border-amber-800 bg-white dark:bg-zinc-900 px-3 py-1 text-sm shadow-sm"
+            >
+              <option value="">
+                — Modèle par défaut de l&apos;organisme —
+              </option>
+              {(availablePositioningTemplates ?? []).map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.title}
+                  {t.is_default ? " (par défaut)" : ""}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-amber-800/80 dark:text-amber-300/70">
+              Modèle proposé aux apprenants des sessions issues de cette
+              formation. Laissez vide pour utiliser le modèle par défaut de
+              votre organisme.{" "}
+              <a
+                href="/parametres/positionnement"
+                target="_blank"
+                className="text-amber-900 underline hover:no-underline"
+              >
+                Bibliothèque
+              </a>
+              .
+            </p>
           </div>
 
           {/* Accessibilité handicap */}

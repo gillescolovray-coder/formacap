@@ -109,9 +109,9 @@ const GROUPS: NavGroup[] = [
         accent: "rose",
       },
       {
-        href: "/parametres/positionnement-preview",
-        label: "Test de positionnement (aperçu)",
-        description: "Voir le test tel que le verra l'apprenant",
+        href: "/parametres/positionnement",
+        label: "Tests de positionnement",
+        description: "Bibliothèque, modèle par défaut, aperçu apprenant",
         icon: Target,
         accent: "amber",
       },
