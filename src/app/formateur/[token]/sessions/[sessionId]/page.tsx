@@ -1036,13 +1036,16 @@ export default async function FormateurSessionDetailPage({
         </Module>
 
         {/* Module 5 bis — Quiz pré/post (refonte 2026-05-24 :
-            tableau par apprenant avec horodatage + progression %). */}
+            tableau par apprenant avec horodatage + progression %).
+            Pliable, ouvert par defaut Gilles 2026-05-25. */}
         {effectiveQuizId && (
           <Module
             icon={<Target className="h-5 w-5" />}
             color="amber"
             title="Quiz d'évaluation (pré / post)"
             description="Pour chaque apprenant : date et score du quiz d'entrée, du quiz de sortie, et progression mesurée."
+            collapsible
+            defaultOpen
           >
             {/* Bandeau QR code partagé : un seul QR pour toute la session,
                 chaque apprenant choisit son nom puis joue (Gilles 2026-05-25,
@@ -1191,7 +1194,8 @@ export default async function FormateurSessionDetailPage({
         )}
 
 
-        {/* Module 5 — Évaluations à chaud */}
+        {/* Module 5 — Évaluations à chaud (pliable, ouvert par defaut
+            Gilles 2026-05-25). */}
         <Module
           icon={<ClipboardList className="h-5 w-5" />}
           color="violet"
@@ -1202,6 +1206,8 @@ export default async function FormateurSessionDetailPage({
               : "Évaluations remplies par les apprenants en fin de session."
           }
           subcontractedManagedByOf={session.is_subcontracted === true}
+          collapsible
+          defaultOpen
         >
           {/* Bandeau QR code à projeter en fin de session
               (Gilles 2026-05-25). Affichage identique à celui du QR
