@@ -73,9 +73,9 @@ type Params = { token: string; sessionId: string };
  * apres test en situation reelle) :
  *  1. Convocations envoyées (replié — verifie en premier en debut)
  *  2. Participants
- *  3. Émargement
- *  4. Quiz d'évaluation (pré / post)
- *  5. Tests de positionnement (replié — secondaire)
+ *  3. Tests de positionnement (replié — secondaire)
+ *  4. Émargement
+ *  5. Quiz d'évaluation (pré / post)
  *  6. Évaluations à chaud (NPS + satisfaction)
  *  7. Supports partagés
  *  8. Bilan formateur (Qualiopi 11/22/32)
@@ -905,6 +905,62 @@ export default async function FormateurSessionDetailPage({
         </Module>
 
 
+        {/* Module 2 — Test de positionnement (replié par défaut,
+            Gilles 2026-05-25 : info secondaire pour le formateur en
+            cours de session). */}
+        <Module
+          icon={<Target className="h-5 w-5" />}
+          color="amber"
+          title={`Tests de positionnement (${positioningRows?.length ?? 0}/${participants.length})`}
+          description="Auto-évaluations remplies par les apprenants avant la formation."
+          subcontractedManagedByOf={session.is_subcontracted === true}
+          collapsible
+        >
+          {participants.length === 0 ? (
+            <p className="text-xs text-zinc-500 italic">Aucun apprenant.</p>
+          ) : (
+            <ul className="space-y-1 text-xs">
+              {participants.map((p) => {
+                const pos = positioningByEnrollment.get(p.enrollmentId);
+                return (
+                  <li
+                    key={p.enrollmentId}
+                    className="flex items-center justify-between py-1 gap-2"
+                  >
+                    <span className="text-zinc-700 truncate">{p.fullName}</span>
+                    {pos ? (
+                      <Link
+                        href={`/formateur/${token}/sessions/${sessionId}/positionnement/${p.enrollmentId}`}
+                        className="inline-flex items-center gap-1.5 shrink-0 hover:opacity-80"
+                        title="Cliquer pour voir le détail du test"
+                      >
+                        <span className="bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full text-[10px] font-semibold">
+                          {labelPositioningLevel(pos.data.current_level)}
+                        </span>
+                        {pos.data.has_adaptation_need && (
+                          <span
+                            className="bg-orange-100 text-orange-800 px-1.5 py-0.5 rounded-full text-[10px] font-semibold"
+                            title="Cet apprenant a déclaré un besoin d'adaptation"
+                          >
+                            ⚠ Adaptation
+                          </span>
+                        )}
+                        <span className="text-cyan-700 text-[10px] font-semibold">
+                          Voir →
+                        </span>
+                      </Link>
+                    ) : (
+                      <span className="text-zinc-400 shrink-0">⏳ Non rempli</span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          {/* Lecture détaillée : V2 ajoutera une modale ou sous-page
+              avec toutes les réponses + champ observation formateur. */}
+        </Module>
+
         {/* Module 4 — Émargement */}
         <Module
           icon={<PenTool className="h-5 w-5" />}
@@ -1108,61 +1164,6 @@ export default async function FormateurSessionDetailPage({
           </Module>
         )}
 
-        {/* Module 2 — Test de positionnement (replié par défaut,
-            Gilles 2026-05-25 : info secondaire pour le formateur en
-            cours de session). */}
-        <Module
-          icon={<Target className="h-5 w-5" />}
-          color="amber"
-          title={`Tests de positionnement (${positioningRows?.length ?? 0}/${participants.length})`}
-          description="Auto-évaluations remplies par les apprenants avant la formation."
-          subcontractedManagedByOf={session.is_subcontracted === true}
-          collapsible
-        >
-          {participants.length === 0 ? (
-            <p className="text-xs text-zinc-500 italic">Aucun apprenant.</p>
-          ) : (
-            <ul className="space-y-1 text-xs">
-              {participants.map((p) => {
-                const pos = positioningByEnrollment.get(p.enrollmentId);
-                return (
-                  <li
-                    key={p.enrollmentId}
-                    className="flex items-center justify-between py-1 gap-2"
-                  >
-                    <span className="text-zinc-700 truncate">{p.fullName}</span>
-                    {pos ? (
-                      <Link
-                        href={`/formateur/${token}/sessions/${sessionId}/positionnement/${p.enrollmentId}`}
-                        className="inline-flex items-center gap-1.5 shrink-0 hover:opacity-80"
-                        title="Cliquer pour voir le détail du test"
-                      >
-                        <span className="bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full text-[10px] font-semibold">
-                          {labelPositioningLevel(pos.data.current_level)}
-                        </span>
-                        {pos.data.has_adaptation_need && (
-                          <span
-                            className="bg-orange-100 text-orange-800 px-1.5 py-0.5 rounded-full text-[10px] font-semibold"
-                            title="Cet apprenant a déclaré un besoin d'adaptation"
-                          >
-                            ⚠ Adaptation
-                          </span>
-                        )}
-                        <span className="text-cyan-700 text-[10px] font-semibold">
-                          Voir →
-                        </span>
-                      </Link>
-                    ) : (
-                      <span className="text-zinc-400 shrink-0">⏳ Non rempli</span>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-          {/* Lecture détaillée : V2 ajoutera une modale ou sous-page
-              avec toutes les réponses + champ observation formateur. */}
-        </Module>
 
         {/* Module 5 — Évaluations à chaud */}
         <Module

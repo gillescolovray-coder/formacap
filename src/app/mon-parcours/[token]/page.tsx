@@ -665,7 +665,9 @@ export default async function ParcoursApprenantPage({
           </div>
         )}
 
-        {/* Cartes */}
+        {/* Cartes — ordre Gilles 2026-05-25 : Quiz remonte juste apres
+            Emargement (parcours apprenant : positionnement -> emargement
+            -> quiz pre/post -> documents -> evaluation -> certificat). */}
         {!isViaPartnerOf && (
           <Card
             icon={<Target className="h-6 w-6" />}
@@ -688,11 +690,28 @@ export default async function ParcoursApprenantPage({
           />
         )}
 
+        <Card
+          icon={<Brain className="h-6 w-6" />}
+          color="violet"
+          number={isViaPartnerOf ? 1 : 3}
+          title="Quiz d'évaluation"
+          description={
+            !quizTemplateId
+              ? "Aucun quiz rattaché à cette session."
+              : preDone && postDone
+                ? "Vous avez joué le quiz avant et après la formation."
+                : preDone
+                  ? "Première passation effectuée. Jouez la 2ème en fin de session pour mesurer votre progression."
+                  : "Quiz pré-session puis post-session, pour mesurer ce que vous avez appris."
+          }
+          status={quizStatus}
+        />
+
         {!isViaPartnerOf && (
           <Card
             icon={<Folder className="h-6 w-6" />}
             color="indigo"
-            number={3}
+            number={4}
             title="Documents partagés"
             description={
               (sharedDocsCount ?? 0) > 0
@@ -707,7 +726,7 @@ export default async function ParcoursApprenantPage({
           <Card
             icon={<ClipboardList className="h-6 w-6" />}
             color="violet"
-            number={4}
+            number={5}
             title="Évaluation à chaud"
             description="Donnez votre avis sur la formation pour nous aider à l'améliorer."
             status={evaluationStatus}
@@ -718,29 +737,12 @@ export default async function ParcoursApprenantPage({
           <Card
             icon={<Award className="h-6 w-6" />}
             color="emerald"
-            number={5}
+            number={6}
             title="Certificat de réalisation"
             description="Téléchargez votre certificat officiel de fin de formation."
             status={certificateStatus}
           />
         )}
-
-        <Card
-          icon={<Brain className="h-6 w-6" />}
-          color="violet"
-          number={isViaPartnerOf ? 1 : 6}
-          title="Quiz d'évaluation"
-          description={
-            !quizTemplateId
-              ? "Aucun quiz rattaché à cette session."
-              : preDone && postDone
-                ? "Vous avez joué le quiz avant et après la formation."
-                : preDone
-                  ? "Première passation effectuée. Jouez la 2ème en fin de session pour mesurer votre progression."
-                  : "Quiz pré-session puis post-session, pour mesurer ce que vous avez appris."
-          }
-          status={quizStatus}
-        />
 
         <footer className="text-center text-[11px] text-zinc-400 mt-8">
           Vos données restent confidentielles côté organisme de formation.
