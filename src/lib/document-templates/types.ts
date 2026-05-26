@@ -270,6 +270,10 @@ export const DEFAULT_TRAINER_CONVOCATION_EMAIL_BLOCKS: TrainerConvocationEmailBl
 <p>Merci également de nous signaler toute difficulté, absence, incident technique ou besoin particulier constaté avant ou pendant la formation.</p>
 <p><strong>👉 Accéder à votre espace formateur :</strong> <a href="{{portal_url}}">{{portal_url}}</a></p>
 <p>Vous y retrouverez l'agenda de vos sessions, la liste des participants, les supports, l'émargement et les évaluations.</p>
+<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px 14px;margin:14px 0;">
+  <p style="margin:0 0 6px;font-weight:600;color:#1e40af;">💡 Accès apprenant — bon à savoir</p>
+  <p style="margin:0;font-size:13px;color:#1e3a8a;">Vos apprenants accèdent à leur espace personnel via un simple lien (envoyé dans leur convocation par email) — <strong>aucun compte à créer</strong>. Si l'un d'eux a perdu son lien ou ne l'a jamais reçu, vous pouvez lui scanner son <strong>QR code personnel</strong> depuis votre portail (icône QR à côté de chaque nom dans le bloc Participants). Il accède immédiatement à son espace (test de positionnement, émargement, quiz d'entrée / sortie, supports, évaluation à chaud, certificat).</p>
+</div>
 <p>Nous vous remercions de bien vouloir confirmer votre disponibilité pour cette intervention.</p>`,
   closing_html: `<p>Cordialement,<br/><strong>{{org_name}}</strong></p>`,
 };

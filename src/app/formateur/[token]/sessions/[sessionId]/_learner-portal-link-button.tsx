@@ -153,6 +153,10 @@ export function LearnerPortalLinkButton({
                       Copier le lien
                     </button>
                   </div>
+                  <p className="text-[11px] text-zinc-500 italic text-center pt-1">
+                    🔒 Aucune création de compte — le lien fait office
+                    d&apos;identification personnelle.
+                  </p>
                 </>
               ) : null}
             </div>

@@ -164,6 +164,9 @@ export async function GET(
     "--- Acces a mon portail formateur ---",
     `Mon agenda : ${agendaUrl}`,
     `Cette session (participants, emargement, supports, bilan) : ${portalUrl}`,
+    "",
+    "--- Acces apprenant ---",
+    "Vos apprenants accedent a leur espace personnel via un simple lien (envoye dans leur convocation par email) - aucun compte a creer. Si l'un d'eux a perdu son lien, scannez-lui son QR code personnel depuis votre portail (icone QR a cote de chaque nom dans le bloc Participants).",
   ]
     .filter((line) => line !== null)
     .join("\n");

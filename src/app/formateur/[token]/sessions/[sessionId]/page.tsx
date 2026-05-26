@@ -809,6 +809,23 @@ export default async function FormateurSessionDetailPage({
           title={`Participants (${participants.length})`}
           description="Liste des apprenants inscrits à cette session."
         >
+          {/* Encart "Bon a savoir" pour le formateur : explique l'usage
+              du QR personnel pour donner acces a un apprenant sans son
+              lien email (Gilles 2026-05-25). */}
+          <div className="mb-3 rounded-lg bg-cyan-50 border border-cyan-200 p-3 text-[12px] text-cyan-900 leading-relaxed">
+            <strong className="block mb-1 text-cyan-800">
+              💡 Vos apprenants n&apos;ont pas besoin de créer un compte
+            </strong>
+            Ils reçoivent leur lien personnel dans leur convocation par
+            email. Si un apprenant n&apos;a pas sa convocation avec lui,
+            cliquez sur l&apos;icône{" "}
+            <span className="inline-block px-1.5 py-0.5 rounded bg-white border border-cyan-300 text-cyan-700 text-[10px] font-bold align-middle">
+              QR
+            </span>{" "}
+            à droite de son nom et faites-le scanner avec son téléphone —
+            il accède immédiatement à son espace personnel (positionnement,
+            émargement, quiz, supports, évaluation, certificat).
+          </div>
           {participants.length === 0 ? (
             <p className="text-xs text-zinc-500 italic">
               Aucun apprenant inscrit pour le moment.
