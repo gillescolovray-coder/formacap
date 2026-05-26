@@ -302,9 +302,18 @@ export default async function SessionQuizDashboardPage({
                       post && post.max_score
                         ? Math.round(((post.score ?? 0) / post.max_score) * 100)
                         : null;
+                    // Delta % = comparaison du score relatif (Qualiopi)
                     const delta =
                       prePct !== null && postPct !== null
                         ? postPct - prePct
+                        : null;
+                    // Delta brut = nombre de points supplementaires bien
+                    // repondus, plus parlant pour un formateur (Gilles
+                    // 2026-05-25 : "ajouter une progression en pourcentage
+                    // en plus des points").
+                    const deltaPoints =
+                      pre && post && pre.score !== null && post.score !== null
+                        ? (post.score ?? 0) - (pre.score ?? 0)
                         : null;
                     return (
                       <tr key={p.enrollmentId}>
@@ -325,19 +334,27 @@ export default async function SessionQuizDashboardPage({
                           {delta === null ? (
                             <span className="text-zinc-300 text-xs">—</span>
                           ) : (
-                            <span
+                            <div
                               className={
                                 "tabular-nums " +
                                 (delta > 0
-                                  ? "text-emerald-700 font-bold"
+                                  ? "text-emerald-700"
                                   : delta < 0
-                                    ? "text-rose-700 font-bold"
+                                    ? "text-rose-700"
                                     : "text-zinc-600")
                               }
                             >
-                              {delta > 0 ? "+" : ""}
-                              {delta} pts
-                            </span>
+                              {deltaPoints !== null && (
+                                <div className="text-sm font-bold">
+                                  {deltaPoints > 0 ? "+" : ""}
+                                  {deltaPoints} pts
+                                </div>
+                              )}
+                              <div className="text-xs opacity-80">
+                                ({delta > 0 ? "+" : ""}
+                                {delta} %)
+                              </div>
+                            </div>
                           )}
                         </td>
                       </tr>
@@ -463,8 +480,12 @@ function AttemptCell({ attempt }: { attempt: QuizAttempt | null | undefined }) {
     return <span className="text-zinc-400 text-xs">⏳ Non joué</span>;
   }
   const at = attempt.completed_at ?? attempt.started_at;
+  // Fix Gilles 2026-05-25 : sans timeZone explicite, le formateur
+  // toLocaleString s'aligne sur le fuseau du serveur (UTC sur Vercel)
+  // -> ecart de 2h en ete / 1h en hiver vs heure Paris reelle.
   const dateLabel = at
     ? new Date(at).toLocaleString("fr-FR", {
+        timeZone: "Europe/Paris",
         day: "2-digit",
         month: "2-digit",
         year: "2-digit",

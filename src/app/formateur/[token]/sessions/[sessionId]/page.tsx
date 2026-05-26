@@ -1151,6 +1151,14 @@ export default async function FormateurSessionDetailPage({
                         prePct !== null && postPct !== null
                           ? postPct - prePct
                           : null;
+                      // Gilles 2026-05-25 : progression en pts ET en %
+                      const deltaPoints =
+                        pre &&
+                        post &&
+                        pre.score !== null &&
+                        post.score !== null
+                          ? (post.score ?? 0) - (pre.score ?? 0)
+                          : null;
                       return (
                         <tr key={p.enrollmentId}>
                           <td className="px-2 py-2 align-top font-medium text-zinc-900">
@@ -1196,18 +1204,26 @@ export default async function FormateurSessionDetailPage({
                             {delta === null ? (
                               <span className="text-zinc-300">—</span>
                             ) : (
-                              <span
+                              <div
                                 className={
                                   delta > 0
-                                    ? "text-emerald-700 font-bold"
+                                    ? "text-emerald-700"
                                     : delta < 0
-                                      ? "text-rose-700 font-bold"
+                                      ? "text-rose-700"
                                       : "text-zinc-600"
                                 }
                               >
-                                {delta > 0 ? "+" : ""}
-                                {delta} pts
-                              </span>
+                                {deltaPoints !== null && (
+                                  <div className="text-sm font-bold">
+                                    {deltaPoints > 0 ? "+" : ""}
+                                    {deltaPoints} pts
+                                  </div>
+                                )}
+                                <div className="text-[11px] opacity-80">
+                                  ({delta > 0 ? "+" : ""}
+                                  {delta} %)
+                                </div>
+                              </div>
                             )}
                           </td>
                         </tr>
@@ -1570,8 +1586,12 @@ function AttemptCell({
     return <span className="text-zinc-400 text-[11px]">⏳ Non joué</span>;
   }
   const at = attempt.completed_at ?? attempt.started_at;
+  // Fix Gilles 2026-05-25 : sans timeZone explicite, le formateur
+  // toLocaleString s'aligne sur le fuseau du serveur (UTC sur Vercel)
+  // -> ecart de 2h en ete / 1h en hiver vs heure Paris reelle.
   const dateLabel = at
     ? new Date(at).toLocaleString("fr-FR", {
+        timeZone: "Europe/Paris",
         day: "2-digit",
         month: "2-digit",
         year: "2-digit",
