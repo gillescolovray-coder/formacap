@@ -645,7 +645,11 @@ export async function submitPartnerBatchEnrollmentForm(formData: FormData) {
     // declenchait une violation de la contrainte unique
     // uniq_inscription_request_session_learner sur l'INSERT inscription.
     let learnerId: string | null = null;
-    const { data: existingLearner } = await supabase
+    // Recherche existant — triplet email + prenom + nom. .maybeSingle()
+    // peut retourner une ERREUR si plusieurs lignes matchent (cas vecu :
+    // homonymes ou doublons historiques). On capture cette erreur pour
+    // tomber proprement en mode "creation nouveau learner".
+    const lookupResult = await supabase
       .from("learners")
       .select("id, civility")
       .eq("organization_id", ctx.company.organization_id)
@@ -653,9 +657,15 @@ export async function submitPartnerBatchEnrollmentForm(formData: FormData) {
       .ilike("first_name", firstName)
       .ilike("last_name", lastName)
       .maybeSingle<{ id: string; civility: string | null }>();
+    if (lookupResult.error) {
+      console.warn(
+        "[partenaire/actions] learner lookup erreur (multiple matches probable)",
+        { firstName, lastName, email, error: lookupResult.error.message },
+      );
+    }
+    const existingLearner = lookupResult.data ?? null;
     if (existingLearner) {
       learnerId = existingLearner.id;
-      // Si le learner existe sans civilité et qu'on en a une, on enrichit
       if (!existingLearner.civility && civility) {
         await supabase
           .from("learners")
@@ -663,7 +673,7 @@ export async function submitPartnerBatchEnrollmentForm(formData: FormData) {
           .eq("id", existingLearner.id);
       }
     } else {
-      const { data: created } = await supabase
+      const { data: created, error: createErr } = await supabase
         .from("learners")
         .insert({
           organization_id: ctx.company.organization_id,
@@ -678,10 +688,22 @@ export async function submitPartnerBatchEnrollmentForm(formData: FormData) {
         })
         .select("id")
         .single<{ id: string }>();
+      if (createErr) {
+        console.error(
+          "[partenaire/actions] CREATE learner echec",
+          { firstName, lastName, email, error: createErr.message },
+        );
+        errors.push(
+          `Echec creation apprenant "${firstName} ${lastName}" (${email || "sans email"}) : ${createErr.message ?? "raison inconnue"}`,
+        );
+        continue;
+      }
       if (created) learnerId = created.id;
     }
     if (!learnerId) {
-      errors.push(`Echec creation ${firstName} ${lastName}`);
+      errors.push(
+        `Echec creation apprenant "${firstName} ${lastName}" — aucun ID retourne par la base.`,
+      );
       continue;
     }
 
@@ -753,12 +775,28 @@ export async function submitPartnerBatchEnrollmentForm(formData: FormData) {
       .select("id")
       .single<{ id: string }>();
     if (insertErr || !request) {
+      // Diagnostic enrichi (Gilles 2026-05-25) : Supabase peut renvoyer
+      // code / details / hint en plus du message — utile pour comprendre
+      // les echecs de contrainte sans avoir a fouiller les logs serveur.
       console.error(
-        "[partenaire/actions] INSERT inscription_requests échec",
-        { firstName, lastName, error: insertErr?.message },
+        "[partenaire/actions] INSERT inscription_requests echec",
+        {
+          firstName,
+          lastName,
+          email,
+          learnerId,
+          error: insertErr,
+          payload: insertPayload,
+        },
       );
+      const reason =
+        insertErr?.message?.trim() ||
+        insertErr?.details ||
+        insertErr?.hint ||
+        insertErr?.code ||
+        "raison inconnue (verifier les logs serveur)";
       errors.push(
-        `Echec inscription ${firstName} ${lastName} : ${insertErr?.message ?? "inconnu"}`,
+        `Echec inscription "${firstName} ${lastName}" (${email || "sans email"}) : ${reason}`,
       );
       continue;
     }

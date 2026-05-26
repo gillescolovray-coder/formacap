@@ -280,7 +280,7 @@ export default async function PartnerInscribePage({
       </header>
 
       {error && (
-        <div className="rounded-lg bg-red-50 border border-red-200 p-4 text-sm text-red-700">
+        <div className="rounded-lg bg-red-50 border border-red-200 p-4 text-sm text-red-700 whitespace-pre-wrap break-words">
           {error}
         </div>
       )}
