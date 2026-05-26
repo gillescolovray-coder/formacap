@@ -68,16 +68,17 @@ export const metadata: Metadata = {
 type Params = { token: string; sessionId: string };
 
 /**
- * Page détail d'une session côté formateur. Affiche 6 sections :
- *  1. Participants
- *  2. Tests de positionnement (à venir, Sprint D)
- *  3. Convocations envoyées (logs email)
- *  4. Émargement (signatures par jour × moment)
- *  5. Évaluations à chaud (NPS + satisfaction)
- *  6. Supports partagés (avec apprenants)
- *
- * V1 lecture seule. V2 ajoutera : upload supports, signer émargement,
- * remplir observation positionnement.
+ * Page détail d'une session côté formateur. Ordre des blocs aligné
+ * avec le workflow réel d'animation (Gilles 2026-05-25, retour terrain
+ * apres test en situation reelle) :
+ *  1. Convocations envoyées (replié — verifie en premier en debut)
+ *  2. Participants
+ *  3. Émargement
+ *  4. Quiz d'évaluation (pré / post)
+ *  5. Tests de positionnement (replié — secondaire)
+ *  6. Évaluations à chaud (NPS + satisfaction)
+ *  7. Supports partagés
+ *  8. Bilan formateur (Qualiopi 11/22/32)
  */
 export default async function FormateurSessionDetailPage({
   params,
@@ -760,7 +761,48 @@ export default async function FormateurSessionDetailPage({
           />
         )}
 
-        {/* Module 1 — Participants */}
+        {/* Bloc 1 — Convocations envoyées (Gilles 2026-05-25 :
+            place en 1er, replie par defaut, info secondaire mais
+            verifiee en premier en debut de session). */}
+        <Module
+          icon={<Mail className="h-5 w-5" />}
+          color="indigo"
+          title="Convocations envoyées"
+          description="État d'envoi des convocations apprenants par email."
+          subcontractedManagedByOf={session.is_subcontracted === true}
+          collapsible
+        >
+          {participants.length === 0 ? (
+            <p className="text-xs text-zinc-500 italic">
+              Aucun apprenant à convoquer.
+            </p>
+          ) : (
+            <ul className="space-y-1 text-xs">
+              {participants.map((p) => {
+                const log = convocationByEnrollment.get(p.enrollmentId);
+                return (
+                  <li
+                    key={p.enrollmentId}
+                    className="flex items-center justify-between py-1"
+                  >
+                    <span className="text-zinc-700">{p.fullName}</span>
+                    {log ? (
+                      <span className="inline-flex items-center gap-1 text-emerald-700">
+                        <CheckCircle2 className="h-3 w-3" />
+                        Envoyée le{" "}
+                        {new Date(log.sent_at).toLocaleDateString("fr-FR")}
+                      </span>
+                    ) : (
+                      <span className="text-amber-700">⏳ Non envoyée</span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Module>
+
+        {/* Bloc 2 — Participants */}
         <Module
           icon={<Users className="h-5 w-5" />}
           color="cyan"
@@ -862,101 +904,6 @@ export default async function FormateurSessionDetailPage({
           )}
         </Module>
 
-        {/* Module 2 — Test de positionnement (replié par défaut,
-            Gilles 2026-05-25 : info secondaire pour le formateur en
-            cours de session). */}
-        <Module
-          icon={<Target className="h-5 w-5" />}
-          color="amber"
-          title={`Tests de positionnement (${positioningRows?.length ?? 0}/${participants.length})`}
-          description="Auto-évaluations remplies par les apprenants avant la formation."
-          subcontractedManagedByOf={session.is_subcontracted === true}
-          collapsible
-        >
-          {participants.length === 0 ? (
-            <p className="text-xs text-zinc-500 italic">Aucun apprenant.</p>
-          ) : (
-            <ul className="space-y-1 text-xs">
-              {participants.map((p) => {
-                const pos = positioningByEnrollment.get(p.enrollmentId);
-                return (
-                  <li
-                    key={p.enrollmentId}
-                    className="flex items-center justify-between py-1 gap-2"
-                  >
-                    <span className="text-zinc-700 truncate">{p.fullName}</span>
-                    {pos ? (
-                      <Link
-                        href={`/formateur/${token}/sessions/${sessionId}/positionnement/${p.enrollmentId}`}
-                        className="inline-flex items-center gap-1.5 shrink-0 hover:opacity-80"
-                        title="Cliquer pour voir le détail du test"
-                      >
-                        <span className="bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full text-[10px] font-semibold">
-                          {labelPositioningLevel(pos.data.current_level)}
-                        </span>
-                        {pos.data.has_adaptation_need && (
-                          <span
-                            className="bg-orange-100 text-orange-800 px-1.5 py-0.5 rounded-full text-[10px] font-semibold"
-                            title="Cet apprenant a déclaré un besoin d'adaptation"
-                          >
-                            ⚠ Adaptation
-                          </span>
-                        )}
-                        <span className="text-cyan-700 text-[10px] font-semibold">
-                          Voir →
-                        </span>
-                      </Link>
-                    ) : (
-                      <span className="text-zinc-400 shrink-0">⏳ Non rempli</span>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-          {/* Lecture détaillée : V2 ajoutera une modale ou sous-page
-              avec toutes les réponses + champ observation formateur. */}
-        </Module>
-
-        {/* Module 3 — Convocations envoyées (replié par défaut,
-            Gilles 2026-05-25 : suivi technique secondaire). */}
-        <Module
-          icon={<Mail className="h-5 w-5" />}
-          color="indigo"
-          title="Convocations envoyées"
-          description="État d'envoi des convocations apprenants par email."
-          subcontractedManagedByOf={session.is_subcontracted === true}
-          collapsible
-        >
-          {participants.length === 0 ? (
-            <p className="text-xs text-zinc-500 italic">
-              Aucun apprenant à convoquer.
-            </p>
-          ) : (
-            <ul className="space-y-1 text-xs">
-              {participants.map((p) => {
-                const log = convocationByEnrollment.get(p.enrollmentId);
-                return (
-                  <li
-                    key={p.enrollmentId}
-                    className="flex items-center justify-between py-1"
-                  >
-                    <span className="text-zinc-700">{p.fullName}</span>
-                    {log ? (
-                      <span className="inline-flex items-center gap-1 text-emerald-700">
-                        <CheckCircle2 className="h-3 w-3" />
-                        Envoyée le{" "}
-                        {new Date(log.sent_at).toLocaleDateString("fr-FR")}
-                      </span>
-                    ) : (
-                      <span className="text-amber-700">⏳ Non envoyée</span>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </Module>
 
         {/* Module 4 — Émargement */}
         <Module
@@ -999,81 +946,6 @@ export default async function FormateurSessionDetailPage({
                       {complete && <CheckCircle2 className="h-3 w-3" />}
                       {signed}/{totalSlots}
                     </span>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </Module>
-
-        {/* Module 5 — Évaluations à chaud */}
-        <Module
-          icon={<ClipboardList className="h-5 w-5" />}
-          color="violet"
-          title={`Évaluations à chaud (${hotEvals?.length ?? 0})`}
-          description={
-            npsAvg !== null
-              ? `Note de recommandation moyenne : ${npsAvg}/10`
-              : "Évaluations remplies par les apprenants en fin de session."
-          }
-          subcontractedManagedByOf={session.is_subcontracted === true}
-        >
-          {/* Bandeau QR code à projeter en fin de session
-              (Gilles 2026-05-25). Affichage identique à celui du QR
-              émargement, en violet pour rester cohérent avec le code
-              couleur Évaluation à chaud. */}
-          <div className="rounded-xl bg-gradient-to-br from-violet-50 to-purple-50 border-2 border-violet-300 p-4 space-y-2 mb-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="flex-1 min-w-[260px]">
-                <div className="text-[10px] uppercase tracking-widest text-violet-700 font-bold mb-0.5">
-                  Fin de session
-                </div>
-                <h3 className="font-bold text-base text-violet-900 mb-1">
-                  QR code évaluation à chaud
-                </h3>
-                <p className="text-xs text-violet-800 leading-relaxed">
-                  Affichez ce QR code à vos apprenants en{" "}
-                  <strong>plein écran</strong> sur votre ordinateur ou
-                  vidéo-projecteur. Chacun le scanne avec son téléphone,
-                  sélectionne son nom et remplit le questionnaire Qualiopi
-                  avant de quitter la salle.
-                </p>
-              </div>
-              <div className="shrink-0">
-                <TrainerQrEvaluationButton
-                  token={token}
-                  sessionId={sessionId}
-                />
-              </div>
-            </div>
-          </div>
-
-          {(hotEvals?.length ?? 0) === 0 ? (
-            <p className="text-xs text-zinc-500 italic">
-              Aucune évaluation remplie pour le moment.
-            </p>
-          ) : (
-            <ul className="space-y-1 text-xs">
-              {participants.map((p) => {
-                const ev = evalByEnrollment.get(p.enrollmentId);
-                return (
-                  <li
-                    key={p.enrollmentId}
-                    className="flex items-center justify-between py-1"
-                  >
-                    <span className="text-zinc-700">{p.fullName}</span>
-                    {ev ? (
-                      <span className="inline-flex items-center gap-2 text-violet-700">
-                        <span className="font-semibold">
-                          {ev.nps_score}/10
-                        </span>
-                        <span className="text-[10px] text-zinc-500">
-                          {labelSatisfaction(ev.satisfaction_overall)}
-                        </span>
-                      </span>
-                    ) : (
-                      <span className="text-zinc-400">⏳ En attente</span>
-                    )}
                   </li>
                 );
               })}
@@ -1235,6 +1107,138 @@ export default async function FormateurSessionDetailPage({
             )}
           </Module>
         )}
+
+        {/* Module 2 — Test de positionnement (replié par défaut,
+            Gilles 2026-05-25 : info secondaire pour le formateur en
+            cours de session). */}
+        <Module
+          icon={<Target className="h-5 w-5" />}
+          color="amber"
+          title={`Tests de positionnement (${positioningRows?.length ?? 0}/${participants.length})`}
+          description="Auto-évaluations remplies par les apprenants avant la formation."
+          subcontractedManagedByOf={session.is_subcontracted === true}
+          collapsible
+        >
+          {participants.length === 0 ? (
+            <p className="text-xs text-zinc-500 italic">Aucun apprenant.</p>
+          ) : (
+            <ul className="space-y-1 text-xs">
+              {participants.map((p) => {
+                const pos = positioningByEnrollment.get(p.enrollmentId);
+                return (
+                  <li
+                    key={p.enrollmentId}
+                    className="flex items-center justify-between py-1 gap-2"
+                  >
+                    <span className="text-zinc-700 truncate">{p.fullName}</span>
+                    {pos ? (
+                      <Link
+                        href={`/formateur/${token}/sessions/${sessionId}/positionnement/${p.enrollmentId}`}
+                        className="inline-flex items-center gap-1.5 shrink-0 hover:opacity-80"
+                        title="Cliquer pour voir le détail du test"
+                      >
+                        <span className="bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full text-[10px] font-semibold">
+                          {labelPositioningLevel(pos.data.current_level)}
+                        </span>
+                        {pos.data.has_adaptation_need && (
+                          <span
+                            className="bg-orange-100 text-orange-800 px-1.5 py-0.5 rounded-full text-[10px] font-semibold"
+                            title="Cet apprenant a déclaré un besoin d'adaptation"
+                          >
+                            ⚠ Adaptation
+                          </span>
+                        )}
+                        <span className="text-cyan-700 text-[10px] font-semibold">
+                          Voir →
+                        </span>
+                      </Link>
+                    ) : (
+                      <span className="text-zinc-400 shrink-0">⏳ Non rempli</span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          {/* Lecture détaillée : V2 ajoutera une modale ou sous-page
+              avec toutes les réponses + champ observation formateur. */}
+        </Module>
+
+        {/* Module 5 — Évaluations à chaud */}
+        <Module
+          icon={<ClipboardList className="h-5 w-5" />}
+          color="violet"
+          title={`Évaluations à chaud (${hotEvals?.length ?? 0})`}
+          description={
+            npsAvg !== null
+              ? `Note de recommandation moyenne : ${npsAvg}/10`
+              : "Évaluations remplies par les apprenants en fin de session."
+          }
+          subcontractedManagedByOf={session.is_subcontracted === true}
+        >
+          {/* Bandeau QR code à projeter en fin de session
+              (Gilles 2026-05-25). Affichage identique à celui du QR
+              émargement, en violet pour rester cohérent avec le code
+              couleur Évaluation à chaud. */}
+          <div className="rounded-xl bg-gradient-to-br from-violet-50 to-purple-50 border-2 border-violet-300 p-4 space-y-2 mb-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex-1 min-w-[260px]">
+                <div className="text-[10px] uppercase tracking-widest text-violet-700 font-bold mb-0.5">
+                  Fin de session
+                </div>
+                <h3 className="font-bold text-base text-violet-900 mb-1">
+                  QR code évaluation à chaud
+                </h3>
+                <p className="text-xs text-violet-800 leading-relaxed">
+                  Affichez ce QR code à vos apprenants en{" "}
+                  <strong>plein écran</strong> sur votre ordinateur ou
+                  vidéo-projecteur. Chacun le scanne avec son téléphone,
+                  sélectionne son nom et remplit le questionnaire Qualiopi
+                  avant de quitter la salle.
+                </p>
+              </div>
+              <div className="shrink-0">
+                <TrainerQrEvaluationButton
+                  token={token}
+                  sessionId={sessionId}
+                />
+              </div>
+            </div>
+          </div>
+
+          {(hotEvals?.length ?? 0) === 0 ? (
+            <p className="text-xs text-zinc-500 italic">
+              Aucune évaluation remplie pour le moment.
+            </p>
+          ) : (
+            <ul className="space-y-1 text-xs">
+              {participants.map((p) => {
+                const ev = evalByEnrollment.get(p.enrollmentId);
+                return (
+                  <li
+                    key={p.enrollmentId}
+                    className="flex items-center justify-between py-1"
+                  >
+                    <span className="text-zinc-700">{p.fullName}</span>
+                    {ev ? (
+                      <span className="inline-flex items-center gap-2 text-violet-700">
+                        <span className="font-semibold">
+                          {ev.nps_score}/10
+                        </span>
+                        <span className="text-[10px] text-zinc-500">
+                          {labelSatisfaction(ev.satisfaction_overall)}
+                        </span>
+                      </span>
+                    ) : (
+                      <span className="text-zinc-400">⏳ En attente</span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Module>
+
 
         {/* Module 6 — Supports */}
         <Module
