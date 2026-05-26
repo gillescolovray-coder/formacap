@@ -11,6 +11,7 @@ import {
   FolderOpen,
   GraduationCap,
   Mail,
+  MessageSquareText,
   ShieldCheck,
   Star,
   Users,
@@ -192,6 +193,15 @@ export function SessionTabs({ sessionId, counts }: Props) {
       icon: Award,
       count: counts?.attestations ?? null,
       scheme: SCHEMES.amber,
+    },
+    {
+      // Consultation du bilan formateur (Module 7) — rempli depuis
+      // le portail formateur. Gilles 2026-05-25.
+      href: (id) => `/sessions/${id}/bilan`,
+      matches: (id, p) => p.startsWith(`/sessions/${id}/bilan`),
+      label: "Bilan formateur",
+      icon: MessageSquareText,
+      scheme: SCHEMES.indigo,
     },
     {
       href: (id) => `/sessions/${id}/qualite`,
