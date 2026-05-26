@@ -304,6 +304,13 @@ export function TargetPickers({
   // la sync vers le learner). Le bandeau jaune n'apparaît qu'à partir
   // d'une vraie nouvelle modif. Gilles 2026-05-26.
   const initialContactRef = useRef({
+    firstName:
+      defaults.prospectFirstName ?? initialLinkedLearner?.first_name ?? "",
+    lastName: (
+      defaults.prospectLastName ??
+      initialLinkedLearner?.last_name ??
+      ""
+    ).toLocaleUpperCase("fr-FR"),
     email: defaults.prospectEmail ?? initialLinkedLearner?.email ?? "",
     phone: defaults.prospectPhone ?? initialLinkedLearner?.phone ?? "",
     mobile: defaults.prospectMobile ?? initialLinkedLearner?.mobile ?? "",
@@ -340,10 +347,15 @@ export function TargetPickers({
   function norm(s: string | null | undefined): string {
     return (s ?? "").trim().toLowerCase();
   }
+  // Gilles 2026-05-25 : on inclut maintenant prenom/nom (cas vecu :
+  // Pascal CELLAR -> CELLARD, la correction ne se propageait pas a la
+  // fiche apprenant donc la page Participants restait avec CELLAR).
   const hasContactChanges =
     selectedLearner &&
     initialContactRef.current.learnerId === learnerId &&
-    (norm(email) !== norm(initialContactRef.current.email) ||
+    (norm(firstName) !== norm(initialContactRef.current.firstName) ||
+      norm(lastName) !== norm(initialContactRef.current.lastName) ||
+      norm(email) !== norm(initialContactRef.current.email) ||
       norm(phone) !== norm(initialContactRef.current.phone) ||
       norm(mobile) !== norm(initialContactRef.current.mobile) ||
       norm(jobTitle) !== norm(initialContactRef.current.jobTitle) ||
@@ -378,6 +390,10 @@ export function TargetPickers({
     // valeurs aux nouvelles). Gilles 2026-05-26.
     initialContactRef.current = {
       learnerId: l.id,
+      firstName: firstName || (l.first_name ?? ""),
+      lastName: (
+        lastName || (l.last_name ?? "")
+      ).toLocaleUpperCase("fr-FR"),
       email: email || (l.email ?? ""),
       phone: phone || (l.phone ?? ""),
       mobile: mobile || (l.mobile ?? ""),
@@ -618,12 +634,14 @@ export function TargetPickers({
       {hasContactChanges ? (
         <div className="rounded-md bg-amber-50 dark:bg-amber-950/40 border-2 border-amber-300 dark:border-amber-900 px-3 py-2.5 space-y-2">
           <p className="text-xs text-amber-900 dark:text-amber-200 font-semibold">
-            ⚠ Vous avez modifié les coordonnées de l&apos;apprenant{" "}
-            {selectedLearner?.first_name} {selectedLearner?.last_name}.
+            ⚠ Vous avez modifié l&apos;identité ou les coordonnées de
+            l&apos;apprenant {selectedLearner?.first_name}{" "}
+            {selectedLearner?.last_name}.
           </p>
           <p className="text-[11px] text-amber-800 dark:text-amber-300">
             Souhaitez-vous mettre à jour aussi la fiche apprenant dans le
-            module Apprenants ?
+            module Apprenants ? (nom, prénom, civilité, email, téléphones,
+            fonction, date de naissance)
           </p>
           <div className="flex items-center gap-3 text-xs">
             <label className="inline-flex items-center gap-1.5 cursor-pointer">

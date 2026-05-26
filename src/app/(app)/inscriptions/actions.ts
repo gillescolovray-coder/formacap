@@ -396,6 +396,20 @@ export async function createInscription(formData: FormData) {
         .mobile;
       const learnerUpdates: Record<string, unknown> = {};
       if (userChoseToUpdateLearner) {
+        // Gilles 2026-05-25 : on inclut maintenant prenom/nom dans la
+        // sync demande -> apprenant (cas vecu : correction d'une typo
+        // CELLAR -> CELLARD qui ne se propageait pas au module
+        // Apprenants ni a la page Participants).
+        if (
+          payload.prospect_first_name &&
+          payload.prospect_first_name !== learner.first_name
+        )
+          learnerUpdates.first_name = payload.prospect_first_name;
+        if (
+          payload.prospect_last_name &&
+          payload.prospect_last_name !== learner.last_name
+        )
+          learnerUpdates.last_name = payload.prospect_last_name;
         if (
           payload.prospect_email &&
           payload.prospect_email !== learner.email
