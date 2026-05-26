@@ -685,6 +685,28 @@ export async function submitPartnerBatchEnrollmentForm(formData: FormData) {
       continue;
     }
 
+    // Pre-check anti-doublon (Gilles 2026-05-25) : si une
+    // inscription_request existe deja pour (target_session_id,
+    // learner_id), on ne tente PAS le INSERT — sinon la contrainte
+    // unique uniq_inscription_request_session_learner remonte un
+    // message SQL cryptique cote partenaire. On affiche a la place
+    // un message en francais lisible et on enchaine sur les autres
+    // apprenants. Cas vecu : un partenaire essaie de reinscrire une
+    // apprenante deja inscrite par l'admin OF en direct.
+    const { data: alreadyInscribed } = await supabase
+      .from("inscription_requests")
+      .select("id")
+      .eq("target_session_id", sessionId)
+      .eq("learner_id", learnerId)
+      .limit(1)
+      .maybeSingle<{ id: string }>();
+    if (alreadyInscribed) {
+      errors.push(
+        `${firstName} ${lastName} : deja inscrit(e) sur cette session — inscription ignoree.`,
+      );
+      continue;
+    }
+
     // Inscription + enrollment miroir
     // FIX Gilles 2026-05-22 : on capture l'erreur Supabase et on
     // l'inclut dans le message renvoyé pour comprendre les echecs
