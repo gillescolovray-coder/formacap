@@ -815,7 +815,16 @@ export default async function FormateurSessionDetailPage({
             </p>
           ) : (
             <ul className="divide-y divide-zinc-100 -mx-4">
-              {participants.map((p) => (
+              {participants.map((p) => {
+                // Badge "espace utilisateur dispo" : on considere que
+                // l'apprenant a recu son lien d'acces si une convocation
+                // a ete envoyee (la convocation contient le lien vers son
+                // portail). Sinon, il faut lui scanner le QR personnel
+                // (icone a droite). Gilles 2026-05-25.
+                const hasConvocation = convocationByEnrollment.has(
+                  p.enrollmentId,
+                );
+                return (
                 <li
                   key={p.enrollmentId}
                   className="px-4 py-2 flex items-start justify-between gap-2"
@@ -832,6 +841,22 @@ export default async function FormateurSessionDetailPage({
                           title="Apprenant saisi en express le jour J (sous-traitance)"
                         >
                           Express
+                        </span>
+                      )}
+                      {hasConvocation ? (
+                        <span
+                          className="inline-flex items-center gap-1 text-[9px] uppercase tracking-wider bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-full font-bold"
+                          title="Convocation envoyée par email — l'apprenant a son lien d'accès personnel dans sa boîte mail."
+                        >
+                          <CheckCircle2 className="h-2.5 w-2.5" />
+                          Lien envoyé
+                        </span>
+                      ) : (
+                        <span
+                          className="inline-flex items-center gap-1 text-[9px] uppercase tracking-wider bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full font-bold"
+                          title="Aucune convocation envoyée à cet apprenant — utilisez l'icône QR code à droite pour lui donner accès à son espace personnel."
+                        >
+                          ⚠ Sans lien
                         </span>
                       )}
                     </div>
@@ -899,7 +924,8 @@ export default async function FormateurSessionDetailPage({
                   )}
                   </div>
                 </li>
-              ))}
+                );
+              })}
             </ul>
           )}
         </Module>
