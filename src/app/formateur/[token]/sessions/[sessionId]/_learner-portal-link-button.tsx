@@ -95,10 +95,11 @@ export function LearnerPortalLinkButton({
                   Portail de {learnerName}
                 </h2>
                 <p className="text-xs text-zinc-600">
-                  Montrez ce QR code à <strong>{learnerName}</strong> :
-                  il scanne, arrive sur son portail personnel et accède au
-                  <strong> quiz d&apos;entrée / sortie</strong>,
-                  l&apos;émargement et ses supports.
+                  À scanner si <strong>{learnerName}</strong> n&apos;a pas
+                  sa convocation avec lui : lui donne accès à son espace
+                  personnel pour cette formation (
+                  <strong>quiz d&apos;entrée / sortie</strong>, émargement,
+                  supports, évaluation à chaud).
                 </p>
               </header>
 
@@ -197,7 +198,7 @@ export function LearnerPortalLinkButton({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        title={`Voir le QR code et le lien personnel de ${learnerName}`}
+        title={`QR code personnel de ${learnerName} — à scanner s'il n'a pas sa convocation : lui donne accès à son espace personnel pour cette formation (quiz, émargement, supports, évaluation à chaud).`}
         className="p-1 rounded-md text-cyan-700 hover:bg-cyan-50"
       >
         <QrCode className="h-3.5 w-3.5" />
