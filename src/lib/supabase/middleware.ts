@@ -19,6 +19,11 @@ const PUBLIC_PATHS = [
   "/emarger/", // Signature emargement apprenant (lien email)
   "/eval/", // Lien evaluation a chaud (depuis email)
   "/evaluation/", // Variante evaluation
+  // BUG FIX URGENT Gilles 2026-05-27 : ces routes etaient bloquees par
+  // le middleware -> redirige vers /login alors qu'aucun compte n'est
+  // requis (token URL = authentification).
+  "/inscription-rapide/", // QR inscription rapide sous-traitance (formateur affiche QR)
+  "/quiz-session/", // QR quiz partage session (formateur affiche QR -> liste apprenants)
 ];
 
 export async function updateSession(request: NextRequest) {
