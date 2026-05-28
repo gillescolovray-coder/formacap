@@ -8,6 +8,7 @@ import { SessionTabs } from "../../_session-tabs";
 import { SessionHeaderMeta } from "../../_session-header-meta";
 import { QuizAttemptDetailView } from "@/components/quiz-attempt-detail-view";
 import type { QuizAttempt, QuizQuestion } from "@/lib/quiz/types";
+import { PrintQuizDetailButton } from "./_print-button";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -111,31 +112,69 @@ export default async function AdminQuizDetailPage({
 
   return (
     <div className="min-h-screen flex flex-col">
-      <PageHeader
-        title={`Quiz : ${fullName || "Apprenant"}`}
-        description={
-          session.formation?.title
-            ? `${session.formation.title}${companyName ? ` · ${companyName}` : ""}`
-            : (companyName ?? "Session")
-        }
-        actions={<BackButton fallbackHref={`/sessions/${id}/quiz`} />}
+      {/* Styles d'impression : masque sidebar, header app, tabs,
+          bouton imprimer, et le lien retour. Garde uniquement le
+          contenu pour produire une feuille A4 propre (Gilles 2026-05-28). */}
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+            @media print {
+              @page { margin: 12mm 10mm; size: A4; }
+              body { background: white !important; }
+              .no-print, aside, nav, header { display: none !important; }
+              main { padding: 0 !important; margin: 0 !important; max-width: none !important; }
+              html, body { margin: 0 !important; padding: 0 !important; }
+              /* Eviter de couper une question entre 2 pages */
+              .quiz-detail-question { break-inside: avoid; page-break-inside: avoid; }
+              /* Couleurs preservees en print pour les badges */
+              * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            }
+          `,
+        }}
       />
-      <SessionHeaderMeta sessionId={id} />
-      <SessionTabs sessionId={id} />
+      <div className="no-print">
+        <PageHeader
+          title={`Quiz : ${fullName || "Apprenant"}`}
+          description={
+            session.formation?.title
+              ? `${session.formation.title}${companyName ? ` · ${companyName}` : ""}`
+              : (companyName ?? "Session")
+          }
+          actions={<BackButton fallbackHref={`/sessions/${id}/quiz`} />}
+        />
+        <SessionHeaderMeta sessionId={id} />
+        <SessionTabs sessionId={id} />
+      </div>
 
       <div className="px-8 py-6 max-w-5xl mx-auto w-full space-y-4">
-        <Link
-          href={`/sessions/${id}/quiz`}
-          className="inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-700"
-        >
-          <ChevronLeft className="h-4 w-4" />
-          Retour au tableau Quiz
-        </Link>
+        <div className="flex items-center justify-between gap-3 flex-wrap no-print">
+          <Link
+            href={`/sessions/${id}/quiz`}
+            className="inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-700"
+          >
+            <ChevronLeft className="h-4 w-4" />
+            Retour au tableau Quiz
+          </Link>
+          <PrintQuizDetailButton />
+        </div>
 
-        <div className="space-y-1">
+        {/* En-tete visible aussi a l'impression : nom apprenant +
+            entreprise + intitule formation + titre du quiz */}
+        <div className="space-y-1 border-b border-zinc-200 pb-3">
           <div className="text-xs uppercase tracking-widest text-amber-700 font-bold">
             Détail du quiz d&apos;évaluation
           </div>
+          <h1 className="text-xl md:text-2xl font-bold text-zinc-900">
+            {fullName || "Apprenant"}
+          </h1>
+          {companyName && (
+            <p className="text-sm text-zinc-600">{companyName}</p>
+          )}
+          {session.formation?.title && (
+            <p className="text-xs text-zinc-500">
+              Formation : <strong>{session.formation.title}</strong>
+            </p>
+          )}
           {quizRow?.title && (
             <p className="text-xs text-zinc-500">
               Quiz : <strong>{quizRow.title}</strong>

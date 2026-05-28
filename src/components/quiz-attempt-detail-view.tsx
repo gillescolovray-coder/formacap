@@ -51,7 +51,7 @@ export function QuizAttemptDetailView({
             return (
               <section
                 key={q.id}
-                className="rounded-xl bg-white border border-zinc-200 shadow-sm p-4 space-y-3"
+                className="quiz-detail-question rounded-xl bg-white border border-zinc-200 shadow-sm p-4 space-y-3"
               >
                 <h3 className="font-bold text-sm text-zinc-900">
                   <span className="text-amber-700">{idx + 1}.</span> {q.text}
