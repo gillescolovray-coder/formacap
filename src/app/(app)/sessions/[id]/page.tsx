@@ -19,6 +19,7 @@ import {
 } from "../actions";
 import { confirmSessionFormAction } from "./confirm/actions";
 import { SessionNotesPanel } from "./_notes-panel";
+import { DriveArchiveButton } from "./_drive-archive-button";
 import { SessionTabs } from "./_session-tabs";
 import { SessionHeaderMeta } from "./_session-header-meta";
 import { BackButton } from "@/components/back-button";
@@ -364,6 +365,10 @@ export default async function SessionDetailPage({
     !isArchived &&
     session.status !== "completed" &&
     session.status !== "cancelled";
+  // Archivage Drive disponible uniquement pour les sessions en cours
+  // ou terminees (Gilles 2026-05-28).
+  const canArchiveToDrive =
+    session.status === "in_progress" || session.status === "completed";
 
   const title = session.formation?.title ?? "Session";
   const notifs = Object.entries(query)
@@ -536,6 +541,23 @@ export default async function SessionDetailPage({
         {/* La zone "Inscrits" est désormais accessible exclusivement via
             l'onglet "Participants". On la retire de la Fiche pour éviter
             les doublons et alléger l'écran principal. */}
+
+        {/* Archivage Google Drive — visible uniquement pour les sessions
+            en cours ou terminees (Gilles 2026-05-28). Cree un dossier sur
+            le Drive cap numerique avec la codification standard. */}
+        {canArchiveToDrive && (
+          <DriveArchiveButton
+            sessionId={id}
+            existingFolderId={
+              (session as unknown as { drive_folder_id: string | null })
+                .drive_folder_id ?? null
+            }
+            existingArchivedAt={
+              (session as unknown as { drive_archived_at: string | null })
+                .drive_archived_at ?? null
+            }
+          />
+        )}
 
         {/* Notes internes — placées avant le formulaire pour être visibles
             dès l'ouverture de la session, sans avoir à scroller jusqu'en bas. */}
