@@ -13,6 +13,7 @@ import {
   syncStageChangeToEnrollment,
 } from "@/lib/inscriptions/sync";
 import { cleanupUserEmptyDrafts } from "@/lib/inscriptions/cleanup";
+import { logInscriptionDeletion } from "@/lib/inscriptions/deletion-log";
 
 async function getOrgId() {
   const supabase = await createClient();
@@ -1156,6 +1157,16 @@ export async function addNote(id: string, formData: FormData) {
 
 export async function deleteInscription(id: string) {
   const supabase = await createClient();
+  // Audit : tracer la suppression AVANT le delete (cascade detruit le
+  // snapshot sinon). Gilles 2026-05-28.
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  await logInscriptionDeletion(supabase, {
+    requestId: id,
+    deletedByType: "admin",
+    actorProfileId: user?.id ?? null,
+  });
   // Sync 2026-05-13 : cascade vers les session_enrollments miroirs AVANT
   // de supprimer la request. La FK étant `on delete set null`, sans cette
   // étape, l'enrollment perdrait simplement son lien et resterait orphelin.

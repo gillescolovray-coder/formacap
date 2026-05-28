@@ -6,15 +6,11 @@
       "schedule": "0 7 * * *"
     },
     {
-      "path": "/api/cron/partner-modifications-daily-recap",
-      "schedule": "0 15 * * *"
-    },
-    {
       "path": "/api/cron/convocations-48h-auto",
       "schedule": "0 6 * * *"
     },
     {
-      "path": "/api/cron/admin-inscriptions-daily-recap",
+      "path": "/api/cron/daily-activity-recap",
       "schedule": "0 15 * * *"
     },
     {

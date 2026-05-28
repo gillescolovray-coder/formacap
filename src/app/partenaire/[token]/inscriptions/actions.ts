@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolvePartnerContext } from "../_resolve";
+import { logInscriptionDeletion } from "@/lib/inscriptions/deletion-log";
 
 /**
  * Met à jour les coordonnées d'un apprenant inscrit via le portail
@@ -164,6 +165,13 @@ export async function deleteInscription(
       learner_email: req.prospect_email,
       session_id: req.target_session_id,
     },
+  });
+  // Nouveau journal d'audit unifie (utilise par le recap daily)
+  // Gilles 2026-05-28
+  await logInscriptionDeletion(supabase, {
+    requestId: req.id,
+    deletedByType: "partner",
+    actorPartnerCompanyId: ctx.company.id,
   });
 
   // Supprime l'enrollment lié (s'il existe)
