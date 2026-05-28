@@ -4,6 +4,7 @@ import {
   BarChart3,
   Brain,
   CheckCircle2,
+  Eye,
   TrendingDown,
   TrendingUp,
 } from "lucide-react";
@@ -325,10 +326,32 @@ export default async function SessionQuizDashboardPage({
                           {p.companyName ?? "—"}
                         </td>
                         <td className="px-4 py-3 align-top">
-                          <AttemptCell attempt={pre} />
+                          <div className="flex items-start gap-2">
+                            <AttemptCell attempt={pre} />
+                            {pre && (
+                              <Link
+                                href={`/sessions/${id}/quiz/${p.enrollmentId}`}
+                                title="Voir le détail des réponses (pré + post)"
+                                className="p-1 rounded text-amber-700 hover:bg-amber-50 shrink-0"
+                              >
+                                <Eye className="h-3.5 w-3.5" />
+                              </Link>
+                            )}
+                          </div>
                         </td>
                         <td className="px-4 py-3 align-top">
-                          <AttemptCell attempt={post} />
+                          <div className="flex items-start gap-2">
+                            <AttemptCell attempt={post} />
+                            {post && (
+                              <Link
+                                href={`/sessions/${id}/quiz/${p.enrollmentId}`}
+                                title="Voir le détail des réponses (pré + post)"
+                                className="p-1 rounded text-amber-700 hover:bg-amber-50 shrink-0"
+                              >
+                                <Eye className="h-3.5 w-3.5" />
+                              </Link>
+                            )}
+                          </div>
                         </td>
                         <td className="px-4 py-3 align-top text-right">
                           {delta === null ? (
