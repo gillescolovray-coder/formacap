@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ensureEnrollmentPortalToken } from "@/lib/portal/express-signup";
-import { CheckCircle2, Circle, GraduationCap } from "lucide-react";
+import { LearnerPickButton } from "./_learner-pick-button";
 
 export const dynamic = "force-dynamic";
 
@@ -212,43 +212,12 @@ export default async function QuizSessionPublicPage({
                 <li key={e.id}>
                   <form action={gotoLearnerQuiz}>
                     <input type="hidden" name="enrollmentId" value={e.id} />
-                    <button
-                      type="submit"
-                      disabled={allDone}
-                      className={
-                        "w-full text-left rounded-xl border-2 p-4 flex items-center justify-between gap-3 transition " +
-                        (allDone
-                          ? "bg-emerald-50 border-emerald-200 text-emerald-800 cursor-default"
-                          : "bg-white border-zinc-200 hover:border-amber-400 hover:bg-amber-50 active:bg-amber-100 cursor-pointer")
-                      }
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <GraduationCap
-                          className={
-                            "h-5 w-5 shrink-0 " +
-                            (allDone ? "text-emerald-600" : "text-amber-600")
-                          }
-                        />
-                        <div className="min-w-0">
-                          <div className="font-semibold text-zinc-900 truncate">
-                            {fullName || "Apprenant"}
-                          </div>
-                          <div className="text-[11px] text-zinc-500 mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
-                            <StatusBadge done={preDone} label="Entrée" />
-                            <StatusBadge done={postDone} label="Sortie" />
-                          </div>
-                        </div>
-                      </div>
-                      {allDone ? (
-                        <span className="text-[11px] font-medium text-emerald-700 shrink-0">
-                          Terminé
-                        </span>
-                      ) : (
-                        <span className="text-xs font-bold text-amber-700 shrink-0">
-                          C&apos;est moi →
-                        </span>
-                      )}
-                    </button>
+                    <LearnerPickButton
+                      fullName={fullName}
+                      preDone={preDone}
+                      postDone={postDone}
+                      allDone={allDone}
+                    />
                   </form>
                 </li>
               );
@@ -262,21 +231,6 @@ export default async function QuizSessionPublicPage({
         </footer>
       </div>
     </div>
-  );
-}
-
-function StatusBadge({ done, label }: { done: boolean; label: string }) {
-  return (
-    <span className="inline-flex items-center gap-1">
-      {done ? (
-        <CheckCircle2 className="h-3 w-3 text-emerald-600" />
-      ) : (
-        <Circle className="h-3 w-3 text-zinc-300" />
-      )}
-      <span className={done ? "text-emerald-700" : "text-zinc-500"}>
-        {label}
-      </span>
-    </span>
   );
 }
 
