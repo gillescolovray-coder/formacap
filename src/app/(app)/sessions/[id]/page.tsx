@@ -20,6 +20,7 @@ import {
 import { confirmSessionFormAction } from "./confirm/actions";
 import { SessionNotesPanel } from "./_notes-panel";
 import { DriveArchiveButton } from "./_drive-archive-button";
+import { CancelPostponeButton } from "./_cancel-postpone-modal";
 import { isDriveConfigured } from "@/lib/google-drive/client";
 import { SessionTabs } from "./_session-tabs";
 import { SessionHeaderMeta } from "./_session-header-meta";
@@ -362,10 +363,96 @@ export default async function SessionDetailPage({
   const confirmAction = confirmSessionFormAction.bind(null, id);
   const isArchived = session.status === "archived";
   const isConfirmed = session.status === "confirmed";
+  const isCancelled = session.status === "cancelled";
+  const isPostponed = session.status === "postponed";
   const canConfirm =
     !isArchived &&
     session.status !== "completed" &&
     session.status !== "cancelled";
+
+  // Annulation / Report — bouton disponible tant que la session n'est
+  // pas deja annulee, terminee ou archivee (Gilles 2026-05-28).
+  const canCancelPostpone =
+    !isArchived &&
+    !isCancelled &&
+    session.status !== "completed";
+
+  // Donnees du preview destinataires + sessions cibles pour le report.
+  // Charges en parallele pour eviter d'alourdir la page si on n'a pas
+  // besoin (preview leger).
+  const [
+    { data: inscriptionsForCancel },
+    { data: futureSessionsRaw },
+    { data: trainerRow },
+  ] = await Promise.all([
+    supabase
+      .from("inscription_requests")
+      .select(
+        "id, referrer_company_id, referrer:companies!referrer_company_id(name)",
+      )
+      .eq("target_session_id", id),
+    supabase
+      .from("sessions")
+      .select(
+        "id, start_date, end_date, formation:formations(title)",
+      )
+      .eq("organization_id", session.organization_id)
+      .gte("start_date", new Date().toISOString().slice(0, 10))
+      .in("status", ["planned", "confirmed"])
+      .neq("id", id)
+      .order("start_date", { ascending: true })
+      .limit(50),
+    session.trainer_id
+      ? supabase
+          .from("trainers")
+          .select("email")
+          .eq("id", session.trainer_id)
+          .maybeSingle<{ email: string | null }>()
+      : Promise.resolve({ data: null }),
+  ]);
+
+  const insRows = (inscriptionsForCancel ?? []) as unknown as Array<{
+    id: string;
+    referrer_company_id: string | null;
+    referrer:
+      | { name: string }
+      | Array<{ name: string }>
+      | null;
+  }>;
+  const partnerNamesSet = new Set<string>();
+  let directCount = 0;
+  insRows.forEach((r) => {
+    if (r.referrer_company_id) {
+      const ref = Array.isArray(r.referrer) ? r.referrer[0] : r.referrer;
+      partnerNamesSet.add(ref?.name ?? "Partenaire");
+    } else {
+      directCount += 1;
+    }
+  });
+  const cancelPreview = {
+    learnersDirect: directCount,
+    partners: partnerNamesSet.size,
+    partnersList: Array.from(partnerNamesSet),
+    trainerHasEmail: !!trainerRow?.email,
+  };
+  const futureSessionsList = ((futureSessionsRaw ?? []) as unknown as Array<{
+    id: string;
+    start_date: string;
+    end_date: string;
+    formation: { title: string } | Array<{ title: string }> | null;
+  }>).map((s) => {
+    const f = Array.isArray(s.formation) ? s.formation[0] : s.formation;
+    const dateLabel = new Date(s.start_date).toLocaleDateString("fr-FR", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+    return {
+      id: s.id,
+      label: `${dateLabel} — ${f?.title ?? "Session"}`,
+      startDate: s.start_date,
+    };
+  });
   // Archivage Drive disponible uniquement pour les sessions en cours
   // ou terminees ET si l'integration Drive est configuree cote serveur
   // (env vars GOOGLE_SERVICE_ACCOUNT_JSON + GOOGLE_DRIVE_ROOT_FOLDER_ID).
@@ -428,6 +515,13 @@ export default async function SessionDetailPage({
                   )}
                 </Button>
               </form>
+            )}
+            {canCancelPostpone && (
+              <CancelPostponeButton
+                sessionId={id}
+                futureSessions={futureSessionsList}
+                preview={cancelPreview}
+              />
             )}
             <form action={duplicate}>
               <Button
