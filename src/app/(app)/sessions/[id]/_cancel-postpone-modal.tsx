@@ -20,6 +20,10 @@ type Props = {
     learnersDirect: number;
     partners: number;
     partnersList: string[];
+    /** Partenaires SANS email -> on les signale en rouge dans
+     *  l'apercu pour que l'admin sache que ces OF ne recevront pas
+     *  le mail (Gilles 2026-05-28). */
+    partnersWithoutEmail: string[];
     trainerHasEmail: boolean;
   };
   onClose: () => void;
@@ -75,14 +79,28 @@ export function CancelPostponeModal({
       const parts: string[] = [];
       if (res.notifications) {
         if (res.notifications.learnersDirect > 0)
-          parts.push(`${res.notifications.learnersDirect} apprenant(s) notifié(s)`);
+          parts.push(
+            `${res.notifications.learnersDirect} apprenant(s) notifié(s)`,
+          );
         if (res.notifications.partners > 0)
-          parts.push(`${res.notifications.partners} partenaire(s) notifié(s)`);
+          parts.push(
+            `${res.notifications.partners} partenaire(s) notifié(s)`,
+          );
         if (res.notifications.trainerNotified) parts.push("formateur notifié");
       }
-      alert(
-        `Session ${decision === "cancel" ? "annulée" : "reportée"} avec succès.\n${parts.join(" — ")}`,
-      );
+      const extras: string[] = [];
+      if (res.notifications?.fallbackToLearner) {
+        extras.push(
+          `⚠ ${res.notifications.fallbackToLearner} apprenant(s) notifié(s) en fallback (OF sans email)`,
+        );
+      }
+      if (res.notifications?.skipped?.length) {
+        extras.push(
+          `⚠ ${res.notifications.skipped.length} non joignable(s) — à contacter manuellement : ${res.notifications.skipped.map((s) => s.name).join(", ")}`,
+        );
+      }
+      const summary = `Session ${decision === "cancel" ? "annulée" : "reportée"} avec succès.\n\n${parts.join(" — ")}${extras.length > 0 ? "\n\n" + extras.join("\n") : ""}`;
+      alert(summary);
       onClose();
       router.refresh();
     });
@@ -120,14 +138,15 @@ export function CancelPostponeModal({
             <div className="font-bold text-blue-900">
               📊 Aperçu des notifications
             </div>
-            <ul className="list-disc list-inside text-blue-800">
+            <ul className="list-disc list-inside text-blue-800 space-y-0.5">
               <li>
-                {preview.learnersDirect} apprenant
+                <strong>{preview.learnersDirect}</strong> apprenant
                 {preview.learnersDirect > 1 ? "s" : ""} direct
-                {preview.learnersDirect > 1 ? "s" : ""} → email à l&apos;apprenant
+                {preview.learnersDirect > 1 ? "s" : ""} → email à
+                l&apos;apprenant
               </li>
               <li>
-                {preview.partners} OF / Prescripteur
+                <strong>{preview.partners}</strong> OF / Prescripteur
                 {preview.partners > 1 ? "s" : ""} → email au partenaire
                 {preview.partnersList.length > 0 && (
                   <span className="text-blue-700 italic">
@@ -143,6 +162,34 @@ export function CancelPostponeModal({
               </li>
             </ul>
           </div>
+
+          {/* Warning visible si un ou plusieurs OF n'ont PAS d'email
+              -> l'admin doit savoir avant d'envoyer pour pouvoir
+              completer la fiche entreprise (Gilles 2026-05-28). */}
+          {preview.partnersWithoutEmail.length > 0 && (
+            <div className="rounded-lg bg-amber-50 border-2 border-amber-300 p-3 text-xs space-y-1.5">
+              <div className="font-bold text-amber-900 inline-flex items-center gap-1">
+                ⚠ Partenaire(s) sans email
+              </div>
+              <p className="text-amber-800">
+                Les OF / prescripteurs suivants n&apos;ont pas
+                d&apos;email renseigné dans leur fiche entreprise :
+              </p>
+              <ul className="list-disc list-inside text-amber-900 font-semibold">
+                {preview.partnersWithoutEmail.map((n) => (
+                  <li key={n}>{n}</li>
+                ))}
+              </ul>
+              <p className="text-amber-800 italic">
+                Si vous validez maintenant, le système notifiera
+                l&apos;apprenant en fallback (ou le marquera comme « à
+                contacter manuellement » si l&apos;apprenant non plus
+                n&apos;a pas d&apos;email). Pour notifier le partenaire,
+                ajoutez son email sur la fiche entreprise avant de
+                valider.
+              </p>
+            </div>
+          )}
 
           {/* Choix décision */}
           <div className="space-y-2">

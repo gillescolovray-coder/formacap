@@ -35,6 +35,14 @@ export type CancelPostponeResult = {
     learnersDirect: number;
     partners: number;
     trainerNotified: boolean;
+    /** Cas vecu : OF inscrit l'apprenant via portail partenaire mais
+     *  pas d'email renseigne ni sur l'OF ni sur le contact referent.
+     *  On notifie alors l'apprenant en fallback et on signale ces
+     *  cas pour que l'admin puisse completer la fiche entreprise. */
+    fallbackToLearner: number;
+    /** Cas tout aussi vecu : aucun email d'aucune source. On retourne
+     *  les noms pour que l'admin sache qui contacter manuellement. */
+    skipped: Array<{ name: string; reason: string }>;
   };
 };
 
@@ -186,32 +194,62 @@ export async function cancelOrPostponeSession(
   const messageBody = userMessage || defaultMessage;
 
   // 5. Determiner pour chaque inscription qui notifier
+  //    Logique amelioree Gilles 2026-05-28 : si l'inscription passe
+  //    par un partenaire (referrer_company_id != null) mais que le
+  //    partenaire n'a aucun email connu (ni companies.email ni
+  //    contact_referent_email), on tombe en fallback sur l'apprenant
+  //    direct au lieu de skipper en silence. Si meme l'apprenant n'a
+  //    pas d'email -> on remonte le skipped pour que l'admin sache.
   const partnerEmailsMap = new Map<
     string,
     { name: string | null; learners: string[] }
   >();
   const directLearnerEmails: Array<{ email: string; name: string }> = [];
+  let fallbackCount = 0;
+  const skippedList: Array<{ name: string; reason: string }> = [];
 
   for (const r of rows) {
     if (r.referrerCompanyId) {
-      // Inscription via prescripteur : on notifie le prescripteur
-      // (referrer.email en priorite, sinon contact_referent_email)
-      const emailKey = r.referrerEmail ?? r.contactReferentEmail ?? null;
-      if (!emailKey) continue;
-      const existing = partnerEmailsMap.get(emailKey);
-      if (existing) {
-        existing.learners.push(r.learnerName || "Apprenant");
+      const partnerEmail = r.referrerEmail ?? r.contactReferentEmail ?? null;
+      if (partnerEmail) {
+        const existing = partnerEmailsMap.get(partnerEmail);
+        if (existing) {
+          existing.learners.push(r.learnerName || "Apprenant");
+        } else {
+          partnerEmailsMap.set(partnerEmail, {
+            name: r.referrerName ?? r.contactReferentName ?? null,
+            learners: [r.learnerName || "Apprenant"],
+          });
+        }
+      } else if (r.learnerEmail) {
+        // Fallback : pas d'email partenaire -> on notifie l'apprenant
+        // pour ne pas laisser de trou dans la communication.
+        directLearnerEmails.push({
+          email: r.learnerEmail,
+          name: r.learnerName || "Apprenant",
+        });
+        fallbackCount += 1;
+        console.warn(
+          "[cancelOrPostpone] fallback vers l'apprenant car OF sans email",
+          { requestId: r.id, learnerName: r.learnerName },
+        );
       } else {
-        partnerEmailsMap.set(emailKey, {
-          name: r.referrerName ?? r.contactReferentName ?? null,
-          learners: [r.learnerName || "Apprenant"],
+        skippedList.push({
+          name: r.learnerName || "Apprenant inconnu",
+          reason:
+            "OF/prescripteur sans email ET apprenant sans email — à contacter manuellement",
         });
       }
     } else if (r.learnerEmail) {
-      // Apprenant direct : notif a l'apprenant
+      // Apprenant direct (pas de partenaire) : notif a l'apprenant
       directLearnerEmails.push({
         email: r.learnerEmail,
         name: r.learnerName || "Apprenant",
+      });
+    } else {
+      skippedList.push({
+        name: r.learnerName || "Apprenant inconnu",
+        reason: "Apprenant direct sans email — à contacter manuellement",
       });
     }
   }
@@ -353,6 +391,8 @@ export async function cancelOrPostponeSession(
       learnersDirect: notifLearners,
       partners: notifPartners,
       trainerNotified,
+      fallbackToLearner: fallbackCount,
+      skipped: skippedList,
     },
   };
 }

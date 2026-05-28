@@ -388,7 +388,7 @@ export default async function SessionDetailPage({
     supabase
       .from("inscription_requests")
       .select(
-        "id, referrer_company_id, referrer:companies!referrer_company_id(name)",
+        "id, referrer_company_id, contact_referent_email, referrer:companies!referrer_company_id(name, email)",
       )
       .eq("target_session_id", id),
     supabase
@@ -414,17 +414,25 @@ export default async function SessionDetailPage({
   const insRows = (inscriptionsForCancel ?? []) as unknown as Array<{
     id: string;
     referrer_company_id: string | null;
+    contact_referent_email: string | null;
     referrer:
-      | { name: string }
-      | Array<{ name: string }>
+      | { name: string; email: string | null }
+      | Array<{ name: string; email: string | null }>
       | null;
   }>;
+  // Set des noms de partenaires uniques + Set de ceux SANS email
+  // (ni companies.email ni contact_referent_email) pour les afficher
+  // en warning dans la modale (Gilles 2026-05-28).
   const partnerNamesSet = new Set<string>();
+  const partnersWithoutEmailSet = new Set<string>();
   let directCount = 0;
   insRows.forEach((r) => {
     if (r.referrer_company_id) {
       const ref = Array.isArray(r.referrer) ? r.referrer[0] : r.referrer;
-      partnerNamesSet.add(ref?.name ?? "Partenaire");
+      const partnerName = ref?.name ?? "Partenaire";
+      partnerNamesSet.add(partnerName);
+      const hasEmail = !!(ref?.email || r.contact_referent_email);
+      if (!hasEmail) partnersWithoutEmailSet.add(partnerName);
     } else {
       directCount += 1;
     }
@@ -433,6 +441,7 @@ export default async function SessionDetailPage({
     learnersDirect: directCount,
     partners: partnerNamesSet.size,
     partnersList: Array.from(partnerNamesSet),
+    partnersWithoutEmail: Array.from(partnersWithoutEmailSet),
     trainerHasEmail: !!trainerRow?.email,
   };
   const futureSessionsList = ((futureSessionsRaw ?? []) as unknown as Array<{
