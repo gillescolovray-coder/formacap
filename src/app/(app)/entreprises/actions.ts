@@ -126,6 +126,11 @@ function buildPayload(formData: FormData) {
     gpsSourceRaw === "auto" || gpsSourceRaw === "manual" ? gpsSourceRaw : null;
   const gps_updated_at = parseText(formData.get("gps_updated_at"));
 
+  // Representant legal (Gilles 2026-05-28, migration 0110)
+  const repCivRaw = parseText(formData.get("representant_civility"));
+  const representant_civility =
+    repCivRaw === "M." || repCivRaw === "Mme" ? repCivRaw : null;
+
   return {
     name: parseText(formData.get("name")),
     legal_form: parseText(formData.get("legal_form")),
@@ -152,7 +157,46 @@ function buildPayload(formData: FormData) {
     website: parseText(formData.get("website")),
     notes: parseText(formData.get("notes")),
     is_active: formData.get("is_active") === "on",
+    representant_civility,
+    representant_first_name: parseText(formData.get("representant_first_name")),
+    representant_last_name: parseText(formData.get("representant_last_name")),
+    representant_job_title: parseText(formData.get("representant_job_title")),
   };
+}
+
+/**
+ * Server action : liste les apprenants rattaches a une entreprise.
+ * Utilisee par le picker "Reprendre les infos d'un apprenant" sur la
+ * fiche entreprise et dans les formulaires d'inscription (bouton
+ * "C'est le meme que l'apprenant"). Gilles 2026-05-28.
+ */
+export async function listLearnersOfCompany(companyId: string): Promise<
+  Array<{
+    id: string;
+    civility: string | null;
+    first_name: string | null;
+    last_name: string | null;
+    job_title: string | null;
+  }>
+> {
+  if (!companyId) return [];
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return [];
+  const { data } = await supabase
+    .from("learners")
+    .select("id, civility, first_name, last_name, job_title")
+    .eq("company_id", companyId)
+    .order("last_name", { ascending: true });
+  return (data ?? []) as Array<{
+    id: string;
+    civility: string | null;
+    first_name: string | null;
+    last_name: string | null;
+    job_title: string | null;
+  }>;
 }
 
 export async function createCompany(formData: FormData) {

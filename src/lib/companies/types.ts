@@ -38,6 +38,12 @@ export type Company = {
   gps_source: "auto" | "manual" | null;
   gps_updated_at: string | null;
   is_active: boolean;
+  // Representant legal de la societe (PDG, gerant...) — signataire
+  // de la convention de formation. Migration 0110, Gilles 2026-05-28.
+  representant_civility: "M." | "Mme" | null;
+  representant_first_name: string | null;
+  representant_last_name: string | null;
+  representant_job_title: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;

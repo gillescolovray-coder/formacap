@@ -12,6 +12,7 @@ import {
   MapPin,
   Phone,
   Phone as PhoneIcon,
+  Shield,
   Tag,
   Type,
   Users,
@@ -33,6 +34,7 @@ import { AutoSyncBadge } from "@/components/auto-sync-badge";
 import { ContactsBuilder } from "./_contacts-builder";
 import { CompanyGpsSection } from "./_gps-section";
 import { SireneLookup } from "./_sirene-lookup";
+import { LegalRepLearnerPicker } from "./_legal-rep-picker";
 
 type CompanyFormProps = {
   company?: Company;
@@ -516,6 +518,83 @@ export function CompanyForm({
               type="url"
               defaultValue={dv("website")}
               placeholder="https://…"
+            />
+          </div>
+        </div>
+      </CollapsibleSection>
+
+      {/* Representant legal — bloc dedie (Gilles 2026-05-28).
+          Distinct des contacts car son role juridique est unique :
+          c'est lui qui signe la convention. Optionnel. */}
+      <CollapsibleSection
+        icon={Shield}
+        title="Représentant légal"
+        description="Personne qui engage juridiquement la société (PDG, gérant, président). Signera la convention de formation."
+        accent="amber"
+        id="representant-legal"
+      >
+        <div className="space-y-4">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <p className="text-xs text-slate-500 italic flex-1 min-w-[200px]">
+              Champ optionnel. Si renseigné, ces informations apparaîtront
+              automatiquement sur toutes les conventions de formation
+              futures pour cette société.
+            </p>
+            {company?.id && (
+              <LegalRepLearnerPicker
+                companyId={company.id}
+                fieldPrefix={fieldPrefix}
+              />
+            )}
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-[140px_1fr_1fr]">
+            <div className="space-y-1.5">
+              <Label htmlFor={fn("representant_civility")}>Civilité</Label>
+              <select
+                id={fn("representant_civility")}
+                name={fn("representant_civility")}
+                defaultValue={dv("representant_civility")}
+                className="flex h-9 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-zinc-900 px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-500"
+              >
+                <option value="">—</option>
+                <option value="M.">M.</option>
+                <option value="Mme">Mme</option>
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor={fn("representant_first_name")}>Prénom</Label>
+              <Input
+                id={fn("representant_first_name")}
+                name={fn("representant_first_name")}
+                defaultValue={dv("representant_first_name")}
+                placeholder="Jean"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor={fn("representant_last_name")}>Nom</Label>
+              <Input
+                id={fn("representant_last_name")}
+                name={fn("representant_last_name")}
+                defaultValue={dv("representant_last_name")}
+                placeholder="DUPONT"
+                className="uppercase"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor={fn("representant_job_title")}>
+              Fonction
+              <span className="ml-2 text-[10px] font-normal text-slate-500">
+                (ex: Gérant, Président, Directeur général…)
+              </span>
+            </Label>
+            <Input
+              id={fn("representant_job_title")}
+              name={fn("representant_job_title")}
+              defaultValue={dv("representant_job_title")}
+              placeholder="Gérant"
             />
           </div>
         </div>

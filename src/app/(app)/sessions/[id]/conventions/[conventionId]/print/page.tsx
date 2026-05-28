@@ -47,7 +47,7 @@ export default async function ConventionPrintPage({
         formation:formations(id, title, duration_hours, general_objective, operational_objectives),
         location_ref:formation_locations!location_id(name, address, postal_code, city)
       ),
-      company:companies(id, name, siret, address, postal_code, city)
+      company:companies(id, name, siret, address, postal_code, city, representant_civility, representant_first_name, representant_last_name, representant_job_title)
       `,
     )
     .eq("id", conventionId)
@@ -98,6 +98,10 @@ export default async function ConventionPrintPage({
       address: string | null;
       postal_code: string | null;
       city: string | null;
+      representant_civility: string | null;
+      representant_first_name: string | null;
+      representant_last_name: string | null;
+      representant_job_title: string | null;
     } | null;
   };
 
@@ -164,19 +168,22 @@ export default async function ConventionPrintPage({
     return acc + mat + apm;
   }, 0);
 
-  // Fix temporaire Gilles 2026-05-28 : on a constate que le contact
-  // primaire de l'entreprise (company_contacts.is_primary) etait
-  // parfois un APPRENANT (saisie historique incorrecte), ce qui faisait
-  // apparaitre un nom d'apprenant comme "representant" et "signataire"
-  // de la convention. Convention juridiquement invalide.
-  //
-  // En attendant la vraie solution (champ companies.representant_*
-  // dedie + formulaires), on n'auto-pioche plus dans company_contacts.
-  // On utilise uniquement le champ texte libre `conv.contact_name`
-  // saisi manuellement sur la convention. Si rien -> zone vide a
-  // remplir a la main par le client avant signature.
-  const rhFullName = (conv.contact_name ?? "").trim();
-  const rhJobTitle = "";
+  // Representant legal de la societe cliente (Gilles 2026-05-28).
+  // Stocke dans companies.representant_* (migration 0110) — champ
+  // dedie distinct des contacts et des apprenants. Si absent,
+  // fallback sur conv.contact_name (champ libre saisi a la main
+  // sur la convention). Si tout est vide -> ligne pointillee a
+  // remplir manuellement avant signature.
+  const repCivility = conv.company?.representant_civility ?? "";
+  const repFirstName = conv.company?.representant_first_name ?? "";
+  const repLastName = conv.company?.representant_last_name ?? "";
+  const repFromCompany = [repCivility, repFirstName, repLastName]
+    .filter((s) => s && s.trim())
+    .join(" ")
+    .trim();
+  const rhFullName =
+    repFromCompany || (conv.contact_name ?? "").trim();
+  const rhJobTitle = (conv.company?.representant_job_title ?? "").trim();
 
   // Organisme
   const { data: membership } = await supabase
