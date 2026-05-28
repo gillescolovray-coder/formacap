@@ -164,24 +164,19 @@ export default async function ConventionPrintPage({
     return acc + mat + apm;
   }, 0);
 
-  // Contact RH côté société (pour "Représentée par")
-  const { data: rhContact } = conv.company
-    ? await supabase
-        .from("company_contacts")
-        .select("first_name, last_name, job_title")
-        .eq("company_id", conv.company.id)
-        .eq("is_primary", true)
-        .limit(1)
-        .maybeSingle<{
-          first_name: string | null;
-          last_name: string | null;
-          job_title: string | null;
-        }>()
-    : { data: null };
-  const rhFullName = rhContact
-    ? [rhContact.first_name, rhContact.last_name].filter(Boolean).join(" ")
-    : conv.contact_name ?? "";
-  const rhJobTitle = rhContact?.job_title ?? "—";
+  // Fix temporaire Gilles 2026-05-28 : on a constate que le contact
+  // primaire de l'entreprise (company_contacts.is_primary) etait
+  // parfois un APPRENANT (saisie historique incorrecte), ce qui faisait
+  // apparaitre un nom d'apprenant comme "representant" et "signataire"
+  // de la convention. Convention juridiquement invalide.
+  //
+  // En attendant la vraie solution (champ companies.representant_*
+  // dedie + formulaires), on n'auto-pioche plus dans company_contacts.
+  // On utilise uniquement le champ texte libre `conv.contact_name`
+  // saisi manuellement sur la convention. Si rien -> zone vide a
+  // remplir a la main par le client avant signature.
+  const rhFullName = (conv.contact_name ?? "").trim();
+  const rhJobTitle = "";
 
   // Organisme
   const { data: membership } = await supabase
@@ -640,12 +635,30 @@ export default async function ConventionPrintPage({
               <strong>SIRET :</strong>{" "}
               <Highlight>{company?.siret ?? "—"}</Highlight>
             </p>
+            {/* Fix Gilles 2026-05-28 : si pas de signataire renseigne
+                manuellement sur la convention, on affiche une ligne
+                pointillee a remplir a la main par le client (evite
+                qu'un nom d'apprenant ne soit ecrit a la place du
+                vrai representant legal). */}
             <p className="text-[12px] mt-1">
               <strong>Représentée par :</strong>{" "}
-              <Highlight>{rhFullName || "—"}</Highlight>
+              {rhFullName ? (
+                <Highlight>{rhFullName}</Highlight>
+              ) : (
+                <span className="inline-block min-w-[220px] border-b border-dotted border-slate-500 align-bottom">
+                  &nbsp;
+                </span>
+              )}
             </p>
             <p className="text-[12px]">
-              <strong>Fonction :</strong> <Highlight>{rhJobTitle}</Highlight>
+              <strong>Fonction :</strong>{" "}
+              {rhJobTitle ? (
+                <Highlight>{rhJobTitle}</Highlight>
+              ) : (
+                <span className="inline-block min-w-[180px] border-b border-dotted border-slate-500 align-bottom">
+                  &nbsp;
+                </span>
+              )}
             </p>
             <div className="text-[10px] italic text-slate-500 mt-2">
               ci-après dénommée « le Bénéficiaire »
@@ -1253,7 +1266,14 @@ export default async function ConventionPrintPage({
               <Highlight>{company?.name ?? "—"}</Highlight>
             </p>
             <p className="text-[11px] text-slate-600 mt-0.5">
-              Signataire : <Highlight>{rhFullName || "—"}</Highlight>
+              Signataire :{" "}
+              {rhFullName ? (
+                <Highlight>{rhFullName}</Highlight>
+              ) : (
+                <span className="inline-block min-w-[180px] border-b border-dotted border-slate-500 align-bottom">
+                  &nbsp;
+                </span>
+              )}
             </p>
             <p className="text-[10px] text-slate-500 italic mt-1">
               Cachet et signature
