@@ -192,13 +192,13 @@ function StepBadges({ row }: { row: InscriptionRow }) {
     },
   ];
   return (
-    <div className="inline-flex items-center gap-1">
+    <div className="flex flex-col gap-0.5 items-start">
       {steps.map((s, i) => (
         <span
           key={i}
           title={s.title}
           className={
-            "inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-bold border " +
+            "inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold border whitespace-nowrap " +
             (s.done
               ? "bg-emerald-100 text-emerald-700 border-emerald-300"
               : "bg-zinc-50 text-zinc-400 border-zinc-200")
