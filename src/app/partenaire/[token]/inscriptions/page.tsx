@@ -37,14 +37,15 @@ export default async function PartnerInscriptionsPage({
     .from("inscription_requests")
     .select(
       `
-      id, received_at,
+      id, received_at, target_session_id, company_id,
       prospect_first_name, prospect_last_name, prospect_email, prospect_phone,
       company_name_freetext,
       contact_referent_first_name, contact_referent_last_name,
       contact_referent_email, contact_referent_phone, contact_referent_role,
+      stage:inscription_stages(key),
       learner:learners(id, first_name, last_name, email, phone, job_title),
       company:companies!company_id(id, name, city),
-      session:sessions(id, internal_code, start_date, end_date, modality,
+      session:sessions(id, internal_code, start_date, end_date, modality, status,
         formation:formations(id, title, duration_hours, duration_days))
     `,
     )
@@ -54,6 +55,8 @@ export default async function PartnerInscriptionsPage({
   type Raw = {
     id: string;
     received_at: string;
+    target_session_id: string | null;
+    company_id: string | null;
     prospect_first_name: string | null;
     prospect_last_name: string | null;
     prospect_email: string | null;
@@ -64,6 +67,10 @@ export default async function PartnerInscriptionsPage({
     contact_referent_email: string | null;
     contact_referent_phone: string | null;
     contact_referent_role: string | null;
+    stage:
+      | { key: string }
+      | Array<{ key: string }>
+      | null;
     learner:
       | {
           id: string;
@@ -93,6 +100,7 @@ export default async function PartnerInscriptionsPage({
           start_date: string | null;
           end_date: string | null;
           modality: string | null;
+          status: string | null;
           formation:
             | {
                 id: string;
@@ -114,6 +122,7 @@ export default async function PartnerInscriptionsPage({
           start_date: string | null;
           end_date: string | null;
           modality: string | null;
+          status: string | null;
           formation:
             | {
                 id: string;
@@ -131,11 +140,77 @@ export default async function PartnerInscriptionsPage({
         }>
       | null;
   };
-  const rows: InscriptionRow[] = ((requests ?? []) as unknown as Raw[]).map(
+
+  const rawList = (requests ?? []) as unknown as Raw[];
+
+  // Charge conventions (par session_id + company_id) et convocations
+  // (par session_enrollments lies aux inscriptions) en 2 requetes
+  // batch pour eviter N+1.
+  const sessionIds = Array.from(
+    new Set(rawList.map((r) => r.target_session_id).filter(Boolean)),
+  ) as string[];
+  const companyIds = Array.from(
+    new Set(rawList.map((r) => r.company_id).filter(Boolean)),
+  ) as string[];
+  const requestIds = rawList.map((r) => r.id);
+
+  // Conventions par couple (session_id, company_id) — Map cle = `${session}|${company}`
+  const conventionsMap = new Map<
+    string,
+    { status: string | null; sent_at: string | null; signed_at: string | null }
+  >();
+  if (sessionIds.length > 0 && companyIds.length > 0) {
+    const { data: convs } = await supabase
+      .from("session_conventions")
+      .select("session_id, company_id, status, sent_at, signed_at")
+      .in("session_id", sessionIds)
+      .in("company_id", companyIds);
+    (convs ?? []).forEach(
+      (c: {
+        session_id: string;
+        company_id: string;
+        status: string | null;
+        sent_at: string | null;
+        signed_at: string | null;
+      }) => {
+        conventionsMap.set(`${c.session_id}|${c.company_id}`, {
+          status: c.status,
+          sent_at: c.sent_at,
+          signed_at: c.signed_at,
+        });
+      },
+    );
+  }
+
+  // Convocations envoyees : on lit session_enrollments.inscription_email_sent_at
+  // qui est mis a jour quand la convocation part. Le lien avec
+  // inscription_request se fait via session_enrollments.inscription_request_id.
+  const convocationsByRequestId = new Map<string, string | null>();
+  if (requestIds.length > 0) {
+    const { data: enrolls } = await supabase
+      .from("session_enrollments")
+      .select("inscription_request_id, inscription_email_sent_at")
+      .in("inscription_request_id", requestIds);
+    (enrolls ?? []).forEach(
+      (e: {
+        inscription_request_id: string | null;
+        inscription_email_sent_at: string | null;
+      }) => {
+        if (e.inscription_request_id) {
+          convocationsByRequestId.set(
+            e.inscription_request_id,
+            e.inscription_email_sent_at,
+          );
+        }
+      },
+    );
+  }
+  const rows: InscriptionRow[] = rawList.map(
     (r) => {
       const learner = Array.isArray(r.learner) ? r.learner[0] : r.learner;
       const company = Array.isArray(r.company) ? r.company[0] : r.company;
       const session = Array.isArray(r.session) ? r.session[0] : r.session;
+      const stage = Array.isArray(r.stage) ? r.stage[0] : r.stage;
       let formation: {
         id: string;
         title: string;
@@ -159,6 +234,10 @@ export default async function PartnerInscriptionsPage({
               role: r.contact_referent_role,
             }
           : null;
+      const convKey =
+        session?.id && company?.id ? `${session.id}|${company.id}` : null;
+      const conv = convKey ? conventionsMap.get(convKey) ?? null : null;
+      const convocSentAt = convocationsByRequestId.get(r.id) ?? null;
       return {
         id: r.id,
         received_at: r.received_at,
@@ -181,9 +260,16 @@ export default async function PartnerInscriptionsPage({
         startDate: session?.start_date ?? null,
         endDate: session?.end_date ?? null,
         modality: session?.modality ?? null,
+        sessionStatus: session?.status ?? null,
         formationTitle: formation?.title ?? "—",
         durationHours: formation?.duration_hours ?? null,
         durationDays: formation?.duration_days ?? null,
+        // Suivi metier des etapes (Gilles 2026-05-28)
+        isConfirmed: stage?.key === "confirmed",
+        conventionStatus: conv?.status ?? null,
+        conventionSentAt: conv?.sent_at ?? null,
+        conventionSignedAt: conv?.signed_at ?? null,
+        convocationSentAt: convocSentAt,
       };
     },
   );

@@ -6,11 +6,14 @@ import Link from "next/link";
 import {
   Building2,
   Calendar,
+  Check,
   Clock,
+  FileSignature,
   Mail,
   Pencil,
   Phone,
   Search,
+  Send,
   Trash2,
   UserCheck,
   UserPlus,
@@ -44,9 +47,18 @@ export type InscriptionRow = {
   startDate: string | null;
   endDate: string | null;
   modality: string | null;
+  /** Vrai statut de la session : confirmed, postponed, cancelled,
+   *  planned, in_progress, completed, draft, archived (Gilles 2026-05-28). */
+  sessionStatus: string | null;
   formationTitle: string;
   durationHours: number | null;
   durationDays: number | null;
+  // Suivi metier des etapes — Gilles 2026-05-28
+  isConfirmed: boolean;
+  conventionStatus: string | null;
+  conventionSentAt: string | null;
+  conventionSignedAt: string | null;
+  convocationSentAt: string | null;
 };
 
 type DateFilter = "all" | "upcoming" | "this_week" | "this_month" | "past";
@@ -56,6 +68,149 @@ const MODALITY_LABELS: Record<string, string> = {
   distanciel: "Distanciel",
   hybride: "Hybride",
 };
+
+// Statut REEL de la session (Gilles 2026-05-28 : remplace l'ancien
+// calcul base sur les dates qui ne correspondait pas a la realite
+// metier). On simplifie l'affichage cote partenaire : seuls 3
+// statuts sont parlants pour lui (les autres sont regroupes).
+const SESSION_STATUS_DISPLAY: Record<
+  string,
+  { label: string; cls: string }
+> = {
+  confirmed: {
+    label: "Confirmée",
+    cls: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  },
+  postponed: {
+    label: "Reportée",
+    cls: "bg-amber-100 text-amber-800 border-amber-200",
+  },
+  cancelled: {
+    label: "Annulée",
+    cls: "bg-rose-100 text-rose-700 border-rose-200",
+  },
+  in_progress: {
+    label: "En cours",
+    cls: "bg-cyan-100 text-cyan-700 border-cyan-200",
+  },
+  completed: {
+    label: "Terminée",
+    cls: "bg-zinc-100 text-zinc-700 border-zinc-200",
+  },
+  planned: {
+    label: "Planifiée",
+    cls: "bg-blue-100 text-blue-700 border-blue-200",
+  },
+  draft: {
+    label: "Brouillon",
+    cls: "bg-zinc-100 text-zinc-500 border-zinc-200",
+  },
+  archived: {
+    label: "Archivée",
+    cls: "bg-zinc-100 text-zinc-500 border-zinc-200",
+  },
+};
+
+function sessionStatusInfo(status: string | null): {
+  label: string;
+  cls: string;
+} {
+  if (!status) {
+    return {
+      label: "—",
+      cls: "bg-zinc-100 text-zinc-500 border-zinc-200",
+    };
+  }
+  return (
+    SESSION_STATUS_DISPLAY[status] ?? {
+      label: status,
+      cls: "bg-zinc-100 text-zinc-600 border-zinc-200",
+    }
+  );
+}
+
+function fmtDateTime(s: string | null): string {
+  if (!s) return "";
+  return new Date(s).toLocaleDateString("fr-FR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+  });
+}
+
+/**
+ * Composant des 4 mini-badges d'etapes par apprenant
+ * (Gilles 2026-05-28) :
+ *   1. Inscription confirmee (stage_id = 'confirmed')
+ *   2. Convention envoyee (session_conventions.sent_at)
+ *   3. Convention signee (session_conventions.signed_at)
+ *   4. Convocation envoyee (session_enrollments.inscription_email_sent_at)
+ *
+ * Chaque badge : vert avec icone + check si etape OK, gris vide
+ * sinon. Tooltip au survol pour le label complet + date.
+ */
+function StepBadges({ row }: { row: InscriptionRow }) {
+  const steps: Array<{
+    done: boolean;
+    label: string;
+    title: string;
+    icon: React.ReactNode;
+  }> = [
+    {
+      done: row.isConfirmed,
+      label: "Insc",
+      icon: <Check className="h-3 w-3" />,
+      title: row.isConfirmed
+        ? "Inscription confirmée"
+        : "Inscription en attente de confirmation",
+    },
+    {
+      done: !!row.conventionSentAt,
+      label: "Env",
+      icon: <Send className="h-3 w-3" />,
+      title: row.conventionSentAt
+        ? `Convention envoyée le ${fmtDateTime(row.conventionSentAt)}`
+        : "Convention non encore envoyée",
+    },
+    {
+      done: !!row.conventionSignedAt,
+      label: "Sig",
+      icon: <FileSignature className="h-3 w-3" />,
+      title: row.conventionSignedAt
+        ? `Convention signée le ${fmtDateTime(row.conventionSignedAt)}`
+        : row.conventionStatus === "cancelled"
+          ? "Convention annulée"
+          : "Convention non encore signée",
+    },
+    {
+      done: !!row.convocationSentAt,
+      label: "Conv",
+      icon: <Mail className="h-3 w-3" />,
+      title: row.convocationSentAt
+        ? `Convocation envoyée le ${fmtDateTime(row.convocationSentAt)}`
+        : "Convocation non encore envoyée à l'apprenant",
+    },
+  ];
+  return (
+    <div className="inline-flex items-center gap-1">
+      {steps.map((s, i) => (
+        <span
+          key={i}
+          title={s.title}
+          className={
+            "inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-bold border " +
+            (s.done
+              ? "bg-emerald-100 text-emerald-700 border-emerald-300"
+              : "bg-zinc-50 text-zinc-400 border-zinc-200")
+          }
+        >
+          {s.icon}
+          <span>{s.label}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
 
 function formatDate(s: string | null): string {
   if (!s) return "—";
@@ -229,14 +384,22 @@ export function InscriptionsList({
         <>
         {/* === VUE MOBILE : cartes empilées (≤ md) === */}
         <div className="md:hidden space-y-3">
-          {filtered.map((r) => {
-            const isFinished = r.endDate && r.endDate < today;
-            const isStarted = r.startDate && r.startDate <= today;
-            const statusBadge = isFinished
-              ? { label: "Terminée", cls: "bg-emerald-100 text-emerald-700 border-emerald-200" }
-              : isStarted
-                ? { label: "En cours", cls: "bg-amber-100 text-amber-700 border-amber-200" }
-                : { label: "À venir", cls: "bg-cyan-100 text-cyan-700 border-cyan-200" };
+          {(() => {
+            // Alternance fond mobile par session — Gilles 2026-05-28
+            const seenSessionsMobile = new Map<string, number>();
+            let toggleMobile = 0;
+            filtered.forEach((r) => {
+              const sid = r.sessionId ?? "no-session";
+              if (!seenSessionsMobile.has(sid)) {
+                seenSessionsMobile.set(sid, toggleMobile);
+                toggleMobile = toggleMobile === 0 ? 1 : 0;
+              }
+            });
+            return filtered.map((r) => {
+            const statusInfo = sessionStatusInfo(r.sessionStatus);
+            const sid = r.sessionId ?? "no-session";
+            const bgClass =
+              seenSessionsMobile.get(sid) === 0 ? "bg-cyan-50/40" : "bg-white";
             const modalityLabel = r.modality
               ? MODALITY_LABELS[r.modality] ?? r.modality
               : null;
@@ -252,17 +415,21 @@ export function InscriptionsList({
             return (
               <article
                 key={r.id}
-                className="rounded-xl border border-zinc-200 bg-white p-3 space-y-2"
+                className={`rounded-xl border border-zinc-200 p-3 space-y-2 ${bgClass}`}
               >
                 <div className="flex items-start justify-between gap-2">
                   <h3 className="font-bold text-sm text-zinc-900 leading-snug flex-1 min-w-0">
                     {r.formationTitle}
                   </h3>
                   <span
-                    className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${statusBadge.cls}`}
+                    className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${statusInfo.cls}`}
                   >
-                    {statusBadge.label}
+                    {statusInfo.label}
                   </span>
+                </div>
+                {/* Etapes apprenant — 4 mini-badges */}
+                <div>
+                  <StepBadges row={r} />
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-[11px]">
                   {modalityLabel && (
@@ -284,8 +451,8 @@ export function InscriptionsList({
                       {durationLabel}
                     </span>
                   )}
-                  <span className="inline-flex items-center gap-1 text-zinc-700 font-bold">
-                    <Calendar className="h-3 w-3 text-zinc-400" />
+                  <span className="inline-flex items-center gap-1 text-zinc-900 font-extrabold text-sm">
+                    <Calendar className="h-3.5 w-3.5 text-zinc-500" />
                     {formatDate(r.startDate)}
                   </span>
                 </div>
@@ -378,7 +545,8 @@ export function InscriptionsList({
                 </div>
               </article>
             );
-          })}
+            });
+          })()}
         </div>
 
         {/* === VUE DESKTOP : tableau (≥ md) === */}
@@ -389,30 +557,33 @@ export function InscriptionsList({
                 <Th>Apprenant</Th>
                 <Th>Entreprise</Th>
                 <Th>Formation</Th>
-                <Th>Dates</Th>
-                <Th>Statut</Th>
-                <Th>Inscrit le</Th>
+                <Th>Date session</Th>
+                <Th>Statut session</Th>
+                <Th>Étapes apprenant</Th>
                 <Th>Actions</Th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map((r) => {
-                const isFinished = r.endDate && r.endDate < today;
-                const isStarted = r.startDate && r.startDate <= today;
-                const statusBadge = isFinished
-                  ? {
-                      label: "Terminée",
-                      cls: "bg-emerald-100 text-emerald-700 border-emerald-200",
-                    }
-                  : isStarted
-                    ? {
-                        label: "En cours",
-                        cls: "bg-amber-100 text-amber-700 border-amber-200",
-                      }
-                    : {
-                        label: "À venir",
-                        cls: "bg-cyan-100 text-cyan-700 border-cyan-200",
-                      };
+              {(() => {
+                // Alternance fond par SESSION (Option A — Gilles 2026-05-28).
+                // 2 sessions consecutives ont des fonds differents pour les
+                // identifier visuellement.
+                const seenSessions = new Map<string, number>();
+                let toggle = 0;
+                filtered.forEach((r) => {
+                  const sid = r.sessionId ?? "no-session";
+                  if (!seenSessions.has(sid)) {
+                    seenSessions.set(sid, toggle);
+                    toggle = toggle === 0 ? 1 : 0;
+                  }
+                });
+                return filtered.map((r) => {
+                const statusInfo = sessionStatusInfo(r.sessionStatus);
+                const sid = r.sessionId ?? "no-session";
+                const bgClass =
+                  seenSessions.get(sid) === 0
+                    ? "bg-cyan-50/40"
+                    : "bg-white";
 
                 const modalityLabel = r.modality
                   ? MODALITY_LABELS[r.modality] ?? r.modality
@@ -435,7 +606,7 @@ export function InscriptionsList({
                 return (
                   <tr
                     key={r.id}
-                    className="border-t border-zinc-200 hover:bg-zinc-50/50 align-top"
+                    className={`border-t border-zinc-200 align-top transition-colors hover:bg-amber-50/30 ${bgClass}`}
                   >
                     {/* Apprenant + email + téléphone */}
                     <td className="px-3 py-3">
@@ -527,10 +698,10 @@ export function InscriptionsList({
                       )}
                     </td>
 
-                    {/* Dates */}
+                    {/* Date session (en GRAS — Gilles 2026-05-28) */}
                     <td className="px-3 py-3 text-xs">
-                      <div className="inline-flex items-center gap-1 text-zinc-700">
-                        <Calendar className="h-3.5 w-3.5 text-zinc-400" />
+                      <div className="inline-flex items-center gap-1 text-zinc-900 font-bold text-sm">
+                        <Calendar className="h-3.5 w-3.5 text-zinc-500" />
                         {formatDate(r.startDate)}
                       </div>
                       {r.endDate && r.endDate !== r.startDate && (
@@ -538,23 +709,26 @@ export function InscriptionsList({
                           → {formatDate(r.endDate)}
                         </div>
                       )}
+                      <div className="text-[10px] text-zinc-400 mt-1 inline-flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        Inscrit le{" "}
+                        {new Date(r.received_at).toLocaleDateString("fr-FR")}
+                      </div>
                     </td>
 
-                    {/* Statut */}
+                    {/* Statut SESSION reel (confirmee / reportee /
+                        annulee... — Gilles 2026-05-28). */}
                     <td className="px-3 py-3">
                       <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${statusBadge.cls}`}
+                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${statusInfo.cls}`}
                       >
-                        {statusBadge.label}
+                        {statusInfo.label}
                       </span>
                     </td>
 
-                    {/* Inscrit le */}
-                    <td className="px-3 py-3 text-xs text-zinc-600">
-                      <span className="inline-flex items-center gap-1">
-                        <Clock className="h-3.5 w-3.5 text-zinc-400" />
-                        {new Date(r.received_at).toLocaleDateString("fr-FR")}
-                      </span>
+                    {/* Etapes par apprenant (4 mini-badges) */}
+                    <td className="px-3 py-3">
+                      <StepBadges row={r} />
                     </td>
 
                     {/* Actions Ajouter / Modifier / Supprimer
@@ -594,7 +768,8 @@ export function InscriptionsList({
                     </td>
                   </tr>
                 );
-              })}
+              });
+              })()}
             </tbody>
           </table>
         </div>
