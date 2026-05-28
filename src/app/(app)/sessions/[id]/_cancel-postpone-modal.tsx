@@ -38,7 +38,10 @@ function buildDefaultMessage(
   decision: "cancel" | "postpone",
   formationTitle: string,
   sourceDateLabel: string,
-  targetDateLabel: string | null,
+  /** Label complet de la session cible (date + titre, format
+   *  "8 juin 2026 — CHORUS PERFECTIONNEMENT..."). Null si pas
+   *  encore selectionnee. */
+  targetSessionLabel: string | null,
 ): string {
   if (decision === "cancel") {
     return `Nous sommes contraints d'annuler la session « ${formationTitle} » prévue le ${sourceDateLabel}, faute d'un nombre suffisant de participants.
@@ -47,10 +50,16 @@ Nous vous prions de nous excuser pour ce désagrément. N'hésitez pas à consul
 
 Pour toute question, contactez-nous par retour d'email.`;
   }
-  const target = targetDateLabel ?? "(date à confirmer)";
-  return `La session « ${formationTitle} » prévue le ${sourceDateLabel} est reportée au ${target} (pour les mêmes contenus et durée).
+  const target =
+    targetSessionLabel ?? "(sélectionnez la session cible ci-dessus)";
+  return `La session « ${formationTitle} » prévue le ${sourceDateLabel} doit être reportée par manque de participants.
 
-Merci de nous confirmer si vous acceptez ce report ou si vous préférez annuler votre inscription. Vous pouvez nous répondre directement par retour d'email.`;
+📅 Nouvelle session proposée :
+${target}
+
+Le contenu pédagogique, la durée et le formateur restent inchangés.
+
+Merci de nous confirmer rapidement si vous acceptez ce report, ou si vous préférez annuler votre inscription. Vous pouvez nous répondre directement par retour d'email.`;
 }
 
 /**
@@ -72,11 +81,11 @@ export function CancelPostponeModal({
   const router = useRouter();
   const [decision, setDecision] = useState<"cancel" | "postpone">("cancel");
   const [targetSessionId, setTargetSessionId] = useState<string>("");
-  // Label de la session cible (pour l'inserer dans le message par defaut)
+  // Label complet de la session cible (date + titre formation) pour
+  // l'inserer dans le message par defaut (Gilles 2026-05-28 :
+  // "mettre dans le texte la session de report proposee").
   const targetSession = futureSessions.find((s) => s.id === targetSessionId);
-  const targetDateLabel = targetSession
-    ? targetSession.label.split(" — ")[0]
-    : null;
+  const targetSessionLabel = targetSession?.label ?? null;
 
   // Message par defaut recalcule en temps reel selon decision + cible.
   // Pre-rempli dans le textarea (Gilles 2026-05-28) — l'utilisateur
@@ -86,7 +95,7 @@ export function CancelPostponeModal({
     decision,
     formationTitle,
     sourceDateLabel,
-    targetDateLabel,
+    targetSessionLabel,
   );
   const [customMessage, setCustomMessage] = useState<string>(defaultMessage);
   const [userHasEdited, setUserHasEdited] = useState(false);
