@@ -131,6 +131,47 @@ export async function uploadSupportAsTrainer(
     );
   }
 
+  // Cle d'idempotence (pattern Stripe / AWS, Gilles 2026-05-28) :
+  // generee cote client a l'ouverture du formulaire, elle nous
+  // permet de detecter un double-clic / retry reseau / refresh. Une
+  // requete avec la meme cle est ignoree silencieusement.
+  //
+  // Si la cle est absente (vieux client cache, appel direct...) on
+  // tombe sur un fallback temporel : pas d'insert si un meme
+  // file_name a deja ete insere dans les 10 dernieres secondes pour
+  // cette session.
+  const clientRequestIdRaw = formData.get("client_request_id");
+  const clientRequestId =
+    typeof clientRequestIdRaw === "string" && clientRequestIdRaw.length > 0
+      ? clientRequestIdRaw
+      : null;
+
+  if (clientRequestId) {
+    const { data: existingByKey } = await supabase
+      .from("session_documents")
+      .select("id")
+      .eq("client_request_id", clientRequestId)
+      .limit(1)
+      .maybeSingle<{ id: string }>();
+    if (existingByKey) {
+      // Idempotence : meme requete deja traitee -> on ne refait rien
+      redirect(`/formateur/${token}/sessions/${sessionId}?uploaded=1`);
+    }
+  } else {
+    const tenSecondsAgo = new Date(Date.now() - 10_000).toISOString();
+    const { data: recent } = await supabase
+      .from("session_documents")
+      .select("id")
+      .eq("session_id", sessionId)
+      .eq("file_name", file.name)
+      .gte("created_at", tenSecondsAgo)
+      .limit(1)
+      .maybeSingle<{ id: string }>();
+    if (recent) {
+      redirect(`/formateur/${token}/sessions/${sessionId}?uploaded=1`);
+    }
+  }
+
   const sanitized = sanitizeFileName(file.name);
   const storagePath = `${ctx.organizationId}/${sessionId}/${Date.now()}-${sanitized}`;
 
@@ -162,9 +203,23 @@ export async function uploadSupportAsTrainer(
       // uploaded_by null car le formateur n'a pas de compte Supabase Auth.
       // L'origine est tracée via les conditions (visibility + token utilisé).
       uploaded_by: null,
+      // Cle d'idempotence (peut etre null pour rester compatible
+      // avec des appels d'anciens clients en cache).
+      client_request_id: clientRequestId,
     });
   if (insertError) {
     await supabase.storage.from("session-documents").remove([storagePath]);
+    // Cas race condition : 2 requetes paralleles avec la meme cle
+    // arrivent au check d'idempotence avant l'INSERT. L'unique index
+    // sur client_request_id rejette le 2eme INSERT (code 23505 ou
+    // message contenant "duplicate key"). On considere ca comme un
+    // succes (la 1ere requete a deja insere).
+    const isDup =
+      insertError.code === "23505" ||
+      (insertError.message ?? "").toLowerCase().includes("duplicate key");
+    if (isDup) {
+      redirect(`/formateur/${token}/sessions/${sessionId}?uploaded=1`);
+    }
     redirect(
       `/formateur/${token}/sessions/${sessionId}?error=${encodeURIComponent(insertError.message)}`,
     );

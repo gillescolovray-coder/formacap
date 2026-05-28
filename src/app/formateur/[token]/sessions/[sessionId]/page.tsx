@@ -37,6 +37,7 @@ import {
 import { TrainerReportForm } from "./_trainer-report-form";
 import { TrainerQrEvaluationButton } from "./_trainer-qr-evaluation-button";
 import { TrainerQrQuizButton } from "./_trainer-qr-quiz-button";
+import { UploadSupportForm } from "./_upload-support-form";
 import {
   createExpressLearnerFromPortal,
   deleteExpressLearnerFromPortal,
@@ -1418,34 +1419,13 @@ export default async function FormateurSessionDetailPage({
             </ul>
           )}
 
-          {/* Formulaire d'upload — auto-marqué "Partagé avec apprenants" */}
-          <form
+          {/* Formulaire d'upload — composant client avec cle
+              d'idempotence, bouton desactive pendant l'upload et
+              regeneration de cle apres succes (Gilles 2026-05-28
+              fix double-upload). */}
+          <UploadSupportForm
             action={uploadSupportAsTrainer.bind(null, token, sessionId)}
-            className="mt-4 pt-3 border-t border-zinc-100 space-y-2"
-          >
-            <label className="text-xs font-medium text-zinc-700 block">
-              Ajouter un support (partagé automatiquement avec les apprenants)
-            </label>
-            <input
-              type="file"
-              name="file"
-              required
-              accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.webp,.txt,.csv"
-              className="block w-full text-xs text-zinc-600 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:font-medium file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 cursor-pointer"
-            />
-            <input
-              type="text"
-              name="description"
-              placeholder="Description (optionnel)"
-              className="block w-full text-xs rounded border border-zinc-300 px-2 py-1"
-            />
-            <button
-              type="submit"
-              className="text-xs px-3 py-1.5 rounded bg-indigo-600 hover:bg-indigo-700 text-white font-semibold"
-            >
-              Téléverser
-            </button>
-          </form>
+          />
         </Module>
 
         {/* Module 7 — Bilan formateur (Qualiopi 11/22/32) */}
