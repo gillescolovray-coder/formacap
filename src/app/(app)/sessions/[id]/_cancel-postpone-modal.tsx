@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Ban, Calendar, Loader2, Send, X } from "lucide-react";
+import { Ban, Calendar, Loader2, RotateCcw, Send, X } from "lucide-react";
 import { cancelOrPostponeSession } from "./cancel-postpone-actions";
 
 type FutureSession = {
@@ -15,6 +15,11 @@ type Props = {
   sessionId: string;
   /** Sessions futures de la meme organisation, pour le report. */
   futureSessions: FutureSession[];
+  /** Titre de la formation — utilise pour pre-remplir le message par
+   *  defaut dans le textarea (Gilles 2026-05-28). */
+  formationTitle: string;
+  /** Date de la session source au format affichable (ex "8 juin 2026"). */
+  sourceDateLabel: string;
   /** Compteurs precalcules cote serveur pour l'apercu des notifs. */
   preview: {
     learnersDirect: number;
@@ -29,6 +34,25 @@ type Props = {
   onClose: () => void;
 };
 
+function buildDefaultMessage(
+  decision: "cancel" | "postpone",
+  formationTitle: string,
+  sourceDateLabel: string,
+  targetDateLabel: string | null,
+): string {
+  if (decision === "cancel") {
+    return `Nous sommes contraints d'annuler la session « ${formationTitle} » prévue le ${sourceDateLabel}, faute d'un nombre suffisant de participants.
+
+Nous vous prions de nous excuser pour ce désagrément. N'hésitez pas à consulter notre catalogue pour vous inscrire à une autre session.
+
+Pour toute question, contactez-nous par retour d'email.`;
+  }
+  const target = targetDateLabel ?? "(date à confirmer)";
+  return `La session « ${formationTitle} » prévue le ${sourceDateLabel} est reportée au ${target} (pour les mêmes contenus et durée).
+
+Merci de nous confirmer si vous acceptez ce report ou si vous préférez annuler votre inscription. Vous pouvez nous répondre directement par retour d'email.`;
+}
+
 /**
  * Modale "Annuler / Reporter cette session" — V1 Gilles 2026-05-28.
  *
@@ -40,13 +64,39 @@ type Props = {
 export function CancelPostponeModal({
   sessionId,
   futureSessions,
+  formationTitle,
+  sourceDateLabel,
   preview,
   onClose,
 }: Props) {
   const router = useRouter();
   const [decision, setDecision] = useState<"cancel" | "postpone">("cancel");
   const [targetSessionId, setTargetSessionId] = useState<string>("");
-  const [customMessage, setCustomMessage] = useState<string>("");
+  // Label de la session cible (pour l'inserer dans le message par defaut)
+  const targetSession = futureSessions.find((s) => s.id === targetSessionId);
+  const targetDateLabel = targetSession
+    ? targetSession.label.split(" — ")[0]
+    : null;
+
+  // Message par defaut recalcule en temps reel selon decision + cible.
+  // Pre-rempli dans le textarea (Gilles 2026-05-28) — l'utilisateur
+  // peut modifier librement. Si on a edite mais qu'on rechange la
+  // decision/cible, on re-injecte le default (le contexte a change).
+  const defaultMessage = buildDefaultMessage(
+    decision,
+    formationTitle,
+    sourceDateLabel,
+    targetDateLabel,
+  );
+  const [customMessage, setCustomMessage] = useState<string>(defaultMessage);
+  const [userHasEdited, setUserHasEdited] = useState(false);
+  // Sync : si l'utilisateur n'a PAS modifie le message manuellement,
+  // on garde le textarea synchro avec le default (qui change selon
+  // la decision ou la session cible). Sinon on respecte sa saisie.
+  useEffect(() => {
+    if (!userHasEdited) setCustomMessage(defaultMessage);
+  }, [defaultMessage, userHasEdited]);
+
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -259,22 +309,43 @@ export function CancelPostponeModal({
             </label>
           </div>
 
-          {/* Message personnalisé */}
+          {/* Message personnalisé pre-rempli avec le template par
+              defaut. L'utilisateur peut le modifier librement.
+              Bouton "Reinitialiser" pour revenir au template si on
+              s'est trompe (Gilles 2026-05-28). */}
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-zinc-700">
-              Message personnalisé (optionnel)
-            </label>
+            <div className="flex items-center justify-between gap-2">
+              <label className="text-xs font-semibold text-zinc-700">
+                Message envoyé aux destinataires
+              </label>
+              {userHasEdited && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUserHasEdited(false);
+                    setCustomMessage(defaultMessage);
+                  }}
+                  className="inline-flex items-center gap-1 text-[11px] text-cyan-700 hover:text-cyan-900 underline"
+                  disabled={pending}
+                  title="Revenir au texte standard pour cette décision"
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  Réinitialiser au message par défaut
+                </button>
+              )}
+            </div>
             <textarea
               value={customMessage}
-              onChange={(e) => setCustomMessage(e.target.value)}
+              onChange={(e) => {
+                setUserHasEdited(true);
+                setCustomMessage(e.target.value);
+              }}
               disabled={pending}
-              placeholder="Si vide, un message standard sera utilisé selon votre décision (annulation ou report)."
-              rows={4}
+              rows={6}
               className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-200 focus:border-cyan-400"
             />
             <p className="text-[10px] text-zinc-500 italic">
-              Ce texte remplace le message par défaut. Pas de variables
-              dynamiques — écrivez librement.
+              Message pré-rempli — modifiez-le librement avant envoi.
             </p>
           </div>
 

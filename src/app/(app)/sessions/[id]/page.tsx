@@ -529,6 +529,14 @@ export default async function SessionDetailPage({
               <CancelPostponeButton
                 sessionId={id}
                 futureSessions={futureSessionsList}
+                formationTitle={session.formation?.title ?? "Formation"}
+                sourceDateLabel={new Date(
+                  session.start_date,
+                ).toLocaleDateString("fr-FR", {
+                  day: "numeric",
+                  month: "long",
+                  year: "numeric",
+                })}
                 preview={cancelPreview}
               />
             )}
