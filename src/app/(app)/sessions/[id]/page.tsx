@@ -20,6 +20,7 @@ import {
 import { confirmSessionFormAction } from "./confirm/actions";
 import { SessionNotesPanel } from "./_notes-panel";
 import { DriveArchiveButton } from "./_drive-archive-button";
+import { isDriveConfigured } from "@/lib/google-drive/client";
 import { SessionTabs } from "./_session-tabs";
 import { SessionHeaderMeta } from "./_session-header-meta";
 import { BackButton } from "@/components/back-button";
@@ -366,9 +367,13 @@ export default async function SessionDetailPage({
     session.status !== "completed" &&
     session.status !== "cancelled";
   // Archivage Drive disponible uniquement pour les sessions en cours
-  // ou terminees (Gilles 2026-05-28).
+  // ou terminees ET si l'integration Drive est configuree cote serveur
+  // (env vars GOOGLE_SERVICE_ACCOUNT_JSON + GOOGLE_DRIVE_ROOT_FOLDER_ID).
+  // Sans config -> on cache le bouton pour ne pas afficher une UI morte.
+  // Gilles 2026-05-28.
   const canArchiveToDrive =
-    session.status === "in_progress" || session.status === "completed";
+    (session.status === "in_progress" || session.status === "completed") &&
+    isDriveConfigured();
 
   const title = session.formation?.title ?? "Session";
   const notifs = Object.entries(query)
