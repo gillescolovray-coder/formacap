@@ -147,6 +147,13 @@ export default async function QuizPlayPage({
       ? "post"
       : null;
 
+  // Gilles 2026-05-27 : le DETAIL des reponses (corrige + bonne reponse)
+  // n'est visible par l'apprenant qu'a partir de 18h00 Paris (fin de
+  // journee de formation). Empeche un apprenant qui aurait fini son
+  // post quiz avant 18h de voir les corrections en plein milieu de
+  // session.
+  const canSeeQuizDetail = minutesNow >= 18 * 60;
+
   const fullName = [
     enrollment.learner?.first_name,
     enrollment.learner?.last_name,
@@ -197,6 +204,7 @@ export default async function QuizPlayPage({
           preAttempt={preAttempt}
           postAttempt={postAttempt}
           forcedPhase={forcedPhase}
+          canSeeDetail={canSeeQuizDetail}
         />
 
         <footer className="text-center text-[11px] text-zinc-400">

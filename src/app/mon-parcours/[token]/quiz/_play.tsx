@@ -18,6 +18,11 @@ type Props = {
    *  - null   hors fenetre -> fallback sur l'auto-detect.
    *  Empeche un apprenant de jouer le quiz de sortie a 10h. */
   forcedPhase?: "pre" | "post" | null;
+  /** Le detail des reponses (corrige) n'est visible par l'apprenant
+   *  qu'a partir de 18h00 Paris (Gilles 2026-05-27). Avant 18h, meme
+   *  si pre+post sont joues, on affiche un message d'attente plutot
+   *  que les bonnes reponses (pour ne pas spoiler la fin de journee). */
+  canSeeDetail?: boolean;
 };
 
 export function QuizPlay({
@@ -27,6 +32,7 @@ export function QuizPlay({
   preAttempt,
   postAttempt,
   forcedPhase = null,
+  canSeeDetail = true,
 }: Props) {
   const router = useRouter();
   // Détermine la phase à jouer maintenant.
@@ -114,7 +120,17 @@ export function QuizPlay({
     if (justSubmitted.phase === "pre") {
       return <PreQuizThanksView />;
     }
-    // Ici justSubmitted.phase === "post" — affichage complet du corrigé.
+    // Submit POST : on affiche le score, mais le corrige n'est visible
+    // qu'a partir de 18h00 (Gilles 2026-05-27).
+    if (!canSeeDetail) {
+      return (
+        <PostQuizDoneWaitingView
+          score={justSubmitted.score}
+          maxScore={justSubmitted.maxScore}
+          otherAttempt={preAttempt}
+        />
+      );
+    }
     return (
       <ResultsView
         questions={questions}
@@ -171,8 +187,10 @@ export function QuizPlay({
             <ProgressBadge pre={preAttempt} post={postAttempt} />
           )}
         </div>
-        {/* Corrigé du post uniquement (jamais du pré côté apprenant) */}
-        {postAttempt && (
+        {/* Corrigé du post uniquement, et seulement a partir de
+            18h00 Paris (Gilles 2026-05-27). Avant 18h on affiche un
+            message d'attente. */}
+        {postAttempt && canSeeDetail && (
           <ResultsView
             questions={questions}
             attempt={postAttempt}
@@ -182,6 +200,7 @@ export function QuizPlay({
             otherAttempt={preAttempt}
           />
         )}
+        {postAttempt && !canSeeDetail && <DetailLockedUntil18 />}
       </div>
     );
   }
@@ -799,6 +818,77 @@ function ScoreCard({
 }
 
 /**
+ * Apprenant qui vient juste de soumettre son POST quiz mais qu'on
+ * est encore avant 18h00 Paris : on affiche le score mais pas le
+ * detail des bonnes reponses. Message d'attente jusqu'a 18h00.
+ * Gilles 2026-05-27.
+ */
+function PostQuizDoneWaitingView({
+  score,
+  maxScore,
+  otherAttempt,
+}: {
+  score: number;
+  maxScore: number;
+  otherAttempt: QuizAttempt | null;
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-6 text-center space-y-2">
+        <CheckCircle2 className="h-12 w-12 text-emerald-600 mx-auto mb-1" />
+        <h2 className="text-lg font-bold text-zinc-900">
+          Quiz de sortie enregistré, bravo !
+        </h2>
+        <p className="text-sm text-zinc-700">
+          Votre score :{" "}
+          <strong className="text-violet-700 text-xl">
+            {score}/{maxScore}
+          </strong>
+        </p>
+        {otherAttempt && (
+          <p className="text-xs text-zinc-600">
+            Score quiz d&apos;entrée :{" "}
+            <strong>
+              {otherAttempt.score}/{otherAttempt.max_score}
+            </strong>
+          </p>
+        )}
+      </div>
+      <DetailLockedUntil18 />
+    </div>
+  );
+}
+
+/**
+ * Bandeau qui s'affiche cote apprenant quand pre + post sont joues
+ * mais qu'on est avant 18h00 Paris. Le corrige (bonnes reponses +
+ * explication) sera affiche apres 18h pour eviter de spoiler la fin
+ * de journee de formation. Gilles 2026-05-27.
+ */
+function DetailLockedUntil18() {
+  return (
+    <div className="rounded-xl bg-amber-50 border-2 border-amber-200 p-5 text-center space-y-2">
+      <div className="inline-flex items-center justify-center h-12 w-12 rounded-full bg-amber-100">
+        <span className="text-2xl">⏳</span>
+      </div>
+      <h3 className="text-base font-bold text-amber-900">
+        Détail des bonnes réponses — disponible à partir de 18h00
+      </h3>
+      <p className="text-sm text-amber-800 leading-relaxed">
+        Le corrigé complet (bonnes réponses et explications) sera
+        accessible <strong>en fin de journée, à partir de 18h00</strong>.
+        Revenez à ce moment-là pour le découvrir et mesurer votre
+        progression.
+      </p>
+      <p className="text-[11px] text-amber-700 italic">
+        Cela évite de divulguer les réponses pendant que la formation
+        est encore en cours.
+      </p>
+    </div>
+  );
+}
+
+/**
  * Écran de remerciement après un PRÉ-test. Aucun corrigé n'est
  * affiché — l'apprenant ne doit pas connaître les bonnes réponses
  * avant le démarrage de la formation (règle pédagogique Gilles 2026-05-24).
@@ -816,9 +906,9 @@ function PreQuizThanksView() {
         départ.
       </p>
       <p className="text-xs text-zinc-600">
-        Vous rejouerez le même quiz à la fin de la session : c&apos;est à
-        ce moment-là que vous découvrirez les bonnes réponses, avec la
-        mesure de votre progression.
+        Vous rejouerez le même quiz à la fin de la session. Les bonnes
+        réponses et votre progression seront révélées{" "}
+        <strong>à partir de 18h00</strong> en fin de journée.
       </p>
       <p className="text-[11px] text-zinc-500 italic pt-2">
         Bonne formation !
