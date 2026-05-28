@@ -118,7 +118,12 @@ export default async function InscriptionDetailPage({
       .select("id, name")
       .eq("is_active", true)
       .order("name"),
-    supabase.from("companies").select("id, name, type").order("name"),
+    supabase
+      .from("companies")
+      .select(
+        "id, name, type, representant_civility, representant_first_name, representant_last_name, representant_job_title",
+      )
+      .order("name"),
     supabase
       .from("learners")
       .select(

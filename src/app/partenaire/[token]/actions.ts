@@ -369,6 +369,11 @@ type CompanyInput = {
   address?: string;
   postalCode?: string;
   city?: string;
+  // Representant legal (Gilles 2026-05-28, migration 0110)
+  representantCivility?: string;
+  representantFirstName?: string;
+  representantLastName?: string;
+  representantJobTitle?: string;
 };
 
 /**
@@ -586,6 +591,16 @@ export async function submitPartnerBatchEnrollmentForm(formData: FormData) {
   // Trouver ou creer l'entreprise par SIRET
   const cleanSiret = company.siret.replace(/\s/g, "");
   let learnerCompanyId: string | null = null;
+
+  // Representant legal — whitelist civilite + nettoyage trim
+  const repCivRaw = company.representantCivility?.trim() ?? "";
+  const repCiv =
+    repCivRaw === "M." || repCivRaw === "Mme" ? repCivRaw : null;
+  const repFn = company.representantFirstName?.trim() || null;
+  const repLn = company.representantLastName?.trim() || null;
+  const repJt = company.representantJobTitle?.trim() || null;
+  const hasRepInput = !!(repCiv || repFn || repLn || repJt);
+
   const { data: existingCompany } = await supabase
     .from("companies")
     .select("id")
@@ -594,6 +609,19 @@ export async function submitPartnerBatchEnrollmentForm(formData: FormData) {
     .maybeSingle<{ id: string }>();
   if (existingCompany) {
     learnerCompanyId = existingCompany.id;
+    // Si le partenaire a saisi le representant legal, on met a jour la
+    // fiche entreprise (Gilles 2026-05-28). Ne touche pas si tout vide.
+    if (hasRepInput) {
+      await supabase
+        .from("companies")
+        .update({
+          representant_civility: repCiv,
+          representant_first_name: repFn,
+          representant_last_name: repLn,
+          representant_job_title: repJt,
+        })
+        .eq("id", existingCompany.id);
+    }
   } else {
     const { data: newCompany } = await supabase
       .from("companies")
@@ -606,6 +634,11 @@ export async function submitPartnerBatchEnrollmentForm(formData: FormData) {
         city: company.city ?? null,
         type: "client",
         is_active: true,
+        // Representant legal a la creation (Gilles 2026-05-28)
+        representant_civility: repCiv,
+        representant_first_name: repFn,
+        representant_last_name: repLn,
+        representant_job_title: repJt,
       })
       .select("id")
       .single<{ id: string }>();

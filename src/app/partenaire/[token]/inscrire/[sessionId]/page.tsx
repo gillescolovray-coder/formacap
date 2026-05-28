@@ -152,6 +152,10 @@ export default async function PartnerInscribePage({
       address: string;
       postalCode: string;
       city: string;
+      representantCivility: string;
+      representantFirstName: string;
+      representantLastName: string;
+      representantJobTitle: string;
     };
     contactReferent: {
       firstName: string;
@@ -165,7 +169,9 @@ export default async function PartnerInscribePage({
   if (prefillCompanyId) {
     const { data: prefillCompany } = await supabase
       .from("companies")
-      .select("id, siret, name, address, postal_code, city")
+      .select(
+        "id, siret, name, address, postal_code, city, representant_civility, representant_first_name, representant_last_name, representant_job_title",
+      )
       .eq("id", prefillCompanyId)
       .eq("organization_id", ctx.company.organization_id)
       .maybeSingle<{
@@ -175,6 +181,10 @@ export default async function PartnerInscribePage({
         address: string | null;
         postal_code: string | null;
         city: string | null;
+        representant_civility: string | null;
+        representant_first_name: string | null;
+        representant_last_name: string | null;
+        representant_job_title: string | null;
       }>();
     if (prefillCompany) {
       // Contact référent (Gilles 2026-05-22, fix v2) — cascade :
@@ -252,6 +262,14 @@ export default async function PartnerInscribePage({
           address: prefillCompany.address ?? "",
           postalCode: prefillCompany.postal_code ?? "",
           city: prefillCompany.city ?? "",
+          representantCivility:
+            prefillCompany.representant_civility ?? "",
+          representantFirstName:
+            prefillCompany.representant_first_name ?? "",
+          representantLastName:
+            prefillCompany.representant_last_name ?? "",
+          representantJobTitle:
+            prefillCompany.representant_job_title ?? "",
         },
         contactReferent,
       };

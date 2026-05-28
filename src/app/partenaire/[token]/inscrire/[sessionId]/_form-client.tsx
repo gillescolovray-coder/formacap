@@ -35,6 +35,13 @@ type CompanyForm = {
   address: string;
   postalCode: string;
   city: string;
+  // Representant legal (Gilles 2026-05-28, migration 0110). Le partenaire
+  // peut le renseigner — sera propage a companies.representant_* cote
+  // server action et utilise sur la convention de formation.
+  representantCivility: string;
+  representantFirstName: string;
+  representantLastName: string;
+  representantJobTitle: string;
 };
 
 function emptyLearner(): LearnerForm {
@@ -85,6 +92,10 @@ export function PartnerInscribeForm({
       address: "",
       postalCode: "",
       city: "",
+      representantCivility: "",
+      representantFirstName: "",
+      representantLastName: "",
+      representantJobTitle: "",
     },
   );
   const [learners, setLearners] = useState<LearnerForm[]>([emptyLearner()]);
@@ -117,13 +128,18 @@ export function PartnerInscribeForm({
   const referentEnabled = partnerType === "prescripteur" && hasReferent;
 
   function handleSirenePick(c: SireneCompany) {
-    setCompany({
+    setCompany((prev) => ({
       siret: c.siret ?? "",
       name: c.name ?? "",
       address: c.address ?? "",
       postalCode: c.postal_code ?? "",
       city: c.city ?? "",
-    });
+      // Preserve les valeurs representant deja saisies par l'utilisateur
+      representantCivility: prev.representantCivility,
+      representantFirstName: prev.representantFirstName,
+      representantLastName: prev.representantLastName,
+      representantJobTitle: prev.representantJobTitle,
+    }));
     // Auto-pré-remplissage du contact référent si on connait deja cette
     // entreprise (Gilles 2026-05-22) : si le partenaire a deja inscrit
     // des apprenants pour cette entreprise auparavant, on reprend le
@@ -356,6 +372,110 @@ export function PartnerInscribeForm({
               value={company.city}
               onChange={(e) => updateCompany("city", e.target.value)}
               className="w-full h-9 rounded-md border border-zinc-300 px-3 text-sm"
+            />
+          </div>
+        </div>
+
+        {/* ============ REPRESENTANT LEGAL ============
+            Optionnel — apparaitra sur la convention de formation comme
+            signataire (Gilles 2026-05-28, migration 0110). */}
+        <div className="pt-3 mt-2 border-t border-zinc-100 space-y-3">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div className="flex-1 min-w-[220px]">
+              <h4 className="text-xs font-bold text-amber-900 uppercase tracking-wider inline-flex items-center gap-1.5">
+                🛡️ Représentant légal de la société
+              </h4>
+              <p className="text-[11px] text-amber-800 italic mt-0.5">
+                Optionnel — PDG, gérant, président… Signera la convention
+                de formation pour cette entreprise.
+              </p>
+            </div>
+            {learners.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  const l = learners[0];
+                  setCompany((c) => ({
+                    ...c,
+                    representantCivility: l.civility ?? "",
+                    representantFirstName: l.firstName ?? "",
+                    representantLastName: (
+                      l.lastName ?? ""
+                    ).toLocaleUpperCase("fr-FR"),
+                    representantJobTitle:
+                      c.representantJobTitle?.trim() || "Gérant",
+                  }));
+                }}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-md border border-amber-300 bg-white text-amber-800 hover:bg-amber-100 shadow-sm shrink-0"
+              >
+                C&apos;est le même que l&apos;apprenant
+              </button>
+            )}
+          </div>
+          <div className="grid gap-3 md:grid-cols-[110px_1fr_1fr]">
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-zinc-700">
+                Civilité
+              </label>
+              <select
+                value={company.representantCivility}
+                onChange={(e) =>
+                  updateCompany("representantCivility", e.target.value)
+                }
+                className="w-full h-8 rounded-md border border-zinc-300 bg-white px-2 text-xs"
+              >
+                <option value="">—</option>
+                <option value="M.">M.</option>
+                <option value="Mme">Mme</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-zinc-700">
+                Prénom
+              </label>
+              <input
+                type="text"
+                value={company.representantFirstName}
+                onChange={(e) =>
+                  updateCompany("representantFirstName", e.target.value)
+                }
+                placeholder="Jean"
+                className="w-full h-8 rounded-md border border-zinc-300 bg-white px-2 text-xs"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-zinc-700">
+                Nom
+              </label>
+              <input
+                type="text"
+                value={company.representantLastName}
+                onChange={(e) =>
+                  updateCompany(
+                    "representantLastName",
+                    e.target.value.toLocaleUpperCase("fr-FR"),
+                  )
+                }
+                placeholder="DUPONT"
+                className="w-full h-8 rounded-md border border-zinc-300 bg-white px-2 text-xs uppercase"
+              />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-[11px] font-medium text-zinc-700">
+              Fonction{" "}
+              <span className="text-zinc-500 font-normal">
+                (Gérant, PDG, Président…)
+              </span>
+            </label>
+            <input
+              type="text"
+              value={company.representantJobTitle}
+              onChange={(e) =>
+                updateCompany("representantJobTitle", e.target.value)
+              }
+              placeholder="Gérant"
+              className="w-full h-8 rounded-md border border-zinc-300 bg-white px-2 text-xs"
             />
           </div>
         </div>

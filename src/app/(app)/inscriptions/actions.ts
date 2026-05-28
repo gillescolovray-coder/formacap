@@ -140,6 +140,42 @@ async function resolveCompanyId(
   return (created?.id as string | null) ?? null;
 }
 
+/**
+ * Propage les 4 champs representant_* du formulaire d'inscription vers
+ * la fiche entreprise (companies). Si l'utilisateur a saisi/modifie le
+ * rep legal dans le bloc dedie de l'inscription, on met a jour la
+ * companies pour que les futures conventions reprennent ces valeurs.
+ *
+ * Logique :
+ * - Si AUCUN champ saisi -> on ne touche pas (preserve l'existant).
+ * - Si au moins 1 champ saisi -> UPDATE complet (les 4 champs).
+ *
+ * Gilles 2026-05-28.
+ */
+async function propagateLegalRepToCompany(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  companyId: string | null,
+  formData: FormData,
+): Promise<void> {
+  if (!companyId) return;
+  const civRaw = parseText(formData.get("representant_civility"));
+  const civ = civRaw === "M." || civRaw === "Mme" ? civRaw : null;
+  const fn = parseText(formData.get("representant_first_name"));
+  const ln = parseText(formData.get("representant_last_name"));
+  const jt = parseText(formData.get("representant_job_title"));
+  // Tous vides -> ne rien faire (on n'efface pas l'existant)
+  if (!civ && !fn && !ln && !jt) return;
+  await supabase
+    .from("companies")
+    .update({
+      representant_civility: civ,
+      representant_first_name: fn,
+      representant_last_name: ln,
+      representant_job_title: jt,
+    })
+    .eq("id", companyId);
+}
+
 async function logEvent(
   requestId: string,
   eventType: string,
@@ -520,6 +556,10 @@ export async function createInscription(formData: FormData) {
     redirect(`/inscriptions/new?error=${encodeURIComponent(friendly)}`);
   }
 
+  // Propage le representant legal vers companies si saisi dans le
+  // formulaire (Gilles 2026-05-28).
+  await propagateLegalRepToCompany(supabase, resolvedCompanyId, formData);
+
   await logEvent(data.id, "created", { source: payload.source });
 
   // Sync 2026-05-13 : si la demande cible une session ET qu'un apprenant
@@ -790,6 +830,7 @@ async function processAdditionalLearners(
 export async function updateInscription(id: string, formData: FormData) {
   const { organizationId, userId } = await getOrgId();
   const payload = buildPayload(formData);
+  const supabase = await createClient();
 
   // Validation Gilles 2026-05-14 : on refuse l'enregistrement si
   // l'inscription est vide (ni apprenant lié, ni prénom+nom saisis).
@@ -822,12 +863,13 @@ export async function updateInscription(id: string, formData: FormData) {
   );
   if (resolvedCompanyId) {
     payload.company_id = resolvedCompanyId;
+    // Propage le representant legal vers companies si saisi
+    // (Gilles 2026-05-28).
+    await propagateLegalRepToCompany(supabase, resolvedCompanyId, formData);
     // Une fois rattachée à une vraie fiche, on nettoie le freetext pour
     // éviter d'avoir les deux sources renseignées.
     payload.company_name_freetext = null;
   }
-
-  const supabase = await createClient();
 
   // Synchronisation Demande → Fiche apprenant : si un champ a été
   // renseigné sur la demande mais est vide sur la fiche apprenant, on

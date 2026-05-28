@@ -11,6 +11,7 @@ import {
 import { cn } from "@/lib/utils";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { CompanyForm } from "../entreprises/_form";
+import { LegalRepFieldset } from "@/components/legal-rep-fieldset";
 
 type LearnerOption = {
   id: string;
@@ -28,7 +29,16 @@ type LearnerOption = {
   company_id: string | null;
   company_name: string | null;
 };
-type CompanyOption = { id: string; name: string };
+type CompanyOption = {
+  id: string;
+  name: string;
+  // Representant legal — utilise pour preremplir le bloc dedie
+  // (Gilles 2026-05-28, migration 0110)
+  representant_civility?: string | null;
+  representant_first_name?: string | null;
+  representant_last_name?: string | null;
+  representant_job_title?: string | null;
+};
 type SessionOption = {
   id: string;
   label: string;
@@ -501,6 +511,30 @@ export function TargetPickers({
         />
       </div>
 
+      {/* ============ REPRESENTANT LEGAL ============
+          Affiche uniquement si une entreprise existante est selectionnee.
+          Pour une nouvelle entreprise (companyFreetext), la saisie se
+          fait dans le bloc CompanyForm embarque plus haut.
+          Si l'utilisateur saisit/modifie le rep, l'action server
+          UPDATE companies.representant_* au moment du save.
+          Gilles 2026-05-28. */}
+      {selectedCompany && (
+        <LegalRepFieldset
+          key={selectedCompany.id}
+          initial={{
+            civility: selectedCompany.representant_civility ?? null,
+            firstName: selectedCompany.representant_first_name ?? null,
+            lastName: selectedCompany.representant_last_name ?? null,
+            jobTitle: selectedCompany.representant_job_title ?? null,
+          }}
+          learnerFieldIds={{
+            civility: "prospect_civility",
+            firstName: "prospect_first_name",
+            lastName: "prospect_last_name",
+          }}
+        />
+      )}
+
       {/* ============ APPRENANT ============ */}
       <div className="rounded-lg bg-cyan-50/40 dark:bg-cyan-950/20 border border-cyan-200 dark:border-cyan-900 p-4 space-y-3">
         <label className="text-xs font-semibold inline-flex items-center gap-2">
@@ -580,6 +614,7 @@ export function TargetPickers({
             Civilité
           </label>
           <select
+            id="prospect_civility"
             name="prospect_civility"
             value={civility}
             onChange={(e) => setCivility(e.target.value)}
@@ -598,6 +633,7 @@ export function TargetPickers({
             Prénom <span className="text-red-600 font-bold">*</span>
           </label>
           <input
+            id="prospect_first_name"
             name="prospect_first_name"
             required
             value={firstName}
@@ -611,6 +647,7 @@ export function TargetPickers({
             Nom <span className="text-red-600 font-bold">*</span>
           </label>
           <input
+            id="prospect_last_name"
             name="prospect_last_name"
             required
             value={lastName}

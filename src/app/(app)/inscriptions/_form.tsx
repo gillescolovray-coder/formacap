@@ -23,7 +23,17 @@ import type { Opco } from "@/lib/opcos/types";
 
 type SessionOption = { id: string; label: string };
 type ParcoursOption = { id: string; label: string };
-type CompanyOption = { id: string; name: string; type?: string | null };
+type CompanyOption = {
+  id: string;
+  name: string;
+  type?: string | null;
+  // Representant legal — utilise pour preremplir le bloc dedie
+  // dans le formulaire d'inscription (Gilles 2026-05-28, migration 0110)
+  representant_civility?: string | null;
+  representant_first_name?: string | null;
+  representant_last_name?: string | null;
+  representant_job_title?: string | null;
+};
 type LearnerOption = {
   id: string;
   first_name: string | null;
