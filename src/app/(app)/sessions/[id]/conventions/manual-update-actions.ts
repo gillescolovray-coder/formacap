@@ -93,11 +93,14 @@ export async function manuallyUpdateConventionStatus(
   const supabaseAdmin = createAdminClient();
 
   // 1. Charger la convention via admin (bypass RLS) — securite faite
-  //    a la main juste apres avec organization_id.
+  //    a la main juste apres avec organization_id recupere via sessions.
+  // Fix Gilles 2026-05-30 : la table session_conventions n'a PAS de
+  // colonne organization_id (verifie dans migration 0051). On la
+  // recupere via la table sessions.
   const { data: conv, error: convErr } = await supabaseAdmin
     .from("session_conventions")
     .select(
-      "id, session_id, status, signature_data, signed_at, sent_at, company_id, organization_id",
+      "id, session_id, status, signature_data, signed_at, sent_at, company_id",
     )
     .eq("id", conventionId)
     .maybeSingle<{
@@ -108,7 +111,6 @@ export async function manuallyUpdateConventionStatus(
       signed_at: string | null;
       sent_at: string | null;
       company_id: string | null;
-      organization_id: string;
     }>();
   if (convErr) {
     return {
@@ -120,13 +122,27 @@ export async function manuallyUpdateConventionStatus(
     return { ok: false, error: "Convention introuvable (ID invalide)." };
   }
 
+  // Recupere l'organization_id via la session
+  const { data: sess, error: sessErr } = await supabaseAdmin
+    .from("sessions")
+    .select("organization_id")
+    .eq("id", conv.session_id)
+    .maybeSingle<{ organization_id: string }>();
+  if (sessErr || !sess) {
+    return {
+      ok: false,
+      error: "Session liée introuvable.",
+    };
+  }
+  const organizationId = sess.organization_id;
+
   // 2. Verif securite : le user est-il membre actif de l'organisation
   //    de cette convention ?
   const { data: membership } = await supabaseAdmin
     .from("organization_members")
     .select("organization_id")
     .eq("profile_id", user.id)
-    .eq("organization_id", conv.organization_id)
+    .eq("organization_id", organizationId)
     .eq("is_active", true)
     .limit(1)
     .maybeSingle();
@@ -166,7 +182,7 @@ export async function manuallyUpdateConventionStatus(
     const sanitized = fileName
       .replace(/[^a-zA-Z0-9._-]+/g, "_")
       .slice(0, 100);
-    const storagePath = `${conv.organization_id}/${conv.session_id}/conventions-signed/${Date.now()}-${sanitized}`;
+    const storagePath = `${organizationId}/${conv.session_id}/conventions-signed/${Date.now()}-${sanitized}`;
     const { error: uploadErr } = await supabaseAdmin.storage
       .from("session-documents")
       .upload(storagePath, buffer, {
@@ -183,7 +199,7 @@ export async function manuallyUpdateConventionStatus(
     // l'onglet Documents de la session.
     await supabaseAdmin.from("session_documents").insert({
       session_id: conv.session_id,
-      organization_id: conv.organization_id,
+      organization_id: organizationId,
       file_name: fileName,
       storage_path: storagePath,
       mime_type: mime,
