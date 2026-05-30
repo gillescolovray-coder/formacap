@@ -27,6 +27,7 @@ import { ResendModal } from "./_resend-modal";
 import { ConventionEditButton } from "./_edit-modal";
 import { ReferentsModal } from "./_referents-modal";
 import { ShareConventionButton } from "./_share-button";
+import { ManualUpdateButton } from "./_manual-update-modal";
 import { RecomputeAmountButton } from "./_recompute-button";
 import { PreNotifyGmailButton } from "./_pre-notify-gmail";
 import { BulkPreNotifyGmailButton } from "./_pre-notify-bulk";
@@ -226,7 +227,7 @@ export default async function ConventionsPage({
       ? await supabase
           .from("session_conventions")
           .select(
-            "id, company_id, status, contact_name, contact_email, sent_at, signed_at, signed_by_name, amount_ht_unit, amount_ht_total, financing_mode, obsolete_reason, prenotified_at, delivered_at, opened_at, clicked_at, bounced_at, complained_at",
+            "id, company_id, status, contact_name, contact_email, sent_at, signed_at, signed_by_name, signature_data, amount_ht_unit, amount_ht_total, financing_mode, obsolete_reason, prenotified_at, delivered_at, opened_at, clicked_at, bounced_at, complained_at",
           )
           .eq("session_id", id)
           .in("company_id", companyIds)
@@ -242,6 +243,7 @@ export default async function ConventionsPage({
       sent_at: string | null;
       signed_at: string | null;
       signed_by_name: string | null;
+      signature_data: string | null;
       amount_ht_unit: number | null;
       amount_ht_total: number | null;
       financing_mode: string | null;
@@ -263,6 +265,7 @@ export default async function ConventionsPage({
       sent_at: c.sent_at as string | null,
       signed_at: c.signed_at as string | null,
       signed_by_name: c.signed_by_name as string | null,
+      signature_data: (c as { signature_data?: string | null }).signature_data ?? null,
       amount_ht_unit: c.amount_ht_unit as number | null,
       amount_ht_total: c.amount_ht_total as number | null,
       financing_mode: c.financing_mode as string | null,
@@ -1223,6 +1226,24 @@ export default async function ConventionsPage({
                               (Outlook/Mailinblack). Gilles 2026-05-22. */}
                           {conv && (
                             <ShareConventionButton conventionId={conv.id} />
+                          )}
+                          {/* Bouton "Mettre a jour" : marquer manuellement
+                              la convention comme envoyee/signee/annulee
+                              quand la gestion s'est faite hors application
+                              (Gmail perso, courrier, etc.) — Gilles 2026-05-28. */}
+                          {conv && (
+                            <ManualUpdateButton
+                              conventionId={conv.id}
+                              currentStatus={
+                                conv.status as
+                                  | "draft"
+                                  | "sent"
+                                  | "signed"
+                                  | "cancelled"
+                              }
+                              isSignedOnline={!!conv.signature_data}
+                              defaultSignerName={null}
+                            />
                           )}
                           {/* Bouton "Annuler" : disponible sur toute convention
                               existante (brouillon, envoyée, signée, obsolète).
