@@ -64,9 +64,14 @@ export function ManualUpdateModal({
 
   const today = new Date().toISOString().slice(0, 10);
   const [effectiveDate, setEffectiveDate] = useState<string>(today);
+  // Pre-remplit avec le representant legal de l'entreprise si connu
+  // (Gilles 2026-05-28 : prefill automatique).
   const [signerName, setSignerName] = useState<string>(
     defaultSignerName ?? "",
   );
+  // Reset signerName quand defaultSignerName change
+  // (cas : la modale est gardee montee mais on switche entre conventions)
+  // useEffect optionnel — ici pas critique car la modale est demontee.
   const [note, setNote] = useState<string>("");
 
   // Fichier (drag-drop + click)
@@ -89,10 +94,8 @@ export function ManualUpdateModal({
       );
       return;
     }
-    if (newStatus === "signed" && !signerName.trim()) {
-      setError("Le nom du signataire est obligatoire pour le statut « Signée ».");
-      return;
-    }
+    // Gilles 2026-05-28 : nom signataire devenu OPTIONNEL — la
+    // signature physique sur le PDF scanne fait foi.
 
     let fileBase64: string | null = null;
     let fileName: string | null = null;
@@ -245,21 +248,34 @@ export function ManualUpdateModal({
             </div>
           )}
 
-          {/* Nom signataire si signed */}
+          {/* Nom signataire si signed — OPTIONNEL (Gilles 2026-05-28) :
+              prerempli depuis le representant legal de l'entreprise
+              s'il est connu, mais l'admin peut laisser vide si le PDF
+              scanne porte la signature et lit le nom directement. */}
           {newStatus === "signed" && (
             <div className="space-y-1">
               <label className="text-xs font-semibold text-zinc-700 inline-flex items-center gap-1">
                 <FileSignature className="h-3.5 w-3.5" />
-                Nom du signataire <span className="text-red-600">*</span>
+                Nom du signataire{" "}
+                <span className="text-zinc-400 font-normal">(optionnel)</span>
               </label>
               <input
                 type="text"
                 value={signerName}
                 onChange={(e) => setSignerName(e.target.value)}
-                placeholder="Jean DUPONT, Gérant"
+                placeholder={
+                  defaultSignerName
+                    ? defaultSignerName
+                    : "Jean DUPONT (laissez vide si le PDF porte la signature)"
+                }
                 disabled={pending}
                 className="h-9 w-full px-2 rounded-md border border-zinc-300 text-sm"
               />
+              <p className="text-[10px] text-zinc-500 italic">
+                {defaultSignerName
+                  ? "Prérempli depuis le représentant légal de l'entreprise."
+                  : "La signature physique sur le PDF scanné fait foi — vous pouvez laisser ce champ vide."}
+              </p>
             </div>
           )}
 
@@ -394,7 +410,7 @@ export function ManualUpdateModal({
             ) : (
               <>
                 <CheckCircle2 className="h-4 w-4" />
-                Mettre à jour
+                Mettre à jour statut
               </>
             )}
           </button>
@@ -476,7 +492,7 @@ export function ManualUpdateButton(props: Omit<Props, "onClose">) {
         title="Marquer manuellement comme envoyée / signée si géré hors application"
       >
         <Pencil className="h-3 w-3" />
-        Mettre à jour
+        Mettre à jour statut
       </button>
       {open && <ManualUpdateModal {...props} onClose={() => setOpen(false)} />}
     </>

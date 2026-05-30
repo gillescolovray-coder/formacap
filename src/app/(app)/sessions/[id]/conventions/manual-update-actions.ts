@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
  * Mise a jour manuelle du statut d'une convention de formation
@@ -80,15 +81,20 @@ export async function manuallyUpdateConventionStatus(
       error: "Une note interne d'au moins 3 caractères est obligatoire.",
     };
   }
-  if (newStatus === "signed" && (!signerName || !signerName.trim())) {
-    return {
-      ok: false,
-      error: "Le nom du signataire est obligatoire pour passer en statut « Signée ».",
-    };
-  }
+  // Note Gilles 2026-05-28 : signerName devenu OPTIONNEL — on accepte
+  // que la convention scannée porte la signature mais qu'on ne saisisse
+  // pas explicitement le nom. La signature physique sur le PDF fait foi.
 
-  // 1. Charger la convention pour audit + verifier qu'on a le droit
-  const { data: conv } = await supabase
+  // Fix Gilles 2026-05-28 : bug "Convention introuvable" cote
+  // server action — RLS sur session_conventions trop restrictive
+  // dans ce contexte (le user lit la page mais l'action plante).
+  // On utilise le client admin + on verifie manuellement que le user
+  // appartient bien a l'organisation de la convention.
+  const supabaseAdmin = createAdminClient();
+
+  // 1. Charger la convention via admin (bypass RLS) — securite faite
+  //    a la main juste apres avec organization_id.
+  const { data: conv, error: convErr } = await supabaseAdmin
     .from("session_conventions")
     .select(
       "id, session_id, status, signature_data, signed_at, sent_at, company_id, organization_id",
@@ -104,7 +110,32 @@ export async function manuallyUpdateConventionStatus(
       company_id: string | null;
       organization_id: string;
     }>();
-  if (!conv) return { ok: false, error: "Convention introuvable." };
+  if (convErr) {
+    return {
+      ok: false,
+      error: `Erreur de chargement : ${convErr.message}`,
+    };
+  }
+  if (!conv) {
+    return { ok: false, error: "Convention introuvable (ID invalide)." };
+  }
+
+  // 2. Verif securite : le user est-il membre actif de l'organisation
+  //    de cette convention ?
+  const { data: membership } = await supabaseAdmin
+    .from("organization_members")
+    .select("organization_id")
+    .eq("profile_id", user.id)
+    .eq("organization_id", conv.organization_id)
+    .eq("is_active", true)
+    .limit(1)
+    .maybeSingle();
+  if (!membership) {
+    return {
+      ok: false,
+      error: "Accès refusé : vous n'appartenez pas à l'organisation de cette convention.",
+    };
+  }
 
   // Refus : la convention a deja ete signee EN LIGNE (signature_data
   // image presente) -> on ne touche pas pour ne pas perdre cette
@@ -117,7 +148,7 @@ export async function manuallyUpdateConventionStatus(
     };
   }
 
-  // 2. Upload PDF si fourni
+  // 3. Upload PDF si fourni
   let uploadedPath: string | null = null;
   if (fileBase64 && fileName) {
     const mime = fileMimeType ?? "application/octet-stream";
@@ -136,7 +167,7 @@ export async function manuallyUpdateConventionStatus(
       .replace(/[^a-zA-Z0-9._-]+/g, "_")
       .slice(0, 100);
     const storagePath = `${conv.organization_id}/${conv.session_id}/conventions-signed/${Date.now()}-${sanitized}`;
-    const { error: uploadErr } = await supabase.storage
+    const { error: uploadErr } = await supabaseAdmin.storage
       .from("session-documents")
       .upload(storagePath, buffer, {
         contentType: mime,
@@ -150,7 +181,7 @@ export async function manuallyUpdateConventionStatus(
     }
     // Indexer dans session_documents pour qu'il apparaisse dans
     // l'onglet Documents de la session.
-    await supabase.from("session_documents").insert({
+    await supabaseAdmin.from("session_documents").insert({
       session_id: conv.session_id,
       organization_id: conv.organization_id,
       file_name: fileName,
@@ -165,7 +196,7 @@ export async function manuallyUpdateConventionStatus(
     uploadedPath = storagePath;
   }
 
-  // 3. UPDATE convention
+  // 4. UPDATE convention
   const now = new Date().toISOString();
   const effectiveTs = effectiveDate
     ? new Date(`${effectiveDate.slice(0, 10)}T12:00:00`).toISOString()
@@ -180,7 +211,12 @@ export async function manuallyUpdateConventionStatus(
     update.signed_by_name = null;
   } else if (newStatus === "signed") {
     update.signed_at = effectiveTs;
-    update.signed_by_name = (signerName ?? "").trim();
+    // signerName est optionnel (Gilles 2026-05-28) — si fourni on
+    // l'enregistre, sinon on laisse vide (la signature physique sur
+    // le PDF scanne fait foi).
+    if (signerName && signerName.trim()) {
+      update.signed_by_name = signerName.trim();
+    }
     // On garde sent_at intact ou on le remplit si vide
     if (!conv.sent_at) update.sent_at = effectiveTs;
   } else if (newStatus === "draft") {
@@ -191,7 +227,7 @@ export async function manuallyUpdateConventionStatus(
     // garde l'historique des dates precedentes
   }
 
-  const { error: updErr } = await supabase
+  const { error: updErr } = await supabaseAdmin
     .from("session_conventions")
     .update(update)
     .eq("id", conventionId);
@@ -202,12 +238,12 @@ export async function manuallyUpdateConventionStatus(
     };
   }
 
-  // 4. Audit dans inscription_events (lie via la session — on attache
+  // 5. Audit dans inscription_events (lie via la session — on attache
   //    a TOUTES les inscriptions de cette company pour cette session,
   //    sinon a la 1ere inscription de la session si pas de company_id).
   let eventRequestIds: string[] = [];
   if (conv.company_id) {
-    const { data: reqs } = await supabase
+    const { data: reqs } = await supabaseAdmin
       .from("inscription_requests")
       .select("id")
       .eq("target_session_id", conv.session_id)
@@ -215,7 +251,7 @@ export async function manuallyUpdateConventionStatus(
     eventRequestIds = (reqs ?? []).map((r) => r.id as string);
   }
   if (eventRequestIds.length === 0) {
-    const { data: anyReq } = await supabase
+    const { data: anyReq } = await supabaseAdmin
       .from("inscription_requests")
       .select("id")
       .eq("target_session_id", conv.session_id)
@@ -223,7 +259,7 @@ export async function manuallyUpdateConventionStatus(
     eventRequestIds = (anyReq ?? []).map((r) => r.id as string);
   }
   if (eventRequestIds.length > 0) {
-    await supabase.from("inscription_events").insert(
+    await supabaseAdmin.from("inscription_events").insert(
       eventRequestIds.map((requestId) => ({
         request_id: requestId,
         event_type: "convention_status_manual_update",

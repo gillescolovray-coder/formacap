@@ -121,7 +121,7 @@ export default async function ConventionsPage({
   const { data: enrollments } = await supabase
     .from("session_enrollments")
     .select(
-      "id, inscription_email_sent_at, inscription_request_id, learner:learners(id, civility, first_name, last_name, email, phone, job_title, company_id, company:companies(id, name, industry, postal_code, city)), request:inscription_requests!inscription_request_id(partner_confirmation_email_sent_at)",
+      "id, inscription_email_sent_at, inscription_request_id, learner:learners(id, civility, first_name, last_name, email, phone, job_title, company_id, company:companies(id, name, industry, postal_code, city, representant_civility, representant_first_name, representant_last_name)), request:inscription_requests!inscription_request_id(partner_confirmation_email_sent_at)",
     )
     .eq("session_id", id);
 
@@ -176,6 +176,9 @@ export default async function ConventionsPage({
     industry: string | null;
     postalCode: string | null;
     city: string | null;
+    /** Nom complet du representant legal (M. Jean DUPONT) pour
+     *  preremplir la modale "Mettre a jour statut" (Gilles 2026-05-28). */
+    representantFullName: string | null;
     learners: LearnerInfo[];
   };
   const byCompany = new Map<string, CompanyGroup>();
@@ -195,12 +198,35 @@ export default async function ConventionsPage({
       continue;
     }
     if (!byCompany.has(cid)) {
+      // Construit le nom complet du representant legal s'il est
+      // renseigne sur la fiche entreprise (Gilles 2026-05-28).
+      const repCiv = (
+        r.learner?.company as {
+          representant_civility?: string | null;
+        } | null
+      )?.representant_civility;
+      const repFn = (
+        r.learner?.company as {
+          representant_first_name?: string | null;
+        } | null
+      )?.representant_first_name;
+      const repLn = (
+        r.learner?.company as {
+          representant_last_name?: string | null;
+        } | null
+      )?.representant_last_name;
+      const repFullName =
+        [repCiv, repFn, repLn]
+          .filter((s) => s && (s as string).trim())
+          .join(" ")
+          .trim() || null;
       byCompany.set(cid, {
         companyId: cid,
         companyName: cname,
         industry: r.learner?.company?.industry ?? null,
         postalCode: r.learner?.company?.postal_code ?? null,
         city: r.learner?.company?.city ?? null,
+        representantFullName: repFullName,
         learners: [],
       });
     }
@@ -1242,7 +1268,7 @@ export default async function ConventionsPage({
                                   | "cancelled"
                               }
                               isSignedOnline={!!conv.signature_data}
-                              defaultSignerName={null}
+                              defaultSignerName={c.representantFullName}
                             />
                           )}
                           {/* Bouton "Annuler" : disponible sur toute convention
