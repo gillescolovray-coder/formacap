@@ -256,6 +256,7 @@ export default async function SessionsListPage({
     name: string;
     color: string | null;
     position: number;
+    is_lost?: boolean | null;
   }> = [];
 
   // Personnes par session (pour l'info-bulle détaillée)
@@ -307,7 +308,7 @@ export default async function SessionsListPage({
       : Promise.resolve({ data: [] }),
     supabase
       .from("inscription_stages")
-      .select("id, name, color, position")
+      .select("id, name, color, position, is_lost")
       .eq("is_active", true)
       .order("position", { ascending: true }),
     hasSessions
@@ -357,6 +358,14 @@ export default async function SessionsListPage({
   if (hasSessions) {
     stagesList = (stagesData ?? []) as typeof stagesList;
     const stageById = new Map(stagesList.map((s) => [s.id, s]));
+    // Fix Gilles 2026-05-31 : les inscriptions au stage "cancelled" /
+    // "refused" / "lost" (is_lost=true) ne doivent PAS apparaitre dans
+    // le tableau Sessions ni compter dans le CA. C est aligne avec ce
+    // que voit l onglet Participants (qui se base sur session_enrollments
+    // — donc n inclut JAMAIS les inscriptions perdues).
+    const lostStageIds = new Set(
+      stagesList.filter((s) => s.is_lost === true).map((s) => s.id),
+    );
 
     (enrollments ?? []).forEach((r) => {
       const id = r.session_id as string;
@@ -441,6 +450,11 @@ export default async function SessionsListPage({
     (inscriptions ?? []).forEach((r, idx) => {
       const id = r.target_session_id as string;
       if (!id) return;
+      // Skip inscriptions perdues (cancelled / refused / lost) — Gilles
+      // 2026-05-31 : sinon elles continuent a gonfler le CA du tableau
+      // Sessions alors qu elles ne sont plus dans Participants.
+      const inscStageId = r.stage_id as string | null;
+      if (inscStageId && lostStageIds.has(inscStageId)) return;
       inscriptionCount.set(id, (inscriptionCount.get(id) ?? 0) + 1);
       // Refonte tarification 2026-05-31 (Gilles etape 6 phase 2) :
       // delegate au helper partage. Source unique de verite =
