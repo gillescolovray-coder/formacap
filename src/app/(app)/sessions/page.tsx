@@ -404,14 +404,18 @@ export default async function SessionsListPage({
       const id = r.target_session_id as string;
       if (!id) return;
       inscriptionCount.set(id, (inscriptionCount.get(id) ?? 0) + 1);
-      // Refonte tarification 2026-05-31 (Gilles) : on utilise le
-      // billing_total_ht (champ figeee par le helper unifie
-      // computeBillingForInscription) en priorite, sinon fallback sur
-      // quote_amount_ht (legacy). On supprime l ancienne substitution
-      // viaPartner -> tarif public qui creait l incoherence
-      // 1175 € (vue Inscriptions) vs 1220 € (vue Sessions). Desormais
-      // les 3 ecrans (Sessions / Inscriptions / Participants) affichent
-      // le meme CA reel.
+      // Refonte tarification 2026-05-31 (Gilles) : cascade par
+      // INSCRIPTION (et non au niveau session) pour eviter d ecraser
+      // la moitie du CA quand certaines inscriptions ont un tarif
+      // explicite (quote_amount_ht/billing) et d autres non.
+      // Ordre :
+      //   1. billing_total_ht (source de verite refonte)
+      //   2. quote_amount_ht (legacy, contient deja le tarif negocie
+      //      partenaire pour les inscriptions via portail)
+      //   3. tarif public formation (catalogue) — fallback estimation
+      //      pour les inscriptions sans devis explicite
+      // Ainsi : 1 inscription via OF a 260€ + 3 inscriptions sans devis
+      // explicite a 305€ (catalogue) -> total 1175€ coherent.
       let amt: number | null = null;
       const billingTotal = (
         r as { billing_total_ht?: number | string | null }
@@ -425,6 +429,10 @@ export default async function SessionsListPage({
         if (raw !== null && raw !== undefined && Number.isFinite(Number(raw))) {
           amt = Number(raw);
         }
+      }
+      if (amt === null) {
+        const pub = publicUnitBySession.get(id);
+        if (pub !== undefined && pub > 0) amt = pub;
       }
       if (amt !== null) {
         inscriptionAmounts.set(
