@@ -18,6 +18,7 @@ import {
   updateInscription,
 } from "../actions";
 import { OpcoFundingPanel } from "../_opco-funding-panel";
+import { BillingPanel } from "./_billing-panel";
 import { ReferentPicker } from "../_referent-picker";
 import { BackButton } from "@/components/back-button";
 import { PageHeader } from "@/components/page-header";
@@ -215,6 +216,29 @@ export default async function InscriptionDetailPage({
   const currentStage = request.stage_id
     ? stageMap.get(request.stage_id)
     : null;
+
+  // Refonte tarification 2026-05-31 : nom de l entreprise targetee pour
+  // affichage dans le BillingPanel. Lecture best-effort, null si pas
+  // d entreprise definie ou inaccessible.
+  let billingTargetCompanyName: string | null = null;
+  if (request.billing_target_company_id) {
+    const { data: billCompany } = await supabase
+      .from("companies")
+      .select("name")
+      .eq("id", request.billing_target_company_id)
+      .maybeSingle<{ name: string | null }>();
+    billingTargetCompanyName = billCompany?.name ?? null;
+  }
+  const billingTotalHt =
+    request.billing_total_ht !== null &&
+    request.billing_total_ht !== undefined
+      ? Number(request.billing_total_ht)
+      : null;
+  const billingUnitPriceHt =
+    request.billing_unit_price_ht !== null &&
+    request.billing_unit_price_ht !== undefined
+      ? Number(request.billing_unit_price_ht)
+      : null;
 
   const update = updateInscription.bind(null, id);
   const remove = deleteInscription.bind(null, id);
@@ -607,6 +631,19 @@ export default async function InscriptionDetailPage({
               }
             />
           </form>
+
+          {/* Bloc Facturation (refonte tarification 2026-05-31) — affiche
+              qui CAP facture + combien, calcul auto OU saisie manuelle. */}
+          <BillingPanel
+            inscriptionId={id}
+            billingTargetCompanyId={request.billing_target_company_id ?? null}
+            billingTargetCompanyName={billingTargetCompanyName}
+            billingPricingMode={request.billing_pricing_mode ?? null}
+            billingUnitPriceHt={billingUnitPriceHt}
+            billingTotalHt={billingTotalHt}
+            billingManuallyOverridden={!!request.billing_manually_overridden}
+            billingNotes={request.billing_notes ?? null}
+          />
 
           {/* Note rapide */}
           <div className="rounded-xl bg-amber-50/40 border border-amber-200 p-4 space-y-3">

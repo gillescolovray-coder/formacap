@@ -127,6 +127,20 @@ export type InscriptionRequest = {
   inscription_channel: "direct" | "prescripteur" | "of";
   inscription_channel_company_id: string | null;
 
+  // Facturation explicite (migration 0112 — refonte tarification
+  // 2026-05-31). Renseignes par le helper computeBillingForInscription
+  // ou manuellement par l utilisateur.
+  billing_target_company_id?: string | null;
+  billing_pricing_mode?:
+    | "per_day_per_learner"
+    | "flat_per_day"
+    | "flat"
+    | null;
+  billing_unit_price_ht?: number | string | null;
+  billing_total_ht?: number | string | null;
+  billing_manually_overridden?: boolean | null;
+  billing_notes?: string | null;
+
   created_by: string | null;
   created_at: string;
   updated_at: string;
