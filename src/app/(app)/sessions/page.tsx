@@ -284,6 +284,7 @@ export default async function SessionsListPage({
     { data: stagesData },
     { data: dayTrainers },
     { data: customStatusesRaw },
+    { data: sessionConventions },
     { count: totalCount },
     { count: upcomingCount },
     { count: currentCount },
@@ -294,7 +295,7 @@ export default async function SessionsListPage({
       ? supabase
           .from("session_enrollments")
           .select(
-            "session_id, status, learner:learners(id, first_name, last_name, email, phone, job_title, company:companies(name))",
+            "id, session_id, status, convocation_sent_at, attestation_sent_at, learner:learners(id, first_name, last_name, email, phone, job_title, company:companies(id, name))",
           )
           .in("session_id", sessionIds)
           .neq("status", "cancelled")
@@ -327,6 +328,16 @@ export default async function SessionsListPage({
           .select("*")
           .eq("organization_id", organizationId)
           .order("position", { ascending: true })
+      : Promise.resolve({ data: [] }),
+    // Conventions par session — pour la modal synthese Inscriptions/
+    // Conventions (Gilles 2026-05-31, Option A refonte UI).
+    hasSessions
+      ? supabase
+          .from("session_conventions")
+          .select(
+            "id, session_id, company_id, status, sent_at, signed_at, signed_by_name",
+          )
+          .in("session_id", sessionIds)
       : Promise.resolve({ data: [] }),
     supabase.from("sessions").select("id", { count: "exact", head: true }),
     supabase
@@ -605,6 +616,169 @@ export default async function SessionsListPage({
     }
   }
   const stageById = new Map(stagesList.map((s) => [s.id, s]));
+
+  // ============================================================
+  // Refonte UI synthese Inscriptions/Conventions 2026-05-31 (Gilles
+  // Option A) : construit une Map sessionId -> liste enrichie pour
+  // alimenter la modal SessionDetailDialog (apprenant, entreprise,
+  // etape, convention, convocation, attestation, montant HT).
+  // ============================================================
+  // lostStageIds defini ailleurs en local — recalcul pour ce bloc
+  // (scope different car les boucles d agregation precedentes etaient
+  // dans le if (hasSessions)).
+  const lostStageIdsForDetail = new Set(
+    stagesList.filter((s) => s.is_lost === true).map((s) => s.id),
+  );
+
+  type SessionDetailItem = {
+    key: string;
+    learnerId: string | null;
+    fullName: string;
+    companyName: string | null;
+    stageName: string | null;
+    stageColor: string | null;
+    amountHt: number | null;
+    convention: "signed" | "sent" | "draft" | "cancelled" | "none";
+    convocationSent: boolean;
+    attestationSent: boolean;
+  };
+
+  // Convention par (sessionId, companyId)
+  const conventionByKey = new Map<
+    string,
+    { status: string; signed_at: string | null; sent_at: string | null }
+  >();
+  for (const row of (sessionConventions ?? []) as Array<{
+    session_id: string;
+    company_id: string | null;
+    status: string;
+    sent_at: string | null;
+    signed_at: string | null;
+  }>) {
+    if (!row.company_id) continue;
+    conventionByKey.set(`${row.session_id}|${row.company_id}`, {
+      status: row.status,
+      signed_at: row.signed_at,
+      sent_at: row.sent_at,
+    });
+  }
+
+  // Enrollment par (sessionId, learnerId) — pour convocation/attestation
+  type EnrollmentDetail = {
+    convocation_sent_at: string | null;
+    attestation_sent_at: string | null;
+    company_id: string | null;
+  };
+  const enrollmentByLearnerSession = new Map<string, EnrollmentDetail>();
+  for (const e of (enrollments ?? []) as unknown as Array<{
+    session_id: string;
+    convocation_sent_at: string | null;
+    attestation_sent_at: string | null;
+    learner: {
+      id: string;
+      company: { id: string; name: string | null } | Array<{ id: string; name: string | null }> | null;
+    } | null;
+  }>) {
+    const lInfo = e.learner;
+    if (!lInfo?.id) continue;
+    const company = Array.isArray(lInfo.company) ? lInfo.company[0] : lInfo.company;
+    enrollmentByLearnerSession.set(`${e.session_id}|${lInfo.id}`, {
+      convocation_sent_at: e.convocation_sent_at,
+      attestation_sent_at: e.attestation_sent_at,
+      company_id: company?.id ?? null,
+    });
+  }
+
+  // sessionDetailItems : Map<sessionId, SessionDetailItem[]>
+  const sessionDetailItems = new Map<string, SessionDetailItem[]>();
+  for (const sid of sessionIds) {
+    sessionDetailItems.set(sid, []);
+  }
+  for (const r of (inscriptions ?? []) as unknown as Array<{
+    target_session_id: string;
+    learner_id: string | null;
+    prospect_first_name: string | null;
+    prospect_last_name: string | null;
+    prospect_email: string | null;
+    stage_id: string | null;
+    company_name_freetext: string | null;
+    quote_amount_ht: number | null;
+    billing_total_ht: number | string | null;
+    learner: { first_name: string | null; last_name: string | null; company: { name: string } | null } | null;
+  }>) {
+    const sid = r.target_session_id;
+    if (!sid) continue;
+    // Filtres : exclure stages perdus + brouillons zombies (meme logique
+    // que les boucles precedentes — coherent par construction)
+    if (r.stage_id && lostStageIdsForDetail.has(r.stage_id)) continue;
+    const hasLearner = !!r.learner_id;
+    const last = (r.prospect_last_name ?? "").trim();
+    const first = (r.prospect_first_name ?? "").trim();
+    const email = (r.prospect_email ?? "").trim();
+    if (!hasLearner && !last && !first && !email) continue;
+
+    const lInfo = r.learner;
+    const fullName =
+      [lInfo?.first_name ?? first, lInfo?.last_name ?? last]
+        .filter((x) => x && x.trim())
+        .join(" ")
+        .trim() || email || "Apprenant";
+    const companyName =
+      lInfo?.company?.name ?? r.company_name_freetext ?? null;
+    const stage = r.stage_id ? stageById.get(r.stage_id) : null;
+    const amountHt =
+      r.billing_total_ht !== null && r.billing_total_ht !== undefined
+        ? Number(r.billing_total_ht)
+        : r.quote_amount_ht !== null
+          ? Number(r.quote_amount_ht)
+          : publicUnitBySession.get(sid) ?? null;
+
+    // Convention (recherche par companyId du learner si disponible)
+    let conventionStatus: SessionDetailItem["convention"] = "none";
+    const enrollDetail = r.learner_id
+      ? enrollmentByLearnerSession.get(`${sid}|${r.learner_id}`)
+      : null;
+    const companyIdForConv = enrollDetail?.company_id ?? null;
+    if (companyIdForConv) {
+      const conv = conventionByKey.get(`${sid}|${companyIdForConv}`);
+      if (conv) {
+        if (conv.status === "signed") conventionStatus = "signed";
+        else if (conv.status === "sent") conventionStatus = "sent";
+        else if (conv.status === "cancelled") conventionStatus = "cancelled";
+        else conventionStatus = "draft";
+      }
+    }
+
+    sessionDetailItems.get(sid)!.push({
+      key: `i:${r.learner_id ?? email ?? fullName}`,
+      learnerId: r.learner_id,
+      fullName,
+      companyName,
+      stageName: stage?.name ?? null,
+      stageColor: stage?.color ?? null,
+      amountHt,
+      convention: conventionStatus,
+      convocationSent: !!enrollDetail?.convocation_sent_at,
+      attestationSent: !!enrollDetail?.attestation_sent_at,
+    });
+  }
+
+  // Resume par session : nb conventions signees / envoyees / a envoyer
+  function conventionSummary(items: SessionDetailItem[]) {
+    let signed = 0;
+    let sent = 0;
+    let draft = 0;
+    const seenCompanies = new Set<string>();
+    for (const it of items) {
+      const key = it.companyName ?? `__solo_${it.key}`;
+      if (seenCompanies.has(key)) continue;
+      seenCompanies.add(key);
+      if (it.convention === "signed") signed++;
+      else if (it.convention === "sent") sent++;
+      else if (it.convention === "draft") draft++;
+    }
+    return { signed, sent, draft, totalCompanies: seenCompanies.size };
+  }
 
   function statCardClass(active: boolean, accent: string) {
     return cn(
@@ -1429,6 +1603,25 @@ export default async function SessionsListPage({
                                 );
                               });
                           })()}
+                          sessionTitle={
+                            (s.formation as { title?: string } | null)?.title ??
+                            "Session"
+                          }
+                          sessionDate={
+                            s.start_date
+                              ? new Date(
+                                  s.start_date + "T00:00:00",
+                                ).toLocaleDateString("fr-FR", {
+                                  day: "numeric",
+                                  month: "long",
+                                  year: "numeric",
+                                })
+                              : null
+                          }
+                          detailItems={sessionDetailItems.get(s.id) ?? []}
+                          conventionSummary={conventionSummary(
+                            sessionDetailItems.get(s.id) ?? [],
+                          )}
                         />
                       </td>
                       <td className="px-4 py-3">

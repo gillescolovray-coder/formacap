@@ -2,8 +2,19 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Briefcase, Building2, Mail, Phone } from "lucide-react";
+import {
+  Briefcase,
+  Building2,
+  FileSignature,
+  ListChecks,
+  Mail,
+  Phone,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  SessionDetailDialog,
+  type SessionDetailItem,
+} from "./_session-detail-dialog";
 
 type StageItem = {
   id: string;
@@ -24,6 +35,13 @@ type PersonRow = {
   statusColor: string | null;
 };
 
+type ConventionSummary = {
+  signed: number;
+  sent: number;
+  draft: number;
+  totalCompanies: number;
+};
+
 type Props = {
   total: number;
   enrolled: number;
@@ -32,6 +50,11 @@ type Props = {
   isFull: boolean;
   stageBreakdown: StageItem[];
   persons: PersonRow[];
+  // Refonte UI Option A 2026-05-31 — nouvelle modal synthese
+  sessionTitle?: string;
+  sessionDate?: string | null;
+  detailItems?: SessionDetailItem[];
+  conventionSummary?: ConventionSummary;
 };
 
 export function InscriptionsCounterCell({
@@ -42,6 +65,10 @@ export function InscriptionsCounterCell({
   isFull,
   stageBreakdown,
   persons,
+  sessionTitle,
+  sessionDate,
+  detailItems,
+  conventionSummary,
 }: Props) {
   const triggerRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -68,38 +95,103 @@ export function InscriptionsCounterCell({
     setOpen(false);
   }
 
+  // Refonte UI Option A 2026-05-31 — etat de la modal synthese
+  const [detailOpen, setDetailOpen] = useState(false);
+  const canShowDetail = !!(
+    sessionTitle &&
+    detailItems &&
+    detailItems.length > 0
+  );
+
   return (
     <>
-      <div
-        ref={triggerRef}
-        className="text-right cursor-help"
-        onMouseEnter={show}
-        onMouseLeave={hide}
-      >
-        <span
-          className={cn(
-            "font-bold tabular-nums",
-            isFull
-              ? "text-red-700 dark:text-red-400"
-              : total > 0
-                ? "text-cyan-700 dark:text-cyan-400"
-                : "text-zinc-700 dark:text-zinc-300",
-          )}
+      <div className="flex flex-col items-end gap-1">
+        <div
+          ref={triggerRef}
+          className="text-right cursor-help"
+          onMouseEnter={show}
+          onMouseLeave={hide}
         >
-          {total}
-        </span>
-        {maxParticipants !== null && maxParticipants !== undefined && (
-          <span className="text-xs text-zinc-400 font-normal">
-            {" "}
-            / {maxParticipants}
+          <span
+            className={cn(
+              "font-bold tabular-nums",
+              isFull
+                ? "text-red-700 dark:text-red-400"
+                : total > 0
+                  ? "text-cyan-700 dark:text-cyan-400"
+                  : "text-zinc-700 dark:text-zinc-300",
+            )}
+          >
+            {total}
           </span>
+          {maxParticipants !== null && maxParticipants !== undefined && (
+            <span className="text-xs text-zinc-400 font-normal">
+              {" "}
+              / {maxParticipants}
+            </span>
+          )}
+          {inscriptions > 0 && (
+            <span className="ml-1 inline-block px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 align-middle">
+              +{inscriptions} en cours
+            </span>
+          )}
+        </div>
+
+        {/* Badge synthese conventions (refonte UI Option A) */}
+        {conventionSummary && conventionSummary.totalCompanies > 0 && (
+          <div className="flex items-center gap-1 text-[10px] whitespace-nowrap">
+            <FileSignature className="h-3 w-3 text-zinc-400" />
+            {conventionSummary.signed > 0 && (
+              <span
+                className="px-1 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold"
+                title={`${conventionSummary.signed} convention(s) signée(s)`}
+              >
+                {conventionSummary.signed}✓
+              </span>
+            )}
+            {conventionSummary.sent > 0 && (
+              <span
+                className="px-1 py-0.5 rounded bg-cyan-100 text-cyan-800 font-bold"
+                title={`${conventionSummary.sent} convention(s) envoyée(s)`}
+              >
+                {conventionSummary.sent}✉
+              </span>
+            )}
+            {conventionSummary.draft > 0 && (
+              <span
+                className="px-1 py-0.5 rounded bg-amber-100 text-amber-800 font-bold"
+                title={`${conventionSummary.draft} convention(s) brouillon`}
+              >
+                {conventionSummary.draft}⏳
+              </span>
+            )}
+          </div>
         )}
-        {inscriptions > 0 && (
-          <span className="ml-1 inline-block px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 align-middle">
-            +{inscriptions} en cours
-          </span>
+
+        {/* Bouton "Voir détail" qui ouvre la modal (refonte UI Option A) */}
+        {canShowDetail && (
+          <button
+            type="button"
+            onClick={() => setDetailOpen(true)}
+            className="inline-flex items-center gap-1 text-[10px] font-medium text-cyan-700 hover:text-cyan-900 hover:underline whitespace-nowrap"
+            title="Voir le détail inscriptions + conventions"
+          >
+            <ListChecks className="h-3 w-3" />
+            Voir détail
+          </button>
         )}
       </div>
+
+      {/* Modal synthese (refonte UI Option A) */}
+      {canShowDetail && (
+        <SessionDetailDialog
+          open={detailOpen}
+          onClose={() => setDetailOpen(false)}
+          sessionTitle={sessionTitle!}
+          sessionDate={sessionDate ?? null}
+          items={detailItems!}
+        />
+      )}
 
       {mounted &&
         open &&
