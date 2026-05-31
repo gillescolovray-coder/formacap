@@ -236,28 +236,18 @@ export function PartnerPortalSection({
             son logo déjà hébergé (site, Drive public, etc.). */}
         <LogoEditor companyId={companyId} logoUrl={logoUrl} />
 
-        {/* Tarif général appliqué automatiquement */}
-        <GeneralRateEditor
-          companyId={companyId}
-          companyType={companyType}
-          dailyRateDistancielHt={dailyRateDistancielHt}
-          dailyRatePresentielHt={dailyRatePresentielHt}
-          quizUnitPriceHt={quizUnitPriceHt}
-        />
-
-        {/* Tarifs spécifiques (overrides) */}
-        <PricingEditor
-          companyId={companyId}
-          companyType={companyType}
-          formations={formations}
-          pricing={pricing}
-        />
+        {/* Tarif general + tarifs negocies par formation : DEPLACES dans
+            le nouveau bloc "Tarifs" (PricingSection — refonte 2026-05-31)
+            pour regrouper les 4 cas tarifaires en un seul endroit
+            (demande Gilles Q4). Le rendu se fait dans _pricing-section.tsx
+            qui re-utilise les composants GeneralRateEditor + PricingEditor
+            exportes ci-dessous. */}
       </div>
     </CollapsibleSection>
   );
 }
 
-function PricingEditor({
+export function PricingEditor({
   companyId,
   companyType,
   formations,
@@ -726,7 +716,7 @@ function LogoEditor({
 // Tarif général (par jour pour prescripteur, forfait pour OF)
 // ============================================================
 
-function GeneralRateEditor({
+export function GeneralRateEditor({
   companyId,
   companyType,
   dailyRateDistancielHt,

@@ -300,6 +300,104 @@ export async function deletePartnerLogo(
   return { ok: true };
 }
 
+/**
+ * CAS 3 — Tarif sous-traitance : montants HT par jour que CAP NUMERIQUE
+ * facture a cet OF organisateur quand CAP est sous-traitant
+ * (independant du nombre d apprenants). Refonte tarification 2026-05-31.
+ */
+export async function saveSubcontractingRate(
+  companyId: string,
+  rates: {
+    distancielHt?: number | null;
+    presentielHt?: number | null;
+  },
+): Promise<{ ok: boolean; error?: string }> {
+  const userSupabase = await createClient();
+  const {
+    data: { user },
+  } = await userSupabase.auth.getUser();
+  if (!user) return { ok: false, error: "Non authentifié" };
+
+  const supabase = createAdminClient();
+  const sanitize = (n: number | null | undefined): number | null => {
+    if (n === null || n === undefined) return null;
+    if (!Number.isFinite(n) || n < 0) return null;
+    return n;
+  };
+
+  const patch: Record<string, number | null> = {};
+  if (rates.distancielHt !== undefined) {
+    patch.subcontracting_daily_rate_distanciel_ht = sanitize(rates.distancielHt);
+  }
+  if (rates.presentielHt !== undefined) {
+    patch.subcontracting_daily_rate_presentiel_ht = sanitize(rates.presentielHt);
+  }
+  if (Object.keys(patch).length === 0) return { ok: true };
+
+  const { data: updated, error } = await supabase
+    .from("companies")
+    .update(patch)
+    .eq("id", companyId)
+    .select("id");
+  if (error) return { ok: false, error: error.message };
+  if (!updated || updated.length === 0) {
+    return { ok: false, error: "Aucune ligne modifiée." };
+  }
+  revalidatePath(`/entreprises/${companyId}`);
+  return { ok: true };
+}
+
+/**
+ * CAS 2b — Commission prescripteur : pourcentage ET/OU forfait fixe HT
+ * verses au prescripteur. Refonte tarification 2026-05-31.
+ */
+export async function savePrescripteurCommission(
+  companyId: string,
+  commission: {
+    ratePct?: number | null;
+    flatHt?: number | null;
+  },
+): Promise<{ ok: boolean; error?: string }> {
+  const userSupabase = await createClient();
+  const {
+    data: { user },
+  } = await userSupabase.auth.getUser();
+  if (!user) return { ok: false, error: "Non authentifié" };
+
+  const supabase = createAdminClient();
+  const sanitizeRate = (n: number | null | undefined): number | null => {
+    if (n === null || n === undefined) return null;
+    if (!Number.isFinite(n) || n < 0 || n > 100) return null;
+    return n;
+  };
+  const sanitizeFlat = (n: number | null | undefined): number | null => {
+    if (n === null || n === undefined) return null;
+    if (!Number.isFinite(n) || n < 0) return null;
+    return n;
+  };
+
+  const patch: Record<string, number | null> = {};
+  if (commission.ratePct !== undefined) {
+    patch.prescripteur_commission_rate_pct = sanitizeRate(commission.ratePct);
+  }
+  if (commission.flatHt !== undefined) {
+    patch.prescripteur_commission_flat_ht = sanitizeFlat(commission.flatHt);
+  }
+  if (Object.keys(patch).length === 0) return { ok: true };
+
+  const { data: updated, error } = await supabase
+    .from("companies")
+    .update(patch)
+    .eq("id", companyId)
+    .select("id");
+  if (error) return { ok: false, error: error.message };
+  if (!updated || updated.length === 0) {
+    return { ok: false, error: "Aucune ligne modifiée." };
+  }
+  revalidatePath(`/entreprises/${companyId}`);
+  return { ok: true };
+}
+
 export async function savePartnerPrice(
   companyId: string,
   formationId: string,

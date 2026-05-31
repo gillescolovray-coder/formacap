@@ -16,6 +16,7 @@ import { LearnersSection } from "./_learners";
 import { NotesTimeline } from "./_notes-timeline";
 import { ParentCompanyPicker } from "./_parent-company-picker";
 import { PartnerPortalSection } from "./_partner-portal-section";
+import { PricingSection } from "./_pricing-section";
 import { SubsidiariesManager } from "./_subsidiaries-manager";
 import { BackButton } from "@/components/back-button";
 import { CollapsibleSection } from "@/components/collapsible-section";
@@ -258,6 +259,41 @@ export default async function CompanyDetailPage({
     unit_price_ht: number;
     notes: string | null;
   }> = [];
+  // Refonte tarification 2026-05-31 : nouveaux champs (migration 0112).
+  // Charges pour TOUTES les entreprises (pas uniquement les partenaires)
+  // car la sous-traitance peut potentiellement concerner n importe qui.
+  let subcontractingDistancielHt: number | null = null;
+  let subcontractingPresentielHt: number | null = null;
+  let prescripteurCommissionRatePct: number | null = null;
+  let prescripteurCommissionFlatHt: number | null = null;
+  {
+    const { data: newRates } = await supabase
+      .from("companies")
+      .select(
+        "subcontracting_daily_rate_distanciel_ht, subcontracting_daily_rate_presentiel_ht, prescripteur_commission_rate_pct, prescripteur_commission_flat_ht",
+      )
+      .eq("id", id)
+      .maybeSingle<{
+        subcontracting_daily_rate_distanciel_ht: string | number | null;
+        subcontracting_daily_rate_presentiel_ht: string | number | null;
+        prescripteur_commission_rate_pct: string | number | null;
+        prescripteur_commission_flat_ht: string | number | null;
+      }>();
+    const toNum = (v: string | number | null | undefined) =>
+      v === null || v === undefined ? null : Number(v);
+    subcontractingDistancielHt = toNum(
+      newRates?.subcontracting_daily_rate_distanciel_ht,
+    );
+    subcontractingPresentielHt = toNum(
+      newRates?.subcontracting_daily_rate_presentiel_ht,
+    );
+    prescripteurCommissionRatePct = toNum(
+      newRates?.prescripteur_commission_rate_pct,
+    );
+    prescripteurCommissionFlatHt = toNum(
+      newRates?.prescripteur_commission_flat_ht,
+    );
+  }
   if (isPartner) {
     const [
       { data: tokenRow },
@@ -510,6 +546,24 @@ export default async function CompanyDetailPage({
             pricing={partnerPricing}
           />
         )}
+
+        {/* Bloc unifie "Tarifs" — refonte 2026-05-31 (4 sous-sections
+            selon le scenario metier). Affiche pour TOUTES les entreprises
+            (la sous-section sous-traitance est utile meme pour les non
+            partenaires). */}
+        <PricingSection
+          companyId={id}
+          companyType={company.type}
+          dailyRateDistancielHt={partnerDailyRateDistancielHt}
+          dailyRatePresentielHt={partnerDailyRatePresentielHt}
+          quizUnitPriceHt={partnerQuizUnitPriceHt}
+          formations={partnerFormations}
+          pricing={partnerPricing}
+          subcontractingDistancielHt={subcontractingDistancielHt}
+          subcontractingPresentielHt={subcontractingPresentielHt}
+          prescripteurCommissionRatePct={prescripteurCommissionRatePct}
+          prescripteurCommissionFlatHt={prescripteurCommissionFlatHt}
+        />
 
         {/* Notes internes : timeline horodatée + ancien champ « notes »
             (legacy) affiché en encart au-dessus si non vide. */}
