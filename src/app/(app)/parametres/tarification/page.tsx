@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ParametresNav } from "../_nav";
 import { updatePricingDefaults } from "./actions";
+import { BillingBackfillButton } from "./_billing-backfill-button";
 
 type PricingDefaults = {
   inter_presentiel_per_day_ht: number;
@@ -276,6 +277,11 @@ export default async function PricingSettingsPage({
               Vue d&apos;ensemble des tarifications
             </Link>
           </div>
+
+          {/* Backfill billing (Gilles 2026-05-31 etape 5 refonte tarif).
+              Recalcule billing_total_ht pour toutes les inscriptions
+              existantes en appliquant le helper unifie. */}
+          <BillingBackfillButton />
 
           <div className="flex justify-end gap-2">
             <Button type="submit">
