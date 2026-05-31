@@ -399,10 +399,13 @@ export async function loadAndComputeBillingForInscription(
   supabase: SupabaseClient,
   inscriptionId: string,
 ): Promise<ComputeBillingResult> {
+  // Fix Gilles 2026-05-31 : la colonne sur inscription_requests s appelle
+  // `target_formation_id` (pas `formation_id`). On la prend en priorite,
+  // sinon fallback sur sessions.formation_id si une session est definie.
   const { data: insc, error } = await supabase
     .from("inscription_requests")
     .select(
-      "id, company_id, referrer_company_id, target_session_id, formation_id",
+      "id, company_id, referrer_company_id, target_session_id, target_formation_id",
     )
     .eq("id", inscriptionId)
     .maybeSingle<{
@@ -410,7 +413,7 @@ export async function loadAndComputeBillingForInscription(
       company_id: string | null;
       referrer_company_id: string | null;
       target_session_id: string | null;
-      formation_id: string | null;
+      target_formation_id: string | null;
     }>();
   if (error || !insc) {
     return {
@@ -427,8 +430,10 @@ export async function loadAndComputeBillingForInscription(
     };
   }
 
-  // Charge en parallele : session, formation, learnerCompany, referrer
-  const [sessRes, formationRes, learnerRes, referrerRes] = await Promise.all([
+  // Charge en parallele : session, learnerCompany, referrer
+  // (la formation est chargee ensuite, car on a parfois besoin de la
+  // recuperer via sessions.formation_id si target_formation_id null)
+  const [sessRes, learnerRes, referrerRes] = await Promise.all([
     insc.target_session_id
       ? supabase
           .from("sessions")
@@ -436,13 +441,6 @@ export async function loadAndComputeBillingForInscription(
             "id, modality, subcontracting_company_id, formation_id",
           )
           .eq("id", insc.target_session_id)
-          .maybeSingle()
-      : Promise.resolve({ data: null, error: null }),
-    insc.formation_id
-      ? supabase
-          .from("formations")
-          .select("id, duration_days, public_price_excl_tax")
-          .eq("id", insc.formation_id)
           .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
     insc.company_id
@@ -462,6 +460,21 @@ export async function loadAndComputeBillingForInscription(
           .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
   ]);
+
+  // Resolution de la formation : priorite target_formation_id de
+  // l inscription, sinon sessions.formation_id.
+  const sessFormationId =
+    (sessRes.data as { formation_id: string | null } | null)?.formation_id ??
+    null;
+  const resolvedFormationId =
+    insc.target_formation_id ?? sessFormationId ?? null;
+  const formationRes = resolvedFormationId
+    ? await supabase
+        .from("formations")
+        .select("id, duration_days, public_price_excl_tax")
+        .eq("id", resolvedFormationId)
+        .maybeSingle()
+    : { data: null, error: null };
 
   // Subcontracting company (si session sous-traitee)
   let subcontractingCompany: ComputeBillingInput["subcontractingCompany"] =
@@ -502,12 +515,12 @@ export async function loadAndComputeBillingForInscription(
 
   // Override partner_pricing (si referrer + formation)
   let partnerPriceOverrideHt: number | null = null;
-  if (insc.referrer_company_id && insc.formation_id) {
+  if (insc.referrer_company_id && resolvedFormationId) {
     const { data: overrideRow } = await supabase
       .from("partner_pricing")
       .select("unit_price_ht")
       .eq("company_id", insc.referrer_company_id)
-      .eq("formation_id", insc.formation_id)
+      .eq("formation_id", resolvedFormationId)
       .maybeSingle();
     partnerPriceOverrideHt = toNum(
       (overrideRow as { unit_price_ht: number | string | null } | null)
