@@ -455,6 +455,16 @@ export default async function SessionsListPage({
       // Sessions alors qu elles ne sont plus dans Participants.
       const inscStageId = r.stage_id as string | null;
       if (inscStageId && lostStageIds.has(inscStageId)) return;
+      // Skip brouillons zombies (Gilles 2026-05-31) : inscriptions
+      // creees vides (pas de nom apprenant ET pas de learner_id rattache).
+      // Ces enregistrements pollluent le compteur sans correspondre a
+      // une vraie demande d inscription.
+      const hasLearnerLink = !!(r.learner_id as string | null);
+      const prospectLast = ((r.prospect_last_name as string | null) ?? "").trim();
+      const prospectFirst = ((r.prospect_first_name as string | null) ?? "").trim();
+      const prospectEmail = ((r.prospect_email as string | null) ?? "").trim();
+      const hasProspectInfo = !!(prospectLast || prospectFirst || prospectEmail);
+      if (!hasLearnerLink && !hasProspectInfo) return;
       inscriptionCount.set(id, (inscriptionCount.get(id) ?? 0) + 1);
       // Refonte tarification 2026-05-31 (Gilles etape 6 phase 2) :
       // delegate au helper partage. Source unique de verite =
