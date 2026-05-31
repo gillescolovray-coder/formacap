@@ -844,13 +844,13 @@ export default async function SessionsListPage({
                 }
                 const b = buckets.get(key)!;
                 b.count += 1;
-                // Règle Gilles 2026-05-22 : pour couvrir TOUTES les
-                // sessions dans le total, cascade :
+                // Refonte tarification 2026-05-31 (Gilles) : cascade
+                // corrigee pour totaux session :
                 //   1. amount_ht saisi sur la session (réel)
-                //   2. somme inscriptionAmounts (devis inscrits — déjà
-                //      avec tarif public substitué pour partenaires)
-                //   3. fallback CA potentiel = tarif public unitaire ×
-                //      nb d'inscrits (ou max_participants à défaut)
+                //   2. somme inscriptionAmounts (CA reel = billing_total_ht
+                //      > quote_amount_ht — tarifs negocies inclus)
+                //   3. fallback estimation = tarif public × nb d'inscrits
+                //      (ou max_participants a defaut)
                 let amount = 0;
                 if (s.amount_ht !== null && s.amount_ht !== undefined) {
                   amount = Number(s.amount_ht);
@@ -982,13 +982,16 @@ export default async function SessionsListPage({
                       }
                     }
 
-                    // Montant à afficher (Gilles 2026-05-22, révisé) :
+                    // Refonte tarification 2026-05-31 (Gilles) :
+                    // Cascade corrigee pour eviter l incoherence
+                    // 1220€ (tarif catalogue) vs 1175€ (CA reel).
                     //   1. amount_ht saisi sur la session (total figé) →
                     //      utilisé tel quel
-                    //   2. sinon : tarif PUBLIC unitaire × nb d'inscrits →
-                    //      donne le CA prévisionnel au tarif catalogue
-                    //   3. en dernier secours : somme des devis individuels
-                    //      (utile si tarif public formation non renseigné).
+                    //   2. somme des montants reels des inscriptions
+                    //      (billing_total_ht > quote_amount_ht) →
+                    //      AFFICHE LE CA REEL (tarifs negocies inclus)
+                    //   3. fallback estimation : tarif PUBLIC × nb
+                    //      d'inscrits (si aucune inscription chiffree)
                     const pubUnit = publicUnitBySession.get(s.id);
                     const nbInscrits =
                       totalPersons.get(s.id) ??
@@ -1000,10 +1003,10 @@ export default async function SessionsListPage({
                     const displayedAmount =
                       s.amount_ht !== null && s.amount_ht !== undefined
                         ? Number(s.amount_ht)
-                        : pubUnit && pubUnit > 0 && nbInscrits > 0
-                          ? pubUnit * nbInscrits
-                          : inscriptionTotal > 0
-                            ? inscriptionTotal
+                        : inscriptionTotal > 0
+                          ? inscriptionTotal
+                          : pubUnit && pubUnit > 0 && nbInscrits > 0
+                            ? pubUnit * nbInscrits
                             : null;
                     const amountFromInscriptions =
                       (s.amount_ht === null || s.amount_ht === undefined) &&
