@@ -19,6 +19,10 @@ import { createClient } from "@/lib/supabase/server";
 import { DuplicateSessionButton } from "./_duplicate-button";
 import { InscriptionsCounterCell } from "./_inscriptions-tooltip";
 import { PageHeader } from "@/components/page-header";
+import {
+  computeInscriptionDisplayAmount,
+  type DisplayAmountSessionContext,
+} from "@/lib/billing/display-amount";
 
 // Force le rechargement à chaque accès pour que les compteurs d'inscrits /
 // statuts soient toujours à jour (synchronisation bidirectionnelle entre
@@ -136,7 +140,7 @@ export default async function SessionsListPage({
   let query = supabase
     .from("sessions")
     .select(
-      "*, formation:formations(id, title, public_price_excl_tax, price_company), trainer:trainers!trainer_id(id, first_name, last_name), prescriber:companies!prescriber_company_id(id, name), quiz:quiz_templates!quiz_template_id(id, title), location_obj:formation_locations!location_id(id, name, address, postal_code, city)",
+      "*, formation:formations(id, title, public_price_excl_tax, price_company, duration_days), trainer:trainers!trainer_id(id, first_name, last_name), prescriber:companies!prescriber_company_id(id, name), quiz:quiz_templates!quiz_template_id(id, title), location_obj:formation_locations!location_id(id, name, address, postal_code, city)",
     );
 
   if (q) {
@@ -387,8 +391,19 @@ export default async function SessionsListPage({
     });
 
     // Remplit la map tarif public déclarée plus haut (Gilles 2026-05-22).
+    // Et construit en meme temps la map sessionId -> contexte pour le
+    // helper partage computeInscriptionDisplayAmount (refonte 2026-05-31).
+    const sessionCtxById = new Map<string, DisplayAmountSessionContext>();
     for (const s of sessionsRaw ?? []) {
-      const f = (s as { formation?: { public_price_excl_tax?: number | null; price_company?: number | null } | null }).formation;
+      const f = (
+        s as {
+          formation?: {
+            public_price_excl_tax?: number | null;
+            price_company?: number | null;
+            duration_days?: number | null;
+          } | null;
+        }
+      ).formation;
       const pub =
         (f?.price_company ?? null) !== null
           ? Number(f?.price_company)
@@ -398,46 +413,55 @@ export default async function SessionsListPage({
       if (pub !== null && Number.isFinite(pub) && pub > 0) {
         publicUnitBySession.set((s as { id: string }).id, pub);
       }
+      // Contexte session pour le helper partage. duration_days vient
+      // soit de la formation (preferable), soit calculee depuis dates.
+      const sessAny = s as Record<string, unknown>;
+      const durationDays =
+        f?.duration_days !== null && f?.duration_days !== undefined
+          ? Number(f.duration_days)
+          : null;
+      sessionCtxById.set((s as { id: string }).id, {
+        pricing_mode: (sessAny.pricing_mode as "per_learner" | "forfait" | null) ?? null,
+        price_per_day_ht: sessAny.price_per_day_ht as number | string | null,
+        price_forfait_ht: sessAny.price_forfait_ht as number | string | null,
+        price_extra_per_day_ht: sessAny.price_extra_per_day_ht as
+          | number
+          | string
+          | null,
+        pricing_threshold: sessAny.pricing_threshold as number | string | null,
+        duration_days: durationDays,
+        formation_public_price_excl_tax: pub,
+        // Pour la session entiere, nb_billable_inscriptions est calcule
+        // separement dans la passe inscriptions. On laisse undefined :
+        // le mode forfait sera moins precis ici mais c est acceptable
+        // pour une vue agregee (les ecrans detail font le bon calcul).
+      });
     }
 
     (inscriptions ?? []).forEach((r, idx) => {
       const id = r.target_session_id as string;
       if (!id) return;
       inscriptionCount.set(id, (inscriptionCount.get(id) ?? 0) + 1);
-      // Refonte tarification 2026-05-31 (Gilles) : cascade par
-      // INSCRIPTION (et non au niveau session) pour eviter d ecraser
-      // la moitie du CA quand certaines inscriptions ont un tarif
-      // explicite (quote_amount_ht/billing) et d autres non.
-      // Ordre :
-      //   1. billing_total_ht (source de verite refonte)
-      //   2. quote_amount_ht (legacy, contient deja le tarif negocie
-      //      partenaire pour les inscriptions via portail)
-      //   3. tarif public formation (catalogue) — fallback estimation
-      //      pour les inscriptions sans devis explicite
-      // Ainsi : 1 inscription via OF a 260€ + 3 inscriptions sans devis
-      // explicite a 305€ (catalogue) -> total 1175€ coherent.
-      let amt: number | null = null;
-      const billingTotal = (
-        r as { billing_total_ht?: number | string | null }
-      ).billing_total_ht;
-      if (billingTotal !== null && billingTotal !== undefined) {
-        const n = Number(billingTotal);
-        if (Number.isFinite(n)) amt = n;
-      }
-      if (amt === null) {
-        const raw = r.quote_amount_ht as number | null;
-        if (raw !== null && raw !== undefined && Number.isFinite(Number(raw))) {
-          amt = Number(raw);
-        }
-      }
-      if (amt === null) {
-        const pub = publicUnitBySession.get(id);
-        if (pub !== undefined && pub > 0) amt = pub;
-      }
-      if (amt !== null) {
+      // Refonte tarification 2026-05-31 (Gilles etape 6 phase 2) :
+      // delegate au helper partage. Source unique de verite =
+      // src/lib/billing/display-amount.ts (utilisee aussi par
+      // _session-table.tsx, dashboard, conventions, etc.)
+      const ctx =
+        sessionCtxById.get(id) ??
+        ({
+          formation_public_price_excl_tax: publicUnitBySession.get(id) ?? null,
+        } as DisplayAmountSessionContext);
+      const res = computeInscriptionDisplayAmount(
+        r as {
+          billing_total_ht?: number | string | null;
+          quote_amount_ht?: number | string | null;
+        },
+        ctx,
+      );
+      if (res.amount !== null) {
         inscriptionAmounts.set(
           id,
-          (inscriptionAmounts.get(id) ?? 0) + amt,
+          (inscriptionAmounts.get(id) ?? 0) + res.amount,
         );
       }
       const stage = r.stage_id ? stageById.get(r.stage_id as string) : null;

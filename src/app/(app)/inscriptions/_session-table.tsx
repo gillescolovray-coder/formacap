@@ -16,6 +16,11 @@ import {
   type InscriptionStage,
 } from "@/lib/inscriptions/types";
 import { computeSessionPrice } from "@/lib/pricing/compute";
+import {
+  computeInscriptionDisplayAmount,
+  computeSessionDisplayTotal,
+  type DisplayAmountSessionContext,
+} from "@/lib/billing/display-amount";
 import { formatLearnerName } from "@/lib/learners/format";
 
 type SessionForCard = {
@@ -124,35 +129,24 @@ export function SessionInscriptionsTable({
     }
   }
 
-  // Total session HT = somme des montants individuels affichés dans la
-  // colonne (mêmes priorités : explicite > dérivé R7 > fallback legacy).
-  // Cohérent avec ce que l'utilisateur voit ligne par ligne.
-  const legacyFallbackPrice =
-    session?.formation?.public_price_excl_tax !== null &&
-    session?.formation?.public_price_excl_tax !== undefined
-      ? Number(session.formation.public_price_excl_tax)
-      : null;
-  let totalSessionHt = 0;
-  let totalIsExact = true;
-  for (const r of requests) {
-    const explicit =
-      r.quote_amount_ht !== null && r.quote_amount_ht !== undefined
-        ? Number(r.quote_amount_ht)
-        : null;
-    const amount =
-      explicit !== null && Number.isFinite(explicit)
-        ? explicit
-        : derivedPerLearner !== null && Number.isFinite(derivedPerLearner)
-          ? derivedPerLearner
-          : legacyFallbackPrice !== null && Number.isFinite(legacyFallbackPrice)
-            ? legacyFallbackPrice
-            : null;
-    if (amount === null) {
-      totalIsExact = false;
-    } else {
-      totalSessionHt += amount;
-    }
-  }
+  // Refonte tarification 2026-05-31 (Gilles etape 6) : delegate au
+  // helper partage computeSessionDisplayTotal — meme cascade utilisee
+  // dans tableau Sessions, dashboard, conventions etc.
+  // Source unique = src/lib/billing/display-amount.ts
+  const sessionCtx: DisplayAmountSessionContext = {
+    pricing_mode: session?.pricing_mode ?? null,
+    price_per_day_ht: session?.price_per_day_ht ?? null,
+    price_forfait_ht: session?.price_forfait_ht ?? null,
+    price_extra_per_day_ht: session?.price_extra_per_day_ht ?? null,
+    pricing_threshold: session?.pricing_threshold ?? null,
+    duration_days: nbJours,
+    formation_public_price_excl_tax:
+      session?.formation?.public_price_excl_tax ?? null,
+    nb_billable_inscriptions: nbApprenantsBillable,
+  };
+  const sessionTotalRes = computeSessionDisplayTotal(requests, sessionCtx);
+  const totalSessionHt = sessionTotalRes.totalHt;
+  const totalIsExact = sessionTotalRes.isExact;
 
   return (
     <div className="relative">
@@ -480,64 +474,43 @@ export function SessionInscriptionsTable({
                 {v.montant && (
                   <td className="px-2 py-2 text-right tabular-nums">
                     {(() => {
-                      // Priorité de calcul (cascade R7) :
-                      //   1. Montant explicite saisi sur la demande
-                      //      (négociation commerciale par inscription)
-                      //   2. Tarification dérivée des champs pricing_*
-                      //      de la session (INTER ou INTRA, V1 R7)
-                      //   3. Fallback legacy : prix public formation
-                      //      (sessions créées avant la migration 0064)
-                      const explicit =
-                        r.quote_amount_ht !== null &&
-                        r.quote_amount_ht !== undefined
-                          ? Number(r.quote_amount_ht)
-                          : null;
-                      const legacyFallback =
-                        session?.formation?.public_price_excl_tax !== null &&
-                        session?.formation?.public_price_excl_tax !== undefined
-                          ? Number(session.formation.public_price_excl_tax)
-                          : null;
-                      const amount =
-                        explicit !== null && Number.isFinite(explicit)
-                          ? explicit
-                          : derivedPerLearner !== null &&
-                              Number.isFinite(derivedPerLearner)
-                            ? derivedPerLearner
-                            : legacyFallback !== null &&
-                                Number.isFinite(legacyFallback)
-                              ? legacyFallback
-                              : null;
-                      if (amount === null) {
+                      // Refonte tarification 2026-05-31 (Gilles etape 6) :
+                      // delegate au helper partage. Source unique de
+                      // verite = src/lib/billing/display-amount.ts
+                      const res = computeInscriptionDisplayAmount(
+                        r,
+                        sessionCtx,
+                      );
+                      if (res.amount === null) {
                         return <span className="text-slate-400">—</span>;
                       }
-                      // Style : explicite (override commercial) → ambre fort
-                      //         dérivé R7 → couleur normale
-                      //         legacy fallback → italique gris
-                      const source =
-                        explicit !== null
-                          ? "explicit"
-                          : derivedPerLearner !== null
-                            ? "derived"
-                            : "legacy";
+                      // Mapping couleur selon source du helper :
+                      //   billing (refonte)    -> emeraude
+                      //   quote (legacy explicit) -> ambre fort
+                      //   derived_* (R7)       -> slate normal
+                      //   catalog (fallback)   -> slate italique
+                      const colorClass =
+                        res.source === "billing"
+                          ? "text-emerald-700"
+                          : res.source === "quote"
+                            ? "text-amber-700"
+                            : res.source === "derived_per_learner" ||
+                                res.source === "derived_forfait"
+                              ? "text-slate-700"
+                              : "text-slate-500 italic";
+                      // Tooltip : utilise derivedLabel local pour cas R7
+                      // (plus parlant que res.explain qui est generique)
                       const tooltip =
-                        source === "explicit"
-                          ? "Montant négocié saisi sur la demande"
-                          : source === "derived"
-                            ? derivedLabel ?? "Tarif session"
-                            : "Prix public de la formation (session pré-tarification cascade)";
+                        res.source === "derived_per_learner" ||
+                        res.source === "derived_forfait"
+                          ? derivedLabel ?? res.explain
+                          : res.explain;
                       return (
                         <span
-                          className={cn(
-                            "font-bold",
-                            source === "explicit"
-                              ? "text-amber-700"
-                              : source === "derived"
-                                ? "text-slate-700"
-                                : "text-slate-500 italic",
-                          )}
+                          className={cn("font-bold", colorClass)}
                           title={tooltip}
                         >
-                          {amount.toLocaleString("fr-FR", {
+                          {res.amount.toLocaleString("fr-FR", {
                             minimumFractionDigits: 2,
                           })}{" "}
                           €
