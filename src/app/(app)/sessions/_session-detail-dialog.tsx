@@ -28,6 +28,8 @@ export type SessionDetailItem = {
   learnerId: string | null;
   fullName: string;
   companyName: string | null;
+  /** Source de l inscription : "direct" (CAP), "OF — nom", "Prescripteur — nom" */
+  sourceLabel: string;
   stageName: string | null;
   stageColor: string | null;
   amountHt: number | null;
@@ -189,6 +191,7 @@ export function SessionDetailDialog({
                 <tr>
                   <th className="px-3 py-2 text-left">Apprenant</th>
                   <th className="px-3 py-2 text-left">Entreprise</th>
+                  <th className="px-3 py-2 text-left">Source</th>
                   <th className="px-3 py-2 text-left">Étape</th>
                   <th className="px-3 py-2 text-center">Convention</th>
                   <th className="px-3 py-2 text-center">Convoc.</th>
@@ -207,6 +210,9 @@ export function SessionDetailDialog({
                       {it.companyName ?? (
                         <span className="text-zinc-400 italic">—</span>
                       )}
+                    </td>
+                    <td className="px-3 py-2 text-zinc-600 dark:text-zinc-400 text-[11px]">
+                      {it.sourceLabel}
                     </td>
                     <td className="px-3 py-2">
                       {it.stageName ? (

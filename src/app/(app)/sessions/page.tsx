@@ -304,7 +304,7 @@ export default async function SessionsListPage({
       ? supabase
           .from("inscription_requests")
           .select(
-            "target_session_id, learner_id, prospect_email, prospect_first_name, prospect_last_name, prospect_phone, stage_id, company_name_freetext, quote_amount_ht, via_partner_portal, billing_total_ht, learner:learners(first_name, last_name, email, phone, job_title, company:companies(name))",
+            "target_session_id, learner_id, prospect_email, prospect_first_name, prospect_last_name, prospect_phone, stage_id, company_name_freetext, quote_amount_ht, via_partner_portal, billing_total_ht, inscription_channel, referrer:companies!referrer_company_id(name, type), learner:learners(first_name, last_name, email, phone, job_title, company:companies(name))",
           )
           .in("target_session_id", sessionIds)
       : Promise.resolve({ data: [] }),
@@ -658,6 +658,7 @@ export default async function SessionsListPage({
     learnerId: string | null;
     fullName: string;
     companyName: string | null;
+    sourceLabel: string;
     stageName: string | null;
     stageColor: string | null;
     amountHt: number | null;
@@ -727,6 +728,8 @@ export default async function SessionsListPage({
     company_name_freetext: string | null;
     quote_amount_ht: number | null;
     billing_total_ht: number | string | null;
+    inscription_channel: string | null;
+    referrer: { name: string | null; type: string | null } | Array<{ name: string | null; type: string | null }> | null;
     learner: { first_name: string | null; last_name: string | null; company: { name: string } | null } | null;
   }>) {
     const sid = r.target_session_id;
@@ -772,11 +775,26 @@ export default async function SessionsListPage({
       }
     }
 
+    // Source d inscription (Gilles 2026-05-31) :
+    //   - direct -> "CAP NUMERIQUE"
+    //   - of + nom referrer -> "OF — <nom>"
+    //   - prescripteur + nom referrer -> "Prescripteur — <nom>"
+    const ref = Array.isArray(r.referrer) ? r.referrer[0] : r.referrer;
+    let sourceLabel = "CAP NUMERIQUE";
+    if (r.inscription_channel === "of") {
+      sourceLabel = ref?.name ? `OF — ${ref.name}` : "OF";
+    } else if (r.inscription_channel === "prescripteur") {
+      sourceLabel = ref?.name
+        ? `Prescripteur — ${ref.name}`
+        : "Prescripteur";
+    }
+
     sessionDetailItems.get(sid)!.push({
       key: `i:${r.learner_id ?? email ?? fullName}`,
       learnerId: r.learner_id,
       fullName,
       companyName,
+      sourceLabel,
       stageName: stage?.name ?? null,
       stageColor: stage?.color ?? null,
       amountHt,
