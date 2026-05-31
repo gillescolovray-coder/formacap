@@ -420,7 +420,7 @@ export default async function ConventionsPage({
   const { data: companyInscriptions } = await supabase
     .from("inscription_requests")
     .select(
-      "company_id, inscription_channel, inscription_channel_company_id, quote_amount_ht, referrer:companies!inscription_channel_company_id(name, type)",
+      "company_id, inscription_channel, inscription_channel_company_id, quote_amount_ht, billing_total_ht, referrer:companies!inscription_channel_company_id(name, type)",
     )
     .eq("target_session_id", id)
     .in(
@@ -460,11 +460,19 @@ export default async function ConventionsPage({
     string,
     { total: number; nbWithQuote: number }
   >();
+  // Refonte 2026-05-31 (Gilles etape 6 phase 2e) : agregation des
+  // billing_total_ht par societe (source de verite refonte). Prioritaire
+  // sur quote_amount_ht et tarif catalogue.
+  const billingAmountByCompany = new Map<
+    string,
+    { total: number; nbWithBilling: number }
+  >();
   for (const row of (companyInscriptions ?? []) as Array<{
     company_id: string | null;
     inscription_channel: string | null;
     inscription_channel_company_id: string | null;
     quote_amount_ht: number | null;
+    billing_total_ht: number | string | null;
     referrer:
       | { name: string; type: string | null }
       | Array<{ name: string; type: string | null }>
@@ -492,6 +500,18 @@ export default async function ConventionsPage({
       cur.total += Number(row.quote_amount_ht);
       cur.nbWithQuote += 1;
       quoteAmountByCompany.set(row.company_id, cur);
+    }
+    if (row.billing_total_ht !== null && row.billing_total_ht !== undefined) {
+      const n = Number(row.billing_total_ht);
+      if (Number.isFinite(n) && n > 0) {
+        const cur = billingAmountByCompany.get(row.company_id) ?? {
+          total: 0,
+          nbWithBilling: 0,
+        };
+        cur.total += n;
+        cur.nbWithBilling += 1;
+        billingAmountByCompany.set(row.company_id, cur);
+      }
     }
   }
 
@@ -522,7 +542,21 @@ export default async function ConventionsPage({
     );
     let unitHt = 0;
     let totalHt = 0;
-    if (cfg && nbJours > 0) {
+    // PRIORITE Refonte tarification 2026-05-31 (Gilles etape 6 phase 2e) :
+    // si les inscriptions de cette societe ont des billing_total_ht
+    // (source de verite refonte), on les utilise en priorite absolue.
+    const billing = billingAmountByCompany.get(c.companyId);
+    if (billing && billing.nbWithBilling > 0) {
+      const avg = billing.total / billing.nbWithBilling;
+      if (billing.nbWithBilling >= nbCompany) {
+        unitHt = avg;
+        totalHt = billing.total;
+      } else {
+        unitHt = avg;
+        totalHt = avg * nbCompany;
+      }
+    }
+    if ((unitHt === 0 || totalHt === 0) && cfg && nbJours > 0) {
       const r = computeConventionAmount(
         cfg,
         nbCompany,

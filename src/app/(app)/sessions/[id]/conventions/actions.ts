@@ -91,6 +91,40 @@ async function computeConventionPricing(
   ]);
   const nbApprenantsCompany = Math.max(enrollCount ?? 0, reqCount ?? 0);
 
+  // PRIORITE Refonte tarification 2026-05-31 (Gilles etape 6 phase 2e) :
+  // si les inscription_requests de cette societe ont des billing_total_ht
+  // renseignes (source de verite refonte — calcules par le helper
+  // computeBillingForInscription ou saisis manuellement dans le bloc
+  // Facturation de la fiche inscription), on les prend en priorite
+  // absolue avant toute autre cascade. Ainsi un override manuel par
+  // Gilles est respecte dans la convention.
+  const { data: billingsArr } = await supabase
+    .from("inscription_requests")
+    .select("billing_total_ht")
+    .eq("target_session_id", sessionId)
+    .eq("company_id", companyId)
+    .not("billing_total_ht", "is", null);
+  const billings = (
+    (billingsArr ?? []) as Array<{ billing_total_ht: number | string | null }>
+  )
+    .map((r) => Number(r.billing_total_ht))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  if (billings.length > 0) {
+    const sum = billings.reduce((a, b) => a + b, 0);
+    const avg = sum / billings.length;
+    // Si tous les apprenants de la societe ont leur billing_total_ht,
+    // on prend la somme exacte. Sinon, on extrapole avg * nbApprenants
+    // (cas hybride : certaines inscriptions ont leur billing calcule,
+    // d autres pas — on suppose qu elles auront le meme tarif moyen).
+    if (billings.length >= nbApprenantsCompany) {
+      return { unitPrice: avg, totalHt: sum };
+    }
+    return {
+      unitPrice: avg,
+      totalHt: avg * Math.max(nbApprenantsCompany, billings.length),
+    };
+  }
+
   // Cascade R7 active ?
   if (sessionRow?.pricing_mode) {
     // Nb total d'apprenants sur la session (toutes sociétés confondues)
