@@ -573,12 +573,26 @@ export default async function SessionsListPage({
     //   total = enrollments
     //         + inscriptions dont le learner_id N'EST PAS déjà enrôlé
     //   (les inscriptions converties n'ajoutent pas de places en double)
+    // Fix Gilles 2026-05-31 : applique les memes filtres que la boucle
+    // principale (skip cancelled/refused/lost ET brouillons zombies sans
+    // nom). Sinon des inscriptions abandonnees continuent a apparaitre
+    // dans le compteur X / 10 alors qu elles ne sont plus dans
+    // l onglet Participants.
     for (const sid of sessionIds) {
       const enrolled = enrollmentCount.get(sid) ?? 0;
       const enrolledIds = enrolledLearnerIds.get(sid) ?? new Set();
       let pendingFromInscriptions = 0;
       (inscriptions ?? []).forEach((r) => {
         if (r.target_session_id !== sid) return;
+        // Skip stages perdus
+        const stId = r.stage_id as string | null;
+        if (stId && lostStageIds.has(stId)) return;
+        // Skip brouillons zombies (sans nom ni learner)
+        const hasLearner = !!(r.learner_id as string | null);
+        const last = ((r.prospect_last_name as string | null) ?? "").trim();
+        const first = ((r.prospect_first_name as string | null) ?? "").trim();
+        const email = ((r.prospect_email as string | null) ?? "").trim();
+        if (!hasLearner && !last && !first && !email) return;
         const lid = r.learner_id as string | null;
         if (lid && enrolledIds.has(lid)) {
           // déjà comptée dans enrollments → on l'ignore
