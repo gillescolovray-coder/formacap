@@ -550,8 +550,26 @@ export default async function SessionsListPage({
     });
 
     // Tri alphabétique des personnes au sein de chaque session
-    for (const list of personsBySession.values()) {
+    // + DEDUPLICATION par learner (Gilles 2026-05-31) :
+    // personsBySession est remplie par 2 boucles (enrollments puis
+    // inscriptions) ce qui pouvait afficher 2 fois le meme apprenant
+    // dans le tooltip si l inscription avait genere son enrollment
+    // miroir. On garde une seule entree par (email|fullname).
+    for (const sid of personsBySession.keys()) {
+      const list = personsBySession.get(sid) ?? [];
       list.sort((a, b) => a.sortKey.localeCompare(b.sortKey, "fr"));
+      const seen = new Set<string>();
+      const deduped: typeof list = [];
+      for (const p of list) {
+        const dedupKey = (
+          p.email?.toLowerCase() ??
+          `${p.last_name ?? ""}|${p.first_name ?? ""}`.toLowerCase()
+        ).trim();
+        if (seen.has(dedupKey)) continue;
+        seen.add(dedupKey);
+        deduped.push(p);
+      }
+      personsBySession.set(sid, deduped);
     }
 
     // Indexation des formateurs par jour (un par session, dédupliqué).

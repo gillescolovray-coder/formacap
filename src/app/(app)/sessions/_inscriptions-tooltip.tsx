@@ -2,14 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import {
-  Briefcase,
-  Building2,
-  FileSignature,
-  ListChecks,
-  Mail,
-  Phone,
-} from "lucide-react";
+import { FileSignature, ListChecks } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   SessionDetailDialog,
@@ -262,7 +255,9 @@ export function InscriptionsCounterCell({
               )}
             </div>
 
-            {/* Liste détaillée des personnes */}
+            {/* Liste compacte des personnes (Gilles 2026-05-31 :
+                tooltip allege — juste nom + dernier statut connu.
+                Les details complets sont dans la modal "Voir detail"). */}
             {persons.length > 0 && (
               <ul className="divide-y divide-slate-100 dark:divide-slate-800">
                 {persons.map((p) => {
@@ -274,73 +269,23 @@ export function InscriptionsCounterCell({
                   return (
                     <li
                       key={p.key}
-                      className="px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                      className="px-4 py-1.5 flex items-center justify-between gap-2 hover:bg-slate-50 dark:hover:bg-slate-800/50"
                     >
-                      <div className="flex items-start justify-between gap-2">
-                        <p className="text-sm font-semibold truncate">
-                          {p.last_name?.toUpperCase() ?? ""}
-                          {p.first_name ? ` ${p.first_name}` : ""}
-                          {!p.first_name && !p.last_name && fullName}
-                        </p>
-                        <span
-                          className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold border whitespace-nowrap shrink-0"
-                          style={{
-                            backgroundColor: `${p.statusColor}15`,
-                            borderColor: p.statusColor ?? "#94a3b8",
-                            color: p.statusColor ?? "#475569",
-                          }}
-                        >
-                          {p.statusLabel}
-                        </span>
-                      </div>
-                      <div className="text-[11px] text-slate-500 space-y-1 mt-1.5">
-                        {(p.job_title || p.company_name) && (
-                          <div className="flex flex-wrap gap-x-3 gap-y-0.5">
-                            {p.job_title && (
-                              <span className="inline-flex items-center gap-1">
-                                <Briefcase className="h-3 w-3" />
-                                {p.job_title}
-                              </span>
-                            )}
-                            {p.company_name && (
-                              <span className="inline-flex items-center gap-1 font-medium text-slate-600 dark:text-slate-300">
-                                <Building2 className="h-3 w-3" />
-                                {p.company_name}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                        {(p.email || p.phone) && (
-                          <div className="flex flex-wrap gap-x-3 gap-y-0.5">
-                            {p.email && (
-                              <a
-                                href={`mailto:${p.email}`}
-                                className="inline-flex items-center gap-1 text-cyan-700 dark:text-cyan-400 hover:underline"
-                              >
-                                <Mail className="h-3 w-3" />
-                                {p.email}
-                              </a>
-                            )}
-                            {p.phone && (
-                              <a
-                                href={`tel:${p.phone}`}
-                                className="inline-flex items-center gap-1 hover:text-cyan-700 font-medium"
-                              >
-                                <Phone className="h-3 w-3" />
-                                {p.phone}
-                              </a>
-                            )}
-                          </div>
-                        )}
-                        {!p.job_title &&
-                          !p.company_name &&
-                          !p.email &&
-                          !p.phone && (
-                            <span className="italic text-slate-400">
-                              Pas de coordonnées renseignées
-                            </span>
-                          )}
-                      </div>
+                      <span className="text-sm font-semibold truncate">
+                        {p.last_name?.toUpperCase() ?? ""}
+                        {p.first_name ? ` ${p.first_name}` : ""}
+                        {!p.first_name && !p.last_name && fullName}
+                      </span>
+                      <span
+                        className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold border whitespace-nowrap shrink-0"
+                        style={{
+                          backgroundColor: `${p.statusColor}15`,
+                          borderColor: p.statusColor ?? "#94a3b8",
+                          color: p.statusColor ?? "#475569",
+                        }}
+                      >
+                        {p.statusLabel}
+                      </span>
                     </li>
                   );
                 })}
