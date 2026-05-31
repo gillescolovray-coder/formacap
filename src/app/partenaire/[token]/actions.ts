@@ -226,6 +226,13 @@ export async function submitPartnerEnrollment(formData: FormData): Promise<
       inscription_channel_company_id: ctx.company.id,
       financing_mode: "employeur",
       quote_amount_ht: unitPriceHt,
+      // Refonte tarification 2026-05-31 (Gilles etape 6 phase 2f) :
+      // populer billing_total_ht des l inscription pour aligner les
+      // ecrans (tableau Sessions, conventions, dashboard) sur le tarif
+      // partenaire effectif. billing_total_ht = quote_amount_ht (meme
+      // valeur, mais champ de la refonte qui est priorise partout).
+      billing_total_ht: unitPriceHt,
+      billing_pricing_mode: "flat",
       request_message: message || null,
       contract_signed_at: new Date().toISOString(),
       received_at: new Date().toISOString(),
@@ -784,6 +791,11 @@ export async function submitPartnerBatchEnrollmentForm(formData: FormData) {
       financing_mode: financingMode,
       financing_details: financingDetails,
       quote_amount_ht: unitPriceHt,
+      // Refonte tarification 2026-05-31 (Gilles etape 6 phase 2f) :
+      // populer billing_total_ht des l inscription (voir explication
+      // dans la 1ere insertion plus haut dans ce fichier).
+      billing_total_ht: unitPriceHt,
+      billing_pricing_mode: "flat",
       request_message: message || null,
       contract_signed_at: new Date().toISOString(),
       received_at: new Date().toISOString(),

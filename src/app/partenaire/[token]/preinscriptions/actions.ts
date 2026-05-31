@@ -294,8 +294,16 @@ export async function validatePreinscription(
       inscription_channel_company_id: ctx.company.id,
       // Stocke le tarif partenaire calculé pour qu'il apparaisse dans
       // la colonne « Montant HT » côté admin (page Participants).
+      // Refonte tarification 2026-05-31 (Gilles etape 6 phase 2f) :
+      // populer aussi billing_total_ht (source de verite refonte) pour
+      // que les ecrans Sessions/Conventions/Dashboard affichent le
+      // tarif partenaire sans recalcul.
       ...(computedAmountHt !== null
-        ? { quote_amount_ht: computedAmountHt }
+        ? {
+            quote_amount_ht: computedAmountHt,
+            billing_total_ht: computedAmountHt,
+            billing_pricing_mode: "flat" as const,
+          }
         : {}),
       contract_signed_at: new Date().toISOString(),
     })
