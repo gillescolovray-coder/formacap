@@ -255,6 +255,7 @@ export default async function DashboardPage() {
       inscription_request:inscription_requests(
         id, via_partner_portal,
         quote_amount_ht,
+        billing_total_ht,
         referrer:companies!referrer_company_id(name, type)
       )
     `,
@@ -311,6 +312,7 @@ export default async function DashboardPage() {
           id: string;
           via_partner_portal: boolean | null;
           quote_amount_ht: number | string | null;
+          billing_total_ht: number | string | null;
           referrer:
             | { name: string | null; type: string | null }
             | Array<{ name: string | null; type: string | null }>
@@ -320,6 +322,7 @@ export default async function DashboardPage() {
           id: string;
           via_partner_portal: boolean | null;
           quote_amount_ht: number | string | null;
+          billing_total_ht: number | string | null;
           referrer:
             | { name: string | null; type: string | null }
             | Array<{ name: string | null; type: string | null }>
@@ -358,13 +361,26 @@ export default async function DashboardPage() {
           ? "of"
           : "partenaire"
         : "direct";
-      // Budget HT : 1) quote_amount_ht s'il existe (saisi a la main
-      // ou calcule par un portail partenaire), sinon 2) fallback
-      // formations.public_price_excl_tax × duration_days (Gilles
-      // 2026-05-24 : cas typique d'une inscription CAP NUMERIQUE
-      // direct ou l'admin n'a pas saisi de montant). Le flag
-      // `amountHtEstimated` permet d'afficher discretement que c'est
-      // une estimation (italique cote tableau).
+      // Budget HT (refonte tarification 2026-05-31, Gilles etape 6) :
+      //   1) billing_total_ht (source de verite refonte si calcule via
+      //      le helper computeBillingForInscription)
+      //   2) quote_amount_ht legacy (saisi a la main ou portail
+      //      partenaire)
+      //   3) fallback formations.public_price_excl_tax × duration_days
+      //      (cas typique d'une inscription CAP NUMERIQUE direct ou
+      //      l'admin n'a pas saisi de montant — flag amountHtEstimated
+      //      affiche en italique).
+      const billingRaw = (
+        req as { billing_total_ht?: number | string | null } | null
+      )?.billing_total_ht;
+      const billingAmount =
+        billingRaw === null || billingRaw === undefined
+          ? null
+          : Number(billingRaw);
+      const validBilling =
+        billingAmount != null && Number.isFinite(billingAmount)
+          ? billingAmount
+          : null;
       const amountRaw = req?.quote_amount_ht;
       const explicitAmount =
         amountRaw === null || amountRaw === undefined
@@ -376,7 +392,7 @@ export default async function DashboardPage() {
         explicitAmount != null && Number.isFinite(explicitAmount)
           ? explicitAmount
           : null;
-      let amountHt: number | null = validExplicit;
+      let amountHt: number | null = validBilling ?? validExplicit;
       let amountHtEstimated = false;
       if (amountHt === null) {
         const publicPrice = formation?.public_price_excl_tax;
@@ -453,7 +469,7 @@ export default async function DashboardPage() {
       session:sessions!inner(start_date,
         formation:formations(duration_hours)
       ),
-      inscription_request:inscription_requests(quote_amount_ht)
+      inscription_request:inscription_requests(quote_amount_ht, billing_total_ht)
     `,
     )
     .neq("status", "cancelled")
@@ -503,8 +519,8 @@ export default async function DashboardPage() {
         }>
       | null;
     inscription_request:
-      | { quote_amount_ht: number | string | null }
-      | Array<{ quote_amount_ht: number | string | null }>
+      | { quote_amount_ht: number | string | null; billing_total_ht: number | string | null }
+      | Array<{ quote_amount_ht: number | string | null; billing_total_ht: number | string | null }>
       | null;
   };
 
@@ -526,7 +542,11 @@ export default async function DashboardPage() {
     const req = Array.isArray(e.inscription_request)
       ? e.inscription_request[0]
       : e.inscription_request;
-    const amt = req?.quote_amount_ht;
+    // Refonte 2026-05-31 : billing_total_ht en priorite (refonte
+    // tarification), sinon quote_amount_ht (legacy).
+    const billing = req?.billing_total_ht;
+    const amt =
+      billing !== null && billing !== undefined ? billing : req?.quote_amount_ht;
     if (amt !== null && amt !== undefined) {
       const n = Number(amt);
       if (Number.isFinite(n)) bucket.amountHt += n;
