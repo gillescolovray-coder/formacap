@@ -297,7 +297,7 @@ export default async function SessionsListPage({
       ? supabase
           .from("inscription_requests")
           .select(
-            "target_session_id, learner_id, prospect_email, prospect_first_name, prospect_last_name, prospect_phone, stage_id, company_name_freetext, quote_amount_ht, via_partner_portal, learner:learners(first_name, last_name, email, phone, job_title, company:companies(name))",
+            "target_session_id, learner_id, prospect_email, prospect_first_name, prospect_last_name, prospect_phone, stage_id, company_name_freetext, quote_amount_ht, via_partner_portal, billing_total_ht, learner:learners(first_name, last_name, email, phone, job_title, company:companies(name))",
           )
           .in("target_session_id", sessionIds)
       : Promise.resolve({ data: [] }),
@@ -404,18 +404,23 @@ export default async function SessionsListPage({
       const id = r.target_session_id as string;
       if (!id) return;
       inscriptionCount.set(id, (inscriptionCount.get(id) ?? 0) + 1);
-      // Pour les inscriptions VIA PORTAIL PARTENAIRE, on substitue le
-      // quote_amount_ht (tarif partenaire / facturation interne) par le
-      // tarif PUBLIC unitaire, afin que la vue liste sessions reflète le
-      // CA au tarif catalogue (Gilles 2026-05-22).
-      const viaPartner = (r as { via_partner_portal?: boolean | null }).via_partner_portal === true;
+      // Refonte tarification 2026-05-31 (Gilles) : on utilise le
+      // billing_total_ht (champ figeee par le helper unifie
+      // computeBillingForInscription) en priorite, sinon fallback sur
+      // quote_amount_ht (legacy). On supprime l ancienne substitution
+      // viaPartner -> tarif public qui creait l incoherence
+      // 1175 € (vue Inscriptions) vs 1220 € (vue Sessions). Desormais
+      // les 3 ecrans (Sessions / Inscriptions / Participants) affichent
+      // le meme CA reel.
       let amt: number | null = null;
-      if (viaPartner) {
-        const pub = publicUnitBySession.get(id);
-        if (pub !== undefined) amt = pub;
-        // Si pas de tarif public, on ne compte pas cette inscription
-        // (plutôt que d'afficher le tarif partenaire trompeur).
-      } else {
+      const billingTotal = (
+        r as { billing_total_ht?: number | string | null }
+      ).billing_total_ht;
+      if (billingTotal !== null && billingTotal !== undefined) {
+        const n = Number(billingTotal);
+        if (Number.isFinite(n)) amt = n;
+      }
+      if (amt === null) {
         const raw = r.quote_amount_ht as number | null;
         if (raw !== null && raw !== undefined && Number.isFinite(Number(raw))) {
           amt = Number(raw);
