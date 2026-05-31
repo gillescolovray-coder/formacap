@@ -550,24 +550,29 @@ export default async function SessionsListPage({
     });
 
     // Tri alphabétique des personnes au sein de chaque session
-    // + DEDUPLICATION par learner (Gilles 2026-05-31) :
-    // personsBySession est remplie par 2 boucles (enrollments puis
-    // inscriptions) ce qui pouvait afficher 2 fois le meme apprenant
-    // dans le tooltip si l inscription avait genere son enrollment
-    // miroir. On garde une seule entree par (email|fullname).
+    // + DEDUPLICATION par TRIPLET (email + nom + prenom) — Gilles
+    // 2026-05-31 v2 : la dedup precedente sur email seul masquait
+    // les apprenants partageant une adresse generique (ex:
+    // contact@boite.fr). On dedup desormais sur le triplet complet
+    // (memoire feedback 2026-05-22 : autoriser plusieurs apprenants
+    // avec meme email mais nom/prenom differents).
     for (const sid of personsBySession.keys()) {
       const list = personsBySession.get(sid) ?? [];
       list.sort((a, b) => a.sortKey.localeCompare(b.sortKey, "fr"));
       const seen = new Set<string>();
       const deduped: typeof list = [];
       for (const p of list) {
-        const dedupKey = (
-          p.email?.toLowerCase() ??
-          `${p.last_name ?? ""}|${p.first_name ?? ""}`.toLowerCase()
-        ).trim();
-        if (seen.has(dedupKey)) continue;
-        seen.add(dedupKey);
-        deduped.push(p);
+        // Triplet email+nom+prenom (insensible casse + trim)
+        const emailKey = (p.email ?? "").trim().toLowerCase();
+        const lastKey = (p.last_name ?? "").trim().toLowerCase();
+        const firstKey = (p.first_name ?? "").trim().toLowerCase();
+        const dedupKey = `${emailKey}|${lastKey}|${firstKey}`;
+        // Si TOUS les champs sont vides -> garde quand meme (chaque
+        // entree zombie distincte aurait sa propre representation)
+        if (dedupKey === "||" || !seen.has(dedupKey)) {
+          seen.add(dedupKey);
+          deduped.push(p);
+        }
       }
       personsBySession.set(sid, deduped);
     }
