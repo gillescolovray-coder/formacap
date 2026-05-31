@@ -12,6 +12,7 @@
 
 import { randomBytes } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { createMirroredRequestForEnrollment } from "@/lib/inscriptions/sync";
 
 export type ExpressLearnerInput = {
   /** Optionnel : Mme / M. */
@@ -171,6 +172,36 @@ export async function createExpressLearnerForSession(
       error:
         enrollErr?.message ?? "Inscription à la session impossible.",
     };
+  }
+
+  // 3 bis. Création miroir d'une inscription_request liée
+  // (Gilles 2026-05-31 : sans ça, ces enrollments etaient orphelins
+  // et n apparaissaient pas dans l onglet Participants ni dans le
+  // module Inscriptions, alors qu ils etaient comptes dans le CA).
+  // Pattern identique a enrollLearner — voir
+  // /sessions/[id]/enrollments/actions.ts ligne 118.
+  try {
+    const requestId = await createMirroredRequestForEnrollment(supabase, {
+      id: newEnrollment.id,
+      session_id: sessionId,
+      learner_id: newLearner.id,
+      status: "confirmed",
+      enrolled_at: new Date().toISOString(),
+    });
+    if (requestId) {
+      await supabase
+        .from("session_enrollments")
+        .update({ inscription_request_id: requestId })
+        .eq("id", newEnrollment.id);
+    }
+  } catch (e) {
+    // Best-effort : si la creation de la request miroir echoue,
+    // on log mais on continue (l enrollment principal est cree, le
+    // mismatch sera reparable par le self-healing).
+    console.warn(
+      "[createExpressLearnerForSession] mirror request failed",
+      (e as Error).message,
+    );
   }
 
   // 4. Token portail apprenant (pour quiz + émargement)
