@@ -297,6 +297,7 @@ export default async function SessionsListPage({
             "session_id, status, learner:learners(id, first_name, last_name, email, phone, job_title, company:companies(name))",
           )
           .in("session_id", sessionIds)
+          .neq("status", "cancelled")
       : Promise.resolve({ data: [] }),
     hasSessions
       ? supabase
