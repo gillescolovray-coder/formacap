@@ -41,11 +41,12 @@ export default async function ArchiveSessionDetailPage({
   const orgId = ctx.company.organization_id;
   const companyId = ctx.company.id;
 
-  // Charge la session
+  // Charge la session (+ FK subcontracting/prescriber pour decider la
+  // strategie de chargement des apprenants)
   const { data: session } = await supabase
     .from("sessions")
     .select(
-      "id, internal_code, start_date, end_date, is_inter, modality, location, location_obj:formation_locations!location_id(name, address, postal_code, city), formation:formations(title, duration_hours, duration_days)",
+      "id, internal_code, start_date, end_date, is_inter, modality, subcontracting_company_id, prescriber_company_id, location, location_obj:formation_locations!location_id(name, address, postal_code, city), formation:formations(title, duration_hours, duration_days)",
     )
     .eq("id", sessionId)
     .eq("organization_id", orgId)
@@ -59,6 +60,8 @@ export default async function ArchiveSessionDetailPage({
     end_date: string | null;
     is_inter: boolean | null;
     modality: string | null;
+    subcontracting_company_id: string | null;
+    prescriber_company_id: string | null;
     location: string | null;
     location_obj: {
       name: string;
@@ -75,23 +78,20 @@ export default async function ArchiveSessionDetailPage({
     ? sess.location_obj[0]
     : sess.location_obj;
 
-  // Apprenants inscrits via cet OF UNIQUEMENT
-  const { data: inscriptions } = await supabase
-    .from("inscription_requests")
-    .select(
-      "id, learner_id, prospect_first_name, prospect_last_name, prospect_email, learner:learners(id, first_name, last_name, email)",
-    )
-    .eq("organization_id", orgId)
-    .eq("target_session_id", sessionId)
-    .eq("inscription_channel", "of")
-    .eq("inscription_channel_company_id", companyId);
+  // Strategie de chargement (Gilles 2026-06-01) :
+  //   - Si cet OF/Prescripteur est subcontracting OU prescriber de la
+  //     session : il voit TOUS les apprenants (la session est integralement
+  //     a lui).
+  //   - Sinon : il voit uniquement les apprenants qu il a inscrits via
+  //     son canal (inscription_channel='of' + inscription_channel_company_id).
+  const isMineSession =
+    sess.subcontracting_company_id === companyId ||
+    sess.prescriber_company_id === companyId;
 
-  type InscriptionRow = {
+  type EnrollmentRow = {
     id: string;
     learner_id: string | null;
-    prospect_first_name: string | null;
-    prospect_last_name: string | null;
-    prospect_email: string | null;
+    status: string | null;
     learner: {
       id: string;
       first_name: string | null;
@@ -100,28 +100,47 @@ export default async function ArchiveSessionDetailPage({
     } | null;
   };
 
-  // Map learner_id -> nom (depuis inscription_requests)
-  const learnerIds = ((inscriptions ?? []) as unknown as InscriptionRow[])
-    .map((r) => r.learner_id)
-    .filter((id): id is string => !!id);
+  let enrollmentRows: EnrollmentRow[] = [];
 
-  // Enrollments pour ces learners sur cette session
-  const { data: enrollments } =
-    learnerIds.length > 0
-      ? await supabase
-          .from("session_enrollments")
-          .select("id, learner_id, status")
-          .eq("session_id", sessionId)
-          .in("learner_id", learnerIds)
-      : { data: [] };
-  const enrollmentByLearner = new Map<string, string>();
-  for (const e of (enrollments ?? []) as Array<{
-    id: string;
-    learner_id: string;
-  }>) {
-    enrollmentByLearner.set(e.learner_id, e.id);
+  if (isMineSession) {
+    // Cas 1 : ma session — je liste TOUS les enrollments actifs
+    const { data } = await supabase
+      .from("session_enrollments")
+      .select(
+        "id, learner_id, status, learner:learners(id, first_name, last_name, email)",
+      )
+      .eq("session_id", sessionId)
+      .neq("status", "cancelled");
+    enrollmentRows = (data ?? []) as unknown as EnrollmentRow[];
+  } else {
+    // Cas 2 : je suis juste un canal d inscription — filtre via mes
+    // inscription_requests
+    const { data: inscriptions } = await supabase
+      .from("inscription_requests")
+      .select("learner_id")
+      .eq("organization_id", orgId)
+      .eq("target_session_id", sessionId)
+      .eq("inscription_channel", "of")
+      .eq("inscription_channel_company_id", companyId);
+    const learnerIds = ((inscriptions ?? []) as Array<{
+      learner_id: string | null;
+    }>)
+      .map((r) => r.learner_id)
+      .filter((id): id is string => !!id);
+    if (learnerIds.length > 0) {
+      const { data } = await supabase
+        .from("session_enrollments")
+        .select(
+          "id, learner_id, status, learner:learners(id, first_name, last_name, email)",
+        )
+        .eq("session_id", sessionId)
+        .in("learner_id", learnerIds)
+        .neq("status", "cancelled");
+      enrollmentRows = (data ?? []) as unknown as EnrollmentRow[];
+    }
   }
-  const enrollmentIds = Array.from(enrollmentByLearner.values());
+
+  const enrollmentIds = enrollmentRows.map((e) => e.id);
 
   // Scores quiz pre/post pour ces enrollments
   const { data: quizAttempts } =
@@ -167,37 +186,32 @@ export default async function ArchiveSessionDetailPage({
     });
   }
 
-  const rows = ((inscriptions ?? []) as unknown as InscriptionRow[]).map(
-    (r) => {
-      const learner = Array.isArray(r.learner) ? r.learner[0] : r.learner;
-      const lastName = learner?.last_name ?? r.prospect_last_name ?? "";
-      const firstName = learner?.first_name ?? r.prospect_first_name ?? "";
-      const email = learner?.email ?? r.prospect_email ?? null;
-      const enrollmentId = r.learner_id
-        ? enrollmentByLearner.get(r.learner_id) ?? null
-        : null;
-      const scores = enrollmentId
-        ? scoresByEnrollment.get(enrollmentId) ?? null
-        : null;
-      const prePct = scores?.pre
-        ? pct(scores.pre.score, scores.pre.max_score)
-        : null;
-      const postPct = scores?.post
-        ? pct(scores.post.score, scores.post.max_score)
-        : null;
-      const progression =
-        prePct !== null && postPct !== null ? postPct - prePct : null;
-      return {
-        inscriptionId: r.id,
-        enrollmentId,
-        fullName: [firstName, lastName].filter(Boolean).join(" ").trim() || "—",
-        email,
-        prePct,
-        postPct,
-        progression,
-      };
-    },
-  );
+  const rows = enrollmentRows.map((e) => {
+    const learner = Array.isArray(e.learner) ? e.learner[0] : e.learner;
+    const lastName = learner?.last_name ?? "";
+    const firstName = learner?.first_name ?? "";
+    const email = learner?.email ?? null;
+    const scores = scoresByEnrollment.get(e.id) ?? null;
+    const prePct = scores?.pre
+      ? pct(scores.pre.score, scores.pre.max_score)
+      : null;
+    const postPct = scores?.post
+      ? pct(scores.post.score, scores.post.max_score)
+      : null;
+    const progression =
+      prePct !== null && postPct !== null ? postPct - prePct : null;
+    return {
+      enrollmentId: e.id,
+      fullName: [firstName, lastName].filter(Boolean).join(" ").trim() || "—",
+      email,
+      prePct,
+      postPct,
+      progression,
+    };
+  });
+
+  // Trier par nom de famille
+  rows.sort((a, b) => a.fullName.localeCompare(b.fullName));
 
   const enrollmentIdsCsv = rows
     .map((r) => r.enrollmentId)
@@ -286,11 +300,15 @@ export default async function ArchiveSessionDetailPage({
       <div className="rounded-lg border border-zinc-200 bg-white overflow-hidden">
         <div className="px-3 py-2 border-b border-zinc-200 bg-zinc-50 text-[11px] uppercase tracking-wider font-bold text-zinc-600 inline-flex items-center gap-2">
           <Award className="h-3 w-3" />
-          Apprenants inscrits via {ctx.company.name} ({rows.length})
+          {isMineSession
+            ? `Apprenants de la session (${rows.length})`
+            : `Apprenants inscrits via ${ctx.company.name} (${rows.length})`}
         </div>
         {rows.length === 0 ? (
           <p className="p-6 text-center text-sm text-zinc-500 italic">
-            Aucun apprenant inscrit via votre organisme pour cette session.
+            {isMineSession
+              ? "Aucun apprenant inscrit sur cette session."
+              : "Aucun apprenant inscrit via votre organisme pour cette session."}
           </p>
         ) : (
           <table className="w-full text-sm">
@@ -304,7 +322,7 @@ export default async function ArchiveSessionDetailPage({
             </thead>
             <tbody className="divide-y divide-zinc-100">
               {rows.map((r) => (
-                <tr key={r.inscriptionId} className="hover:bg-zinc-50/50">
+                <tr key={r.enrollmentId} className="hover:bg-zinc-50/50">
                   <td className="px-3 py-2">
                     <div className="font-semibold text-zinc-900">
                       {r.fullName}

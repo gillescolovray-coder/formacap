@@ -49,10 +49,13 @@ export async function GET(
   const orgId = partnerCtx.company.organization_id;
   const companyId = partnerCtx.company.id;
 
-  // Session info pour le nom de fichier
+  // Session info + FK (subcontracting/prescriber) pour decider la
+  // strategie de chargement (Gilles 2026-06-01).
   const { data: session } = await supabase
     .from("sessions")
-    .select("start_date, formation:formations(title)")
+    .select(
+      "start_date, subcontracting_company_id, prescriber_company_id, formation:formations(title)",
+    )
     .eq("id", sessionId)
     .eq("organization_id", orgId)
     .maybeSingle();
@@ -61,6 +64,8 @@ export async function GET(
   }
   const sessionTyped = session as unknown as {
     start_date: string | null;
+    subcontracting_company_id: string | null;
+    prescriber_company_id: string | null;
     formation: { title: string } | null;
   };
   const formation = Array.isArray(sessionTyped.formation)
@@ -68,22 +73,16 @@ export async function GET(
     : sessionTyped.formation;
   const formationTitle = formation?.title ?? "Session";
 
-  // Inscriptions via cet OF
-  const { data: inscriptions } = await supabase
-    .from("inscription_requests")
-    .select(
-      "learner_id, prospect_first_name, prospect_last_name, prospect_email, learner:learners(first_name, last_name, email)",
-    )
-    .eq("organization_id", orgId)
-    .eq("target_session_id", sessionId)
-    .eq("inscription_channel", "of")
-    .eq("inscription_channel_company_id", companyId);
+  const isMineSession =
+    sessionTyped.subcontracting_company_id === companyId ||
+    sessionTyped.prescriber_company_id === companyId;
 
-  type Row = {
+  // Chargement des enrollments (avec learner joint) selon strategie :
+  //   - Session "a moi" (subcontracting/prescriber) -> TOUS les enrollments
+  //   - Sinon -> filtre via inscription_channel='of'
+  type EnrollmentRow = {
+    id: string;
     learner_id: string | null;
-    prospect_first_name: string | null;
-    prospect_last_name: string | null;
-    prospect_email: string | null;
     learner: {
       first_name: string | null;
       last_name: string | null;
@@ -91,27 +90,44 @@ export async function GET(
     } | null;
   };
 
-  const learnerIds = ((inscriptions ?? []) as unknown as Row[])
-    .map((r) => r.learner_id)
-    .filter((id): id is string => !!id);
+  let enrollmentRows: EnrollmentRow[] = [];
 
-  // Enrollments
-  const { data: enrollments } =
-    learnerIds.length > 0
-      ? await supabase
-          .from("session_enrollments")
-          .select("id, learner_id")
-          .eq("session_id", sessionId)
-          .in("learner_id", learnerIds)
-      : { data: [] };
-  const enrollmentByLearner = new Map<string, string>();
-  for (const e of (enrollments ?? []) as Array<{
-    id: string;
-    learner_id: string;
-  }>) {
-    enrollmentByLearner.set(e.learner_id, e.id);
+  if (isMineSession) {
+    const { data } = await supabase
+      .from("session_enrollments")
+      .select(
+        "id, learner_id, learner:learners(first_name, last_name, email)",
+      )
+      .eq("session_id", sessionId)
+      .neq("status", "cancelled");
+    enrollmentRows = (data ?? []) as unknown as EnrollmentRow[];
+  } else {
+    const { data: inscriptions } = await supabase
+      .from("inscription_requests")
+      .select("learner_id")
+      .eq("organization_id", orgId)
+      .eq("target_session_id", sessionId)
+      .eq("inscription_channel", "of")
+      .eq("inscription_channel_company_id", companyId);
+    const learnerIds = ((inscriptions ?? []) as Array<{
+      learner_id: string | null;
+    }>)
+      .map((r) => r.learner_id)
+      .filter((id): id is string => !!id);
+    if (learnerIds.length > 0) {
+      const { data } = await supabase
+        .from("session_enrollments")
+        .select(
+          "id, learner_id, learner:learners(first_name, last_name, email)",
+        )
+        .eq("session_id", sessionId)
+        .in("learner_id", learnerIds)
+        .neq("status", "cancelled");
+      enrollmentRows = (data ?? []) as unknown as EnrollmentRow[];
+    }
   }
-  const enrollmentIds = Array.from(enrollmentByLearner.values());
+
+  const enrollmentIds = enrollmentRows.map((e) => e.id);
 
   // Quiz attempts
   const { data: attempts } =
@@ -164,17 +180,19 @@ export async function GET(
 
   const lines: string[] = [header.map(csvEscape).join(";")];
 
-  for (const r of (inscriptions ?? []) as unknown as Row[]) {
-    const learner = Array.isArray(r.learner) ? r.learner[0] : r.learner;
-    const lastName = learner?.last_name ?? r.prospect_last_name ?? "";
-    const firstName = learner?.first_name ?? r.prospect_first_name ?? "";
-    const email = learner?.email ?? r.prospect_email ?? "";
-    const enrollmentId = r.learner_id
-      ? enrollmentByLearner.get(r.learner_id) ?? null
-      : null;
-    const scores = enrollmentId
-      ? scoresByEnrollment.get(enrollmentId) ?? null
-      : null;
+  // Tri par nom de famille
+  const sortedEnrollments = [...enrollmentRows].sort((a, b) => {
+    const la = Array.isArray(a.learner) ? a.learner[0] : a.learner;
+    const lb = Array.isArray(b.learner) ? b.learner[0] : b.learner;
+    return (la?.last_name ?? "").localeCompare(lb?.last_name ?? "");
+  });
+
+  for (const e of sortedEnrollments) {
+    const learner = Array.isArray(e.learner) ? e.learner[0] : e.learner;
+    const lastName = learner?.last_name ?? "";
+    const firstName = learner?.first_name ?? "";
+    const email = learner?.email ?? "";
+    const scores = scoresByEnrollment.get(e.id) ?? null;
     const prePct = scores?.pre
       ? pct(scores.pre.score, scores.pre.max_score)
       : null;

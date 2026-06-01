@@ -60,11 +60,11 @@ export async function GET(
   const orgId = partnerCtx.company.organization_id;
   const companyId = partnerCtx.company.id;
 
-  // Session
+  // Session (+ FK subcontracting/prescriber pour decider la strategie)
   const { data: session } = await supabase
     .from("sessions")
     .select(
-      "id, start_date, end_date, modality, formation:formations(id, title, duration_days), location_ref:formation_locations!location_id(name, address, postal_code, city), trainer:trainers!trainer_id(first_name, last_name)",
+      "id, start_date, end_date, modality, subcontracting_company_id, prescriber_company_id, formation:formations(id, title, duration_days), location_ref:formation_locations!location_id(name, address, postal_code, city), trainer:trainers!trainer_id(first_name, last_name)",
     )
     .eq("id", sessionId)
     .eq("organization_id", orgId)
@@ -106,6 +106,8 @@ export async function GET(
     start_date: string;
     end_date: string;
     modality: string | null;
+    subcontracting_company_id: string | null;
+    prescriber_company_id: string | null;
     formation: { title: string; duration_days: number | null } | null;
     location_ref: {
       name: string;
@@ -114,6 +116,10 @@ export async function GET(
     } | null;
     trainer: { first_name: string; last_name: string } | null;
   };
+
+  const isMineSession =
+    sessionTyped.subcontracting_company_id === companyId ||
+    sessionTyped.prescriber_company_id === companyId;
 
   const formationTitle = sessionTyped.formation?.title ?? "Session";
   const modalityLabel =
@@ -181,39 +187,63 @@ export async function GET(
     };
   });
 
-  // Apprenants inscrits via cet OF UNIQUEMENT
-  const { data: inscriptions } = await supabase
-    .from("inscription_requests")
-    .select("learner_id")
-    .eq("organization_id", orgId)
-    .eq("target_session_id", sessionId)
-    .eq("inscription_channel", "of")
-    .eq("inscription_channel_company_id", companyId)
-    .not("learner_id", "is", null);
+  // Strategie de chargement (Gilles 2026-06-01) :
+  //   - Si la session est "a moi" (subcontracting/prescriber) -> TOUS
+  //     les enrollments actifs.
+  //   - Sinon -> uniquement les apprenants inscrits via mon canal.
+  type EnrollmentRow = {
+    id: string;
+    learner: {
+      first_name: string | null;
+      last_name: string | null;
+      company: { name: string | null; siret: string | null } | null;
+    } | null;
+  };
 
-  const learnerIds = ((inscriptions ?? []) as Array<{
-    learner_id: string;
-  }>).map((r) => r.learner_id);
+  let enrollments: EnrollmentRow[] = [];
 
-  if (learnerIds.length === 0) {
+  if (isMineSession) {
+    const { data } = await supabase
+      .from("session_enrollments")
+      .select(
+        "id, learner:learners(first_name, last_name, company:companies(name, siret))",
+      )
+      .eq("session_id", sessionId)
+      .neq("status", "cancelled");
+    enrollments = (data ?? []) as unknown as EnrollmentRow[];
+  } else {
+    const { data: inscriptions } = await supabase
+      .from("inscription_requests")
+      .select("learner_id")
+      .eq("organization_id", orgId)
+      .eq("target_session_id", sessionId)
+      .eq("inscription_channel", "of")
+      .eq("inscription_channel_company_id", companyId)
+      .not("learner_id", "is", null);
+    const learnerIds = ((inscriptions ?? []) as Array<{
+      learner_id: string;
+    }>).map((r) => r.learner_id);
+    if (learnerIds.length > 0) {
+      const { data } = await supabase
+        .from("session_enrollments")
+        .select(
+          "id, learner:learners(first_name, last_name, company:companies(name, siret))",
+        )
+        .eq("session_id", sessionId)
+        .in("learner_id", learnerIds)
+        .neq("status", "cancelled");
+      enrollments = (data ?? []) as unknown as EnrollmentRow[];
+    }
+  }
+
+  if (enrollments.length === 0) {
     return NextResponse.json(
       { error: "No learners for this partner" },
       { status: 404 },
     );
   }
 
-  // Enrollments + learner info
-  const { data: enrollments } = await supabase
-    .from("session_enrollments")
-    .select(
-      "id, learner:learners(first_name, last_name, company:companies(name, siret))",
-    )
-    .eq("session_id", sessionId)
-    .in("learner_id", learnerIds);
-
-  const enrollmentIds = ((enrollments ?? []) as Array<{ id: string }>).map(
-    (e) => e.id,
-  );
+  const enrollmentIds = enrollments.map((e) => e.id);
 
   // Signatures
   const { data: signatures } =
@@ -251,15 +281,8 @@ export async function GET(
   const dateSlug = (sessionTyped.start_date ?? "").slice(0, 10);
   const formationSlug = slug(formationTitle, 50);
 
-  for (const e of (enrollments ?? []) as unknown as Array<{
-    id: string;
-    learner: {
-      first_name: string | null;
-      last_name: string | null;
-      company: { name: string | null; siret: string | null } | null;
-    } | null;
-  }>) {
-    const lInfo = e.learner;
+  for (const e of enrollments) {
+    const lInfo = Array.isArray(e.learner) ? e.learner[0] : e.learner;
     if (!lInfo) continue;
     const lastName = (lInfo.last_name ?? "Inconnu").toUpperCase();
     const firstName = lInfo.first_name ?? "";
