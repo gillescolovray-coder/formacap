@@ -129,19 +129,32 @@ export function CatalogueList({
   partnerName,
   organizationEmail,
   sessions,
+  partnerType,
 }: {
   token: string;
   partnerName: string;
   organizationEmail: string | null;
   sessions: CatalogueSession[];
+  /** Type du partenaire — change le libelle du filtre (Donneur d ordre
+   *  pour les OF, Prescripteur pour les prescripteurs). Gilles 2026-06-01. */
+  partnerType: "of" | "prescripteur";
 }) {
   const [query, setQuery] = useState("");
   const [onlyOwn, setOnlyOwn] = useState(false);
 
+  const isOf = partnerType === "of";
+  // Selon le type de partenaire, "mes sessions" = sessions ou il est :
+  //   - donneur d ordre (OF) -> is_subcontracting
+  //   - prescripteur referent (Prescripteur) -> is_own
+  // Inclut les 2 pour les edges cases (prescripteur qui est aussi
+  // donneur d ordre, et reciproquement).
+  const matchesMine = (s: CatalogueSession): boolean =>
+    isOf ? s.is_subcontracting : s.is_own || s.is_subcontracting;
+
   const filtered = useMemo(() => {
     const q = normalize(query.trim());
     return sessions.filter((s) => {
-      if (onlyOwn && !s.is_own) return false;
+      if (onlyOwn && !matchesMine(s)) return false;
       if (!q) return true;
       const haystack = normalize(
         [
@@ -152,13 +165,57 @@ export function CatalogueList({
       );
       return haystack.includes(q);
     });
-  }, [sessions, query, onlyOwn]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessions, query, onlyOwn, isOf]);
 
-  const ownCount = sessions.filter((s) => s.is_own).length;
+  const mineCount = sessions.filter(matchesMine).length;
+  const mineLabel = isOf ? "Donneur d'ordre uniquement" : "Prescripteur uniquement";
+  const mineTitle = isOf
+    ? "Filtrer pour ne voir que les sessions où vous êtes donneur d'ordre"
+    : "Filtrer pour ne voir que les sessions où vous êtes prescripteur référent";
 
   return (
     <div className="space-y-4">
-      {/* Barre de recherche + filtre */}
+      {/* Segmented control "Tout / Mon role" — Gilles 2026-06-01.
+          Visible uniquement si le partenaire a au moins 1 session
+          "a lui" (sinon le bouton n a pas de sens). */}
+      {mineCount > 0 && (
+        <div className="rounded-full bg-white border border-zinc-200 p-1 inline-flex items-center gap-1 shadow-sm">
+          <button
+            type="button"
+            onClick={() => setOnlyOwn(false)}
+            className={
+              !onlyOwn
+                ? "inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-cyan-600 text-white text-xs font-bold shadow"
+                : "inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-zinc-600 hover:text-cyan-700 text-xs font-medium"
+            }
+            title="Voir tout le catalogue"
+          >
+            Tout
+            <span className={!onlyOwn ? "text-cyan-100" : "text-zinc-400"}>
+              ({sessions.length})
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setOnlyOwn(true)}
+            className={
+              onlyOwn
+                ? "inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-indigo-600 text-white text-xs font-bold shadow"
+                : "inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-indigo-700 hover:bg-indigo-50 text-xs font-medium"
+            }
+            title={mineTitle}
+          >
+            <Handshake className="h-3.5 w-3.5" />
+            {mineLabel}
+            <span className={onlyOwn ? "text-indigo-100" : "text-indigo-400"}>
+              ({mineCount})
+            </span>
+          </button>
+        </div>
+      )}
+
+      {/* Barre de recherche */}
       <div className="rounded-2xl bg-white border border-zinc-200 p-3 flex items-center gap-3 flex-wrap">
         <div className="relative flex-1 min-w-[240px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400 pointer-events-none" />
@@ -180,28 +237,6 @@ export function CatalogueList({
             </button>
           )}
         </div>
-        {ownCount > 0 && (
-          <label
-            className={
-              onlyOwn
-                ? "inline-flex items-center gap-2 text-xs font-bold cursor-pointer select-none px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-300"
-                : "inline-flex items-center gap-2 text-xs font-medium text-indigo-700 cursor-pointer select-none px-2.5 py-1 rounded-full border border-indigo-200 hover:bg-indigo-50"
-            }
-            title="Filtrer pour ne voir que les sessions où vous êtes le prescripteur référent"
-          >
-            <input
-              type="checkbox"
-              checked={onlyOwn}
-              onChange={(e) => setOnlyOwn(e.target.checked)}
-              className="rounded border-indigo-300"
-            />
-            <Handshake className="h-3.5 w-3.5" />
-            Mes sessions
-            <span className={onlyOwn ? "text-indigo-700" : "text-indigo-400"}>
-              ({ownCount})
-            </span>
-          </label>
-        )}
       </div>
 
       <div className="text-xs text-zinc-500">

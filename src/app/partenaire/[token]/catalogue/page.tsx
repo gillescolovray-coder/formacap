@@ -398,6 +398,7 @@ export default async function PartnerCataloguePage({
           partnerName={ctx.company.name}
           organizationEmail={ctx.organization.email}
           sessions={rows}
+          partnerType={ctx.company.type}
         />
       )}
     </div>
