@@ -18,6 +18,7 @@ import {
   Users,
   X,
 } from "lucide-react";
+import { SubcontractStatusControl } from "./_subcontract-status-control";
 
 export type CatalogueSession = {
   id: string;
@@ -555,6 +556,17 @@ export function CatalogueList({
                         <FileText className="h-4 w-4" />
                         Programme
                       </a>
+                    )}
+                    {/* Dropdown statut — uniquement pour les sessions ou
+                        ce partenaire est donneur d ordre (sous-traitance)
+                        ET sur les statuts modifiables (pas draft).
+                        Gilles 2026-06-01. */}
+                    {s.is_subcontracting && s.status !== "draft" && (
+                      <SubcontractStatusControl
+                        token={token}
+                        sessionId={s.id}
+                        currentStatus={s.status}
+                      />
                     )}
                     {/* Bouton inscription : TOUJOURS visible (Option B —
                         Gilles 2026-05-22). Si pas de tarif négocié, le
