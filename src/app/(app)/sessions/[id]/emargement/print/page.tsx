@@ -495,28 +495,29 @@ export default async function EmargementPrintPage({
                  neutraliser pour utiliser toute la largeur du papier. */
               main { padding: 0 !important; margin: 0 !important; max-width: none !important; }
               html, body { margin: 0 !important; padding: 0 !important; }
-              /* Pagination feuille d'émargement : chaque page React
-                 occupe exactement 1 page A4 physique, via flexbox +
-                 min-height = hauteur A4 utile. Le bloc signatures est
-                 poussé en bas via margin-top:auto. Résultat : le bloc
-                 "Formateur + Responsable" est imprimé en bas de CHAQUE
-                 page (Gilles 2026-05-25, exigence Qualiopi).
-                 - portrait : 297-10 = 287mm utiles
-                 - paysage  : 210-10 = 200mm utiles
-              */
+              /* Pagination feuille d'émargement (mode COLLECTIF) :
+                 chaque page React occupe 1 page A4 physique, signatures
+                 poussées en bas via margin-top:auto. Cf. Gilles 2026-05-25. */
               .emargement-page {
                 min-height: ${orientation === "portrait" ? "287mm" : "200mm"};
                 display: flex !important;
                 flex-direction: column !important;
               }
-              /* Bloc signatures (formateur + responsable organisme) :
-                 ne JAMAIS le couper en 2 — il doit toujours rester
-                 entier sur la même page. Gilles 2026-05-26.
-                 margin-top:auto = collé en bas de la page A4. */
               .emargement-signatures-block {
                 break-inside: avoid !important;
                 page-break-inside: avoid !important;
                 margin-top: auto !important;
+              }
+              /* Mode INDIVIDUEL (Gilles 2026-06-01) : on retire les
+                 contraintes qui forcent l etalement sur 287mm + bloc
+                 collé en bas, pour que toute la feuille tienne
+                 naturellement sur 1 seule page A4. */
+              .emargement-page.emargement-individuel {
+                min-height: 0 !important;
+                display: block !important;
+              }
+              .emargement-page.emargement-individuel .emargement-signatures-block {
+                margin-top: 1rem !important;
               }
               .legal-mentions-footer,
               .legal-mentions-footer * {
@@ -569,7 +570,11 @@ export default async function EmargementPrintPage({
         {pages.map((page, pageIdx) => (
         <div
           key={`page-${pageIdx}`}
-          className="emargement-page"
+          className={
+            filterEnrollmentId
+              ? "emargement-page emargement-individuel"
+              : "emargement-page"
+          }
           style={{
             breakAfter:
               pageIdx < pages.length - 1 ? "page" : "auto",
