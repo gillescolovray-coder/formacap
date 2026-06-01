@@ -18,6 +18,7 @@ import { EmargementTabs } from "./_tabs";
 import { SignatureGrid } from "./electronique/_signature-grid";
 import { QrButton } from "./electronique/_qr-button";
 import { QrEvaluationButton } from "./electronique/_qr-evaluation-button";
+import { BatchPrintSelector } from "./_batch-print-selector";
 import { SessionTabs } from "../_session-tabs";
 import { isResendConfigured } from "@/lib/email/resend";
 import {
@@ -483,29 +484,16 @@ export default async function EmargementPage({
               <Printer className="h-4 w-4" />
               Feuille collective
             </Button>
-            {/* Menu déroulant feuilles individuelles (Gilles 2026-06-01) */}
+            {/* Selecteur batch feuilles individuelles avec checkboxes
+                (Gilles 2026-06-01) */}
             {rows.length > 0 && (
-              <details className="relative">
-                <summary className="list-none cursor-pointer inline-flex items-center gap-1.5 h-9 px-3 rounded-md border text-sm font-medium hover:bg-zinc-50 dark:hover:bg-zinc-800">
-                  <Printer className="h-4 w-4" />
-                  Feuille individuelle ▾
-                </summary>
-                <div className="absolute right-0 top-full mt-1 w-64 max-h-80 overflow-auto bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-md shadow-lg z-50">
-                  <ul className="py-1">
-                    {rows.map((r) => (
-                      <li key={r.enrollmentId}>
-                        <a
-                          href={`/sessions/${id}/emargement/print?enrollment_id=${r.enrollmentId}`}
-                          target="_blank"
-                          className="block px-3 py-1.5 text-xs hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                        >
-                          {r.learnerName || "Apprenant"}
-                        </a>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </details>
+              <BatchPrintSelector
+                sessionId={id}
+                participants={rows.map((r) => ({
+                  enrollmentId: r.enrollmentId,
+                  name: r.learnerName || "Apprenant",
+                }))}
+              />
             )}
           </div>
         }

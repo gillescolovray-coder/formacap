@@ -521,8 +521,8 @@ export default async function EmargementPrintPage({
               }
               .legal-mentions-footer,
               .legal-mentions-footer * {
-                font-size: 6.5pt !important;
-                line-height: 1.25 !important;
+                font-size: 8pt !important;
+                line-height: 1.3 !important;
               }
               .legal-mentions-footer { max-height: 1.2cm !important; }
             }
