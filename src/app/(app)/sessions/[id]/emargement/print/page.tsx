@@ -891,21 +891,13 @@ export default async function EmargementPrintPage({
             />
           )}
 
-          <div
-            className={
-              "mt-8 grid gap-8 text-xs " +
-              (orientation === "portrait" ? "grid-cols-1" : "grid-cols-2")
-            }
-          >
+          {/* Bloc signatures : TOUJOURS 2 colonnes cote a cote
+              (formateur a gauche + organisme a droite), peu importe
+              l orientation. Plus compact pour tenir sur 1 page —
+              fix Gilles 2026-06-01. */}
+          <div className="mt-4 grid grid-cols-2 gap-6 text-xs">
             <div>
-              <div
-                className="border-t border-slate-300 pt-2"
-                style={{
-                  // En portrait on agrandit les blocs signature (objet
-                  // de la refonte : zones plus grandes pour signer)
-                  minHeight: orientation === "portrait" ? "3.5cm" : "1.5cm",
-                }}
-              >
+              <div className="border-t border-slate-300 pt-2">
                 <strong className="text-slate-700">Formateur</strong>
                 <br />
                 <span className="text-slate-600">
@@ -920,12 +912,7 @@ export default async function EmargementPrintPage({
               </div>
             </div>
             <div>
-              <div
-                className="border-t border-slate-300 pt-2"
-                style={{
-                  minHeight: orientation === "portrait" ? "3.5cm" : "1.5cm",
-                }}
-              >
+              <div className="border-t border-slate-300 pt-2">
                 <strong className="text-slate-700">
                   Responsable de l&apos;organisme
                 </strong>
@@ -938,7 +925,7 @@ export default async function EmargementPrintPage({
                     <img
                       src={orgSignatureUrl}
                       alt="Cachet et signature de l'organisme"
-                      className="mt-1 max-h-20 object-contain"
+                      className="mt-1 max-h-16 object-contain"
                     />
                   </>
                 ) : (
