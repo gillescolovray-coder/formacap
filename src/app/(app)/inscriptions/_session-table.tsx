@@ -505,16 +505,74 @@ export function SessionInscriptionsTable({
                         res.source === "derived_forfait"
                           ? derivedLabel ?? res.explain
                           : res.explain;
+
+                      // Decomposition OPCO + Employeur (Gilles 2026-06-01)
+                      // affichee SOUS le total HT si l inscription a au
+                      // moins 1 accord OPCO. Total = OPCO + Employeur.
+                      const opcoFundings = (
+                        r as unknown as {
+                          opco_fundings?: Array<{
+                            agreement?: { id: string } | null;
+                            amount_ht?: number | string | null;
+                          }>;
+                        }
+                      ).opco_fundings;
+                      const opcoTotal = (opcoFundings ?? []).reduce(
+                        (acc, f) => {
+                          const a =
+                            f.amount_ht !== null && f.amount_ht !== undefined
+                              ? Number(f.amount_ht)
+                              : 0;
+                          return acc + (Number.isFinite(a) && a > 0 ? a : 0);
+                        },
+                        0,
+                      );
+                      const employerManual = (
+                        r as unknown as {
+                          employer_amount_ht?: number | string | null;
+                        }
+                      ).employer_amount_ht;
+                      const employerNum =
+                        employerManual !== null && employerManual !== undefined
+                          ? Number(employerManual)
+                          : null;
+                      const hasOpco = opcoTotal > 0;
+                      const employerShown = hasOpco
+                        ? employerNum !== null && Number.isFinite(employerNum)
+                          ? employerNum
+                          : Math.max(0, res.amount - opcoTotal)
+                        : 0;
+
                       return (
-                        <span
-                          className={cn("font-bold", colorClass)}
-                          title={tooltip}
-                        >
-                          {res.amount.toLocaleString("fr-FR", {
-                            minimumFractionDigits: 2,
-                          })}{" "}
-                          €
-                        </span>
+                        <div className="flex flex-col items-end leading-tight">
+                          <span
+                            className={cn("font-bold", colorClass)}
+                            title={tooltip}
+                          >
+                            {res.amount.toLocaleString("fr-FR", {
+                              minimumFractionDigits: 2,
+                            })}{" "}
+                            €
+                          </span>
+                          {hasOpco && (
+                            <div className="mt-0.5 text-[10px] font-medium space-y-0.5">
+                              <div className="text-violet-700">
+                                OPCO :{" "}
+                                {opcoTotal.toLocaleString("fr-FR", {
+                                  minimumFractionDigits: 2,
+                                })}{" "}
+                                €
+                              </div>
+                              <div className="text-amber-700">
+                                Employ. :{" "}
+                                {employerShown.toLocaleString("fr-FR", {
+                                  minimumFractionDigits: 2,
+                                })}{" "}
+                                €
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       );
                     })()}
                   </td>

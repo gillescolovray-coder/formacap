@@ -140,6 +140,10 @@ export type InscriptionRequest = {
   billing_total_ht?: number | string | null;
   billing_manually_overridden?: boolean | null;
   billing_notes?: string | null;
+  /** Part HT a la charge de l employeur (decomposition OPCO + employeur).
+   *  Migration 0113 — 2026-06-01. Calcul auto = billing_total_ht − Σ OPCO,
+   *  null = mode auto, valeur = override manuel. */
+  employer_amount_ht?: number | string | null;
 
   created_by: string | null;
   created_at: string;
