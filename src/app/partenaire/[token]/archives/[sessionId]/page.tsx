@@ -5,9 +5,9 @@ import {
   Award,
   Building2,
   Calendar,
-  Download,
-  FileSpreadsheet,
+  FileText,
   GraduationCap,
+  Lock,
 } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolvePartnerContext } from "../../_resolve";
@@ -280,19 +280,27 @@ export default async function ArchiveSessionDetailPage({
       {rows.length > 0 && enrollmentIdsCsv.length > 0 && (
         <div className="flex flex-wrap gap-2">
           <a
-            href={`/api/partner/${token}/archives/${sessionId}/scores.csv`}
+            href={`/api/partner/${token}/archives/${sessionId}/synthese-scores.pdf`}
             className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md border border-emerald-300 bg-white hover:bg-emerald-50 text-emerald-700 text-sm font-medium"
+            target="_blank"
+            rel="noopener noreferrer"
           >
-            <FileSpreadsheet className="h-4 w-4" />
-            Télécharger scores (CSV)
+            <FileText className="h-4 w-4" />
+            Imprimer la synthèse des résultats (PDF)
           </a>
-          <a
-            href={`/api/partner/${token}/archives/${sessionId}/emargement.zip`}
-            className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md border border-cyan-300 bg-white hover:bg-cyan-50 text-cyan-700 text-sm font-medium"
+          {/* Bouton emargement desactive cote OF (Gilles 2026-06-01) :
+              les feuilles d emargement signees Qualiopi sont gerees par
+              CAP NUMERIQUE en tant qu organisme certificateur. Le grisage
+              evite la confusion. */}
+          <button
+            type="button"
+            disabled
+            title="Disponible uniquement pour CAP NUMERIQUE (gestion Qualiopi)"
+            className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md border border-zinc-200 bg-zinc-50 text-zinc-400 text-sm font-medium cursor-not-allowed"
           >
-            <Download className="h-4 w-4" />
+            <Lock className="h-4 w-4" />
             Télécharger feuilles d&apos;émargement (ZIP)
-          </a>
+          </button>
         </div>
       )}
 

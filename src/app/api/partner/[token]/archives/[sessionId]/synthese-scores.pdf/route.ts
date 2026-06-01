@@ -1,35 +1,42 @@
 /**
- * Route CSV : scores quiz pre/post des apprenants d une session,
- * pour le portail OF (Gilles 2026-06-01).
+ * Route PDF : synthese des resultats quiz pre/post pour le portail
+ * OF Archives (Gilles 2026-06-01). Remplace l ancien export CSV
+ * /scores.csv.
  *
- * Filtre : uniquement les apprenants inscrits via cet OF
- * (inscription_channel = of + inscription_channel_company_id = ma_company).
+ * Strategie de chargement des apprenants (cf. archives/[sessionId]/page.tsx) :
+ *   - Si le partenaire est subcontracting OU prescriber de la session :
+ *     TOUS les enrollments actifs.
+ *   - Sinon : filtre via inscription_channel='of' + canal_company_id.
  */
 import { NextRequest, NextResponse } from "next/server";
+import { renderToBuffer } from "@react-pdf/renderer";
+import React from "react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolvePartnerContext } from "@/app/partenaire/[token]/_resolve";
+import {
+  SyntheseScoresPdf,
+  type SyntheseScoresPdfData,
+  type SyntheseScoresPdfRow,
+} from "@/lib/synthese-scores/pdf-template";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function csvEscape(v: string | number | null | undefined): string {
-  if (v === null || v === undefined) return "";
-  const s = String(v);
-  if (s.includes('"') || s.includes(",") || s.includes("\n") || s.includes(";")) {
-    return `"${s.replace(/"/g, '""')}"`;
-  }
-  return s;
-}
-
-function slug(s: string, max = 40): string {
+function slug(s: string | null | undefined, max = 40): string {
   return (s ?? "")
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
     .replace(/[^a-zA-Z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "")
     .slice(0, max);
+}
+
+function pct(score: number | null, max: number | null): number | null {
+  if (score === null || max === null || max === 0) return null;
+  return Math.round((score / max) * 100);
 }
 
 export async function GET(
@@ -49,12 +56,11 @@ export async function GET(
   const orgId = partnerCtx.company.organization_id;
   const companyId = partnerCtx.company.id;
 
-  // Session info + FK (subcontracting/prescriber) pour decider la
-  // strategie de chargement (Gilles 2026-06-01).
+  // Session
   const { data: session } = await supabase
     .from("sessions")
     .select(
-      "start_date, subcontracting_company_id, prescriber_company_id, formation:formations(title)",
+      "id, start_date, end_date, modality, is_inter, subcontracting_company_id, prescriber_company_id, location, location_obj:formation_locations!location_id(name, city), formation:formations(title)",
     )
     .eq("id", sessionId)
     .eq("organization_id", orgId)
@@ -62,27 +68,73 @@ export async function GET(
   if (!session) {
     return NextResponse.json({ error: "Session not found" }, { status: 404 });
   }
+
   const sessionTyped = session as unknown as {
+    id: string;
     start_date: string | null;
+    end_date: string | null;
+    modality: string | null;
+    is_inter: boolean | null;
     subcontracting_company_id: string | null;
     prescriber_company_id: string | null;
+    location: string | null;
+    location_obj: { name: string; city: string | null } | null;
     formation: { title: string } | null;
   };
   const formation = Array.isArray(sessionTyped.formation)
     ? sessionTyped.formation[0]
     : sessionTyped.formation;
   const formationTitle = formation?.title ?? "Session";
+  const locObj = Array.isArray(sessionTyped.location_obj)
+    ? sessionTyped.location_obj[0]
+    : sessionTyped.location_obj;
+  const locationLabel = locObj
+    ? [locObj.name, locObj.city].filter(Boolean).join(" — ")
+    : sessionTyped.location;
+  const modalityLabel =
+    sessionTyped.modality === "presentiel"
+      ? "Présentiel"
+      : sessionTyped.modality === "distanciel"
+        ? "Distanciel"
+        : sessionTyped.modality === "hybride"
+          ? "Hybride"
+          : null;
 
   const isMineSession =
     sessionTyped.subcontracting_company_id === companyId ||
     sessionTyped.prescriber_company_id === companyId;
 
-  // Chargement des enrollments (avec learner joint) selon strategie :
-  //   - Session "a moi" (subcontracting/prescriber) -> TOUS les enrollments
-  //   - Sinon -> filtre via inscription_channel='of'
+  // Organisation (logo + cachet + mentions)
+  const { data: org } = await supabase
+    .from("organizations")
+    .select("name, logo_url, legal_mentions, signature_stamp_path")
+    .eq("id", orgId)
+    .maybeSingle();
+  const orgName = (org as { name?: string } | null)?.name ?? "CAP NUMERIQUE";
+  const orgLogoUrl =
+    (org as { logo_url?: string | null } | null)?.logo_url ?? null;
+
+  let orgStampUrl: string | null = null;
+  const stampPath = (org as { signature_stamp_path?: string | null } | null)
+    ?.signature_stamp_path;
+  if (stampPath) {
+    const { data: signed } = await supabase.storage
+      .from("organization-signatures")
+      .createSignedUrl(stampPath, 3600);
+    orgStampUrl = signed?.signedUrl ?? null;
+  }
+
+  const orgLegalText = (org as { legal_mentions?: string | null } | null)
+    ?.legal_mentions
+    ? ((org as { legal_mentions: string }).legal_mentions ?? "")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+    : null;
+
+  // Charge les enrollments selon strategie
   type EnrollmentRow = {
     id: string;
-    learner_id: string | null;
     learner: {
       first_name: string | null;
       last_name: string | null;
@@ -96,7 +148,7 @@ export async function GET(
     const { data } = await supabase
       .from("session_enrollments")
       .select(
-        "id, learner_id, learner:learners(first_name, last_name, email)",
+        "id, learner:learners(first_name, last_name, email)",
       )
       .eq("session_id", sessionId)
       .neq("status", "cancelled");
@@ -118,7 +170,7 @@ export async function GET(
       const { data } = await supabase
         .from("session_enrollments")
         .select(
-          "id, learner_id, learner:learners(first_name, last_name, email)",
+          "id, learner:learners(first_name, last_name, email)",
         )
         .eq("session_id", sessionId)
         .in("learner_id", learnerIds)
@@ -134,7 +186,7 @@ export async function GET(
     enrollmentIds.length > 0
       ? await supabase
           .from("quiz_attempts")
-          .select("enrollment_id, phase, score, max_score, completed_at")
+          .select("enrollment_id, phase, score, max_score")
           .in("enrollment_id", enrollmentIds)
       : { data: [] };
   type Attempt = {
@@ -142,7 +194,6 @@ export async function GET(
     phase: "pre" | "post";
     score: number | null;
     max_score: number | null;
-    completed_at: string | null;
   };
   const scoresByEnrollment = new Map<
     string,
@@ -158,40 +209,18 @@ export async function GET(
     scoresByEnrollment.set(a.enrollment_id, cur);
   }
 
-  function pct(s: number | null, m: number | null): number | null {
-    if (s === null || m === null || m === 0) return null;
-    return Math.round((s / m) * 100);
-  }
-
-  const header = [
-    "Nom",
-    "Prenom",
-    "Email",
-    "Score pre (%)",
-    "Score post (%)",
-    "Progression (pts)",
-    "Pre - points obtenus",
-    "Pre - points max",
-    "Post - points obtenus",
-    "Post - points max",
-    "Date completion pre",
-    "Date completion post",
-  ];
-
-  const lines: string[] = [header.map(csvEscape).join(";")];
-
-  // Tri par nom de famille
-  const sortedEnrollments = [...enrollmentRows].sort((a, b) => {
+  // Tri alphabetique par nom
+  const sortedRows = [...enrollmentRows].sort((a, b) => {
     const la = Array.isArray(a.learner) ? a.learner[0] : a.learner;
     const lb = Array.isArray(b.learner) ? b.learner[0] : b.learner;
     return (la?.last_name ?? "").localeCompare(lb?.last_name ?? "");
   });
 
-  for (const e of sortedEnrollments) {
+  const rows: SyntheseScoresPdfRow[] = sortedRows.map((e) => {
     const learner = Array.isArray(e.learner) ? e.learner[0] : e.learner;
     const lastName = learner?.last_name ?? "";
     const firstName = learner?.first_name ?? "";
-    const email = learner?.email ?? "";
+    const email = learner?.email ?? null;
     const scores = scoresByEnrollment.get(e.id) ?? null;
     const prePct = scores?.pre
       ? pct(scores.pre.score, scores.pre.max_score)
@@ -201,37 +230,43 @@ export async function GET(
       : null;
     const progression =
       prePct !== null && postPct !== null ? postPct - prePct : null;
+    return {
+      fullName:
+        [firstName, lastName].filter(Boolean).join(" ").trim() || "—",
+      email,
+      prePct,
+      postPct,
+      progression,
+    };
+  });
 
-    lines.push(
-      [
-        lastName,
-        firstName,
-        email,
-        prePct,
-        postPct,
-        progression,
-        scores?.pre?.score,
-        scores?.pre?.max_score,
-        scores?.post?.score,
-        scores?.post?.max_score,
-        scores?.pre?.completed_at,
-        scores?.post?.completed_at,
-      ]
-        .map(csvEscape)
-        .join(";"),
-    );
-  }
+  const data: SyntheseScoresPdfData = {
+    formationTitle,
+    startDate: sessionTyped.start_date,
+    endDate: sessionTyped.end_date,
+    modalityLabel,
+    isInter: sessionTyped.is_inter,
+    locationLabel,
+    orgName,
+    orgLogoUrl,
+    orgStampUrl,
+    orgLegalText,
+    partnerName: partnerCtx.company.name,
+    rows,
+  };
 
-  const csv = lines.join("\n");
-  const filename = `Quiz-Scores-${slug(formationTitle)}-${(sessionTyped.start_date ?? "").slice(0, 10)}.csv`;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const element = React.createElement(SyntheseScoresPdf as any, { data });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const pdfBuffer = await renderToBuffer(element as any);
 
-  // BOM UTF-8 pour Excel
-  const bom = "﻿";
+  const dateSlug = (sessionTyped.start_date ?? "").slice(0, 10);
+  const filename = `Synthese-Resultats-${slug(formationTitle)}-${dateSlug}.pdf`;
 
-  return new NextResponse(bom + csv, {
+  return new NextResponse(pdfBuffer as unknown as BodyInit, {
     status: 200,
     headers: {
-      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Type": "application/pdf",
       "Content-Disposition": `attachment; filename="${filename}"`,
       "Cache-Control": "no-store",
     },
