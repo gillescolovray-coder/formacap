@@ -271,26 +271,50 @@ export function CatalogueList({
             return (
               <article
                 key={s.id}
-                className={
-                  // Harmonisation visuelle portail OF / Prescripteur
-                  // (Gilles 2026-06-01) — 3 niveaux distincts :
-                  //   1. "Mes sessions" (prescripteur OU OF donneur d ordre)
-                  //      -> INDIGO (couleur partagee = sessions dediees)
-                  //   2. Sessions confirmees CAP -> EMERAUDE
-                  //   3. Sessions distanciel non confirmees -> CYAN clair
-                  //   4. Sinon -> blanc neutre
-                  s.is_own || s.is_subcontracting
-                    ? "rounded-2xl bg-indigo-50/40 border-2 border-indigo-300 p-3 sm:p-5 flex flex-col gap-3 hover:border-indigo-400 hover:shadow-md transition-all"
-                    : s.status === "confirmed"
-                      ? "rounded-2xl bg-emerald-50/40 border-2 border-emerald-300 p-3 sm:p-5 flex flex-col gap-3 hover:border-emerald-400 hover:shadow-md transition-all"
-                      : s.modality === "distanciel"
-                        ? "rounded-2xl bg-cyan-50/40 border-2 border-cyan-200 p-3 sm:p-5 flex flex-col gap-3 hover:border-cyan-400 hover:shadow-sm transition-all"
-                        : "rounded-2xl bg-white border border-zinc-200 p-3 sm:p-5 flex flex-col gap-3 hover:border-cyan-300 hover:shadow-sm transition-all"
-                }
+                className={(() => {
+                  // Hierarchie visuelle (Gilles 2026-06-01) :
+                  //   1. ANNULEE / REPORTEE -> tres atténué (opacity, gris,
+                  //      titre barre pour cancelled)
+                  //   2. CONFIRMEE -> forte mise en evidence (bordure 2px,
+                  //      fond emerald sature, shadow visible).
+                  //      Si "Mes sessions" + confirmee : indigo bien marque.
+                  //   3. PLANIFIEE / DRAFT -> visibilite normale (bordure
+                  //      pale, fond blanc/leger, pas de shadow).
+                  //      Si "Mes sessions" : indigo pale.
+                  const base =
+                    "rounded-2xl p-3 sm:p-5 flex flex-col gap-3 transition-all";
+                  if (s.status === "cancelled") {
+                    return `${base} bg-zinc-50 border-2 border-dashed border-red-200 opacity-60 hover:opacity-80`;
+                  }
+                  if (s.status === "postponed") {
+                    return `${base} bg-orange-50/40 border-2 border-dashed border-orange-300 opacity-75 hover:opacity-100`;
+                  }
+                  const isMine = s.is_own || s.is_subcontracting;
+                  const isConfirmed = s.status === "confirmed";
+                  if (isMine && isConfirmed) {
+                    return `${base} bg-indigo-100 border-2 border-indigo-400 shadow-md hover:border-indigo-500 hover:shadow-lg`;
+                  }
+                  if (isMine) {
+                    return `${base} bg-white border border-indigo-200 hover:border-indigo-300`;
+                  }
+                  if (isConfirmed) {
+                    return `${base} bg-emerald-100 border-2 border-emerald-400 shadow-md hover:border-emerald-500 hover:shadow-lg`;
+                  }
+                  if (s.modality === "distanciel") {
+                    return `${base} bg-white border border-cyan-200 hover:border-cyan-300`;
+                  }
+                  return `${base} bg-white border border-zinc-200 hover:border-zinc-300`;
+                })()}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
-                    <h2 className="font-bold text-zinc-900 leading-snug">
+                    <h2
+                      className={
+                        s.status === "cancelled"
+                          ? "font-bold text-zinc-500 line-through leading-snug"
+                          : "font-bold text-zinc-900 leading-snug"
+                      }
+                    >
                       {s.formation?.title ?? "(formation supprimée)"}
                     </h2>
                     {s.formation?.subtitle && (
@@ -350,6 +374,20 @@ export function CatalogueList({
                       >
                         <CheckCircle2 className="h-3 w-3" />
                         Confirmée
+                      </span>
+                    ) : s.status === "cancelled" ? (
+                      <span
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-[10px] font-bold uppercase tracking-wider border border-red-200"
+                        title="Session annulée"
+                      >
+                        Annulée
+                      </span>
+                    ) : s.status === "postponed" ? (
+                      <span
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 text-[10px] font-bold uppercase tracking-wider border border-orange-200"
+                        title="Session reportée à plus tard"
+                      >
+                        Reportée
                       </span>
                     ) : (
                       <span
@@ -572,30 +610,40 @@ export function CatalogueList({
                         Gilles 2026-05-22). Si pas de tarif négocié, le
                         bouton est en couleur secondaire avec libellé
                         "Tarif à confirmer" et la page d'inscription
-                        affichera un message si nécessaire. */}
-                    {/* Bouton inscription. Pour les OF (Gilles 2026-06-01),
-                        on masque la mention "tarif a confirmer" puisque
-                        la zone tarification globale est masquee. */}
-                    <Link
-                      href={`/partenaire/${token}/inscrire/${s.id}`}
-                      className={
-                        isOf || negotiated !== undefined
-                          ? "inline-flex items-center justify-center gap-1.5 px-4 py-2.5 sm:py-2 rounded-lg bg-cyan-600 text-white text-sm font-bold hover:bg-cyan-700"
-                          : "inline-flex items-center justify-center gap-1.5 px-4 py-2.5 sm:py-2 rounded-lg bg-amber-500 text-white text-sm font-bold hover:bg-amber-600"
-                      }
-                      title={
-                        isOf
-                          ? "Inscrire un apprenant sur cette session"
-                          : negotiated !== undefined
+                        affichera un message si nécessaire.
+                        Si session annulee (Gilles 2026-06-01) -> bouton
+                        desactive avec tooltip explicite. */}
+                    {s.status === "cancelled" ? (
+                      <button
+                        type="button"
+                        disabled
+                        className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 sm:py-2 rounded-lg bg-zinc-100 text-zinc-400 text-sm font-bold cursor-not-allowed"
+                        title="Session annulée — inscription impossible"
+                      >
+                        Inscription fermée
+                      </button>
+                    ) : (
+                      <Link
+                        href={`/partenaire/${token}/inscrire/${s.id}`}
+                        className={
+                          isOf || negotiated !== undefined
+                            ? "inline-flex items-center justify-center gap-1.5 px-4 py-2.5 sm:py-2 rounded-lg bg-cyan-600 text-white text-sm font-bold hover:bg-cyan-700"
+                            : "inline-flex items-center justify-center gap-1.5 px-4 py-2.5 sm:py-2 rounded-lg bg-amber-500 text-white text-sm font-bold hover:bg-amber-600"
+                        }
+                        title={
+                          isOf
                             ? "Inscrire un apprenant sur cette session"
-                            : "Aucun tarif spécifique défini — l'inscription sera possible après validation du tarif par CAP NUMERIQUE."
-                      }
-                    >
-                      {isOf || negotiated !== undefined
-                        ? "Inscrire un apprenant"
-                        : "Inscrire (tarif à confirmer)"}
-                      <ArrowRight className="h-4 w-4" />
-                    </Link>
+                            : negotiated !== undefined
+                              ? "Inscrire un apprenant sur cette session"
+                              : "Aucun tarif spécifique défini — l'inscription sera possible après validation du tarif par CAP NUMERIQUE."
+                        }
+                      >
+                        {isOf || negotiated !== undefined
+                          ? "Inscrire un apprenant"
+                          : "Inscrire (tarif à confirmer)"}
+                        <ArrowRight className="h-4 w-4" />
+                      </Link>
+                    )}
                   </div>
                 </div>
               </article>

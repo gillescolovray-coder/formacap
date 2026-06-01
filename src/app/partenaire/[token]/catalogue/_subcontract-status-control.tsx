@@ -1,7 +1,13 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { CheckCircle2, ChevronDown, Loader2, XCircle } from "lucide-react";
+import {
+  Calendar,
+  CheckCircle2,
+  ChevronDown,
+  Loader2,
+  XCircle,
+} from "lucide-react";
 import { updateSubcontractingSessionStatus } from "./_subcontract-status-actions";
 
 type Props = {
@@ -10,8 +16,10 @@ type Props = {
   currentStatus: string;
 };
 
+type StatusValue = "planned" | "confirmed" | "cancelled" | "postponed";
+
 const STATUS_OPTIONS: Array<{
-  value: "planned" | "confirmed" | "cancelled";
+  value: StatusValue;
   label: string;
   description: string;
   cls: string;
@@ -30,6 +38,13 @@ const STATUS_OPTIONS: Array<{
     description: "Démarrage garanti",
     cls: "bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
     icon: CheckCircle2,
+  },
+  {
+    value: "postponed",
+    label: "Reportée",
+    description: "Session reportée à plus tard",
+    cls: "bg-orange-50 text-orange-700 hover:bg-orange-100",
+    icon: Calendar,
   },
   {
     value: "cancelled",
@@ -56,15 +71,19 @@ export function SubcontractStatusControl({
   const [pending, startTransition] = useTransition();
   const [feedback, setFeedback] = useState<string | null>(null);
 
-  function handleChange(newStatus: "planned" | "confirmed" | "cancelled") {
+  function handleChange(newStatus: StatusValue) {
     if (newStatus === currentStatus) {
       setOpen(false);
       return;
     }
+    const newLabel =
+      STATUS_OPTIONS.find((o) => o.value === newStatus)?.label ?? newStatus;
     const ok = window.confirm(
       newStatus === "cancelled"
         ? "Annuler cette session ? Un email sera envoyé à CAP NUMERIQUE."
-        : `Passer la session en « ${newStatus === "confirmed" ? "Confirmée" : "Planifiée"} » ? Un email sera envoyé à CAP NUMERIQUE.`,
+        : newStatus === "postponed"
+          ? "Reporter cette session ? Un email sera envoyé à CAP NUMERIQUE."
+          : `Passer la session en « ${newLabel} » ? Un email sera envoyé à CAP NUMERIQUE.`,
     );
     if (!ok) return;
     setOpen(false);

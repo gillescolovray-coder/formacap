@@ -21,13 +21,19 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { isResendConfigured, sendEmail } from "@/lib/email/resend";
 import { resolvePartnerContext } from "../_resolve";
 
-const ALLOWED_STATUSES = new Set(["planned", "confirmed", "cancelled"]);
+const ALLOWED_STATUSES = new Set([
+  "planned",
+  "confirmed",
+  "cancelled",
+  "postponed",
+]);
 
 const STATUS_LABEL: Record<string, string> = {
   draft: "Brouillon",
   planned: "Planifiée",
   confirmed: "Confirmée",
   cancelled: "Annulée",
+  postponed: "Reportée",
 };
 
 export type UpdateStatusResult = {
