@@ -74,6 +74,7 @@ export default async function PreinscriptionPage({
     modality: string | null;
     max_participants: number | null;
     prescriber_company_id: string | null;
+    subcontracting_company_id: string | null;
     location: string | null;
     video_app: string | null;
     formation:
@@ -119,7 +120,7 @@ export default async function PreinscriptionPage({
       .from("sessions")
       .select(
         `
-      id, internal_code, start_date, end_date, status, is_inter, modality, max_participants, prescriber_company_id, location, video_app,
+      id, internal_code, start_date, end_date, status, is_inter, modality, max_participants, prescriber_company_id, subcontracting_company_id, location, video_app,
       formation:formations!inner(id, title, subtitle, duration_hours, duration_days, modality, programme_pdf_url),
       location_obj:formation_locations!location_id(name, address, postal_code, city)
     `,
@@ -143,13 +144,38 @@ export default async function PreinscriptionPage({
       .from("sessions")
       .select(
         `
-      id, internal_code, start_date, end_date, status, is_inter, modality, max_participants, prescriber_company_id, location, video_app,
+      id, internal_code, start_date, end_date, status, is_inter, modality, max_participants, prescriber_company_id, subcontracting_company_id, location, video_app,
       formation:formations!inner(id, title, subtitle, duration_hours, duration_days, modality, programme_pdf_url),
       location_obj:formation_locations!location_id(name, address, postal_code, city)
     `,
       )
       .eq("organization_id", ctx.company.organization_id)
       .eq("prescriber_company_id", ctx.company.id)
+      .gte("start_date", today)
+      .in("status", ["confirmed", "draft", "planned"])
+      .order("start_date", { ascending: true });
+    if (rows) collected.push(...(rows as unknown as RawRow[]));
+  }
+
+  // Branche sous-traitance (Gilles 2026-06-01) : on charge aussi les
+  // sessions ou le partenaire (typiquement un OF) est donneur d ordre.
+  // S applique au filtre `mine` (= mes sessions) ET au mode `all`
+  // (= tout le catalogue, qui doit inclure les sessions visibles dans
+  // le portail). Le filtre `distanciel` reste limite au catalogue INTER
+  // public distanciel.
+  const showSubcontracting = filter !== "distanciel";
+  if (showSubcontracting) {
+    const { data: rows } = await supabase
+      .from("sessions")
+      .select(
+        `
+      id, internal_code, start_date, end_date, status, is_inter, modality, max_participants, prescriber_company_id, subcontracting_company_id, location, video_app,
+      formation:formations!inner(id, title, subtitle, duration_hours, duration_days, modality, programme_pdf_url),
+      location_obj:formation_locations!location_id(name, address, postal_code, city)
+    `,
+      )
+      .eq("organization_id", ctx.company.organization_id)
+      .eq("subcontracting_company_id", ctx.company.id)
       .gte("start_date", today)
       .in("status", ["confirmed", "draft", "planned"])
       .order("start_date", { ascending: true });

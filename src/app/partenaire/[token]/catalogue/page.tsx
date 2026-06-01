@@ -314,34 +314,53 @@ export default async function PartnerCataloguePage({
   // + ses sessions propres (INTRA + INTER) toutes modalites. On evite ainsi
   // le titre "distanciel" alors que des sessions presentielles peuvent y
   // figurer (sessions dediees).
+  //
+  // Cas particulier OF avec sous-traitance (Gilles 2026-06-01) :
+  // si un OF est donneur d ordre sur une ou plusieurs sessions, son
+  // catalogue peut contenir du presentiel/INTRA, donc on bascule sur
+  // les libelles « Catalogue » non-distanciel-only.
   const isOf = ctx.company.type === "of";
-  const catalogTitle = isOf ? "Catalogue distanciel" : "Catalogue";
-  const catalogDescription = isOf ? (
-    <>
-      Sessions <strong>INTER</strong> en <strong>distanciel</strong> à venir,
-      proposées par {ctx.organization.name}.
-    </>
-  ) : showOwn && showInter ? (
-    <>
-      Sessions <strong>INTER distanciel</strong> du catalogue et{" "}
-      <strong>vos sessions dédiées</strong> (INTRA et INTER) où{" "}
-      {ctx.company.name} est prescripteur, proposées par {ctx.organization.name}
-      .
-    </>
-  ) : showInter ? (
-    <>
-      Sessions <strong>INTER</strong> en <strong>distanciel</strong> à venir,
-      proposées par {ctx.organization.name}.
-    </>
-  ) : (
-    <>
-      Vos <strong>sessions dédiées</strong> où {ctx.company.name} est
-      prescripteur, proposées par {ctx.organization.name}.
-    </>
+  const hasSubcontractingSessions = rows.some((s) => s.is_subcontracting);
+  const hasNonDistancielSubcontract = rows.some(
+    (s) => s.is_subcontracting && s.modality !== "distanciel",
   );
-  const emptyText = isOf
-    ? "Aucune session distanciel INTER à venir pour le moment."
-    : "Aucune session à venir dans votre catalogue pour le moment.";
+  const ofWithSubcontract = isOf && hasNonDistancielSubcontract;
+  const catalogTitle =
+    isOf && !ofWithSubcontract ? "Catalogue distanciel" : "Catalogue";
+  const catalogDescription =
+    isOf && ofWithSubcontract ? (
+      <>
+        Sessions <strong>INTER distanciel</strong> de {ctx.organization.name} et{" "}
+        <strong>vos sessions de sous-traitance</strong> (toutes modalités) où{" "}
+        {ctx.company.name} est donneur d&apos;ordre.
+      </>
+    ) : isOf ? (
+      <>
+        Sessions <strong>INTER</strong> en <strong>distanciel</strong> à venir,
+        proposées par {ctx.organization.name}.
+      </>
+    ) : showOwn && showInter ? (
+      <>
+        Sessions <strong>INTER distanciel</strong> du catalogue et{" "}
+        <strong>vos sessions dédiées</strong> (INTRA et INTER) où{" "}
+        {ctx.company.name} est prescripteur, proposées par {ctx.organization.name}
+        .
+      </>
+    ) : showInter ? (
+      <>
+        Sessions <strong>INTER</strong> en <strong>distanciel</strong> à venir,
+        proposées par {ctx.organization.name}.
+      </>
+    ) : (
+      <>
+        Vos <strong>sessions dédiées</strong> où {ctx.company.name} est
+        prescripteur, proposées par {ctx.organization.name}.
+      </>
+    );
+  const emptyText =
+    isOf && !ofWithSubcontract
+      ? "Aucune session distanciel INTER à venir pour le moment."
+      : "Aucune session à venir dans votre catalogue pour le moment.";
 
   return (
     <div className="space-y-5">
@@ -360,7 +379,8 @@ export default async function PartnerCataloguePage({
         token={token}
         partnerName={ctx.company.name}
         organizationName={ctx.organization.name}
-        showOwnSessionsFilter={showOwn}
+        showOwnSessionsFilter={showOwn || hasSubcontractingSessions}
+        partnerType={ctx.company.type}
       />
 
       {rows.length === 0 ? (

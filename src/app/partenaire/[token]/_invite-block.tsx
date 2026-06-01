@@ -5,36 +5,44 @@ import { Check, Copy, Globe, Handshake, Mail, Share2 } from "lucide-react";
 
 type FilterKey = "all" | "distanciel" | "mine";
 
-const FILTER_DEFS: Array<{
+type FilterDef = {
   key: FilterKey;
   label: string;
   description: string;
   icon: React.ComponentType<{ className?: string }>;
   param: string;
-}> = [
-  {
-    key: "all",
-    label: "Tout le catalogue",
-    description: "Toutes les sessions visibles dans votre catalogue.",
-    icon: Share2,
-    param: "",
-  },
-  {
-    key: "distanciel",
-    label: "Distanciel uniquement",
-    description: "Seulement les sessions INTER distanciel public.",
-    icon: Globe,
-    param: "distanciel",
-  },
-  {
-    key: "mine",
-    label: "Mes sessions (où je suis prescripteur)",
-    description:
-      "Seulement les sessions où vous êtes prescripteur référent.",
-    icon: Handshake,
-    param: "mine",
-  },
-];
+};
+
+function buildFilterDefs(partnerType: "of" | "prescripteur"): FilterDef[] {
+  const isOf = partnerType === "of";
+  return [
+    {
+      key: "all",
+      label: "Tout le catalogue",
+      description: "Toutes les sessions visibles dans votre catalogue.",
+      icon: Share2,
+      param: "",
+    },
+    {
+      key: "distanciel",
+      label: "Distanciel uniquement",
+      description: "Seulement les sessions INTER distanciel public.",
+      icon: Globe,
+      param: "distanciel",
+    },
+    {
+      key: "mine",
+      label: isOf
+        ? "Mes sessions de sous-traitance"
+        : "Mes sessions (où je suis prescripteur)",
+      description: isOf
+        ? "Seulement les sessions où vous êtes donneur d'ordre."
+        : "Seulement les sessions où vous êtes prescripteur référent.",
+      icon: Handshake,
+      param: "mine",
+    },
+  ];
+}
 
 /**
  * Bloc « Inviter mes entreprises » : 3 variantes de lien public selon
@@ -48,13 +56,17 @@ export function InviteBlock({
   partnerName,
   organizationName,
   showOwnSessionsFilter,
+  partnerType,
 }: {
   token: string;
   partnerName: string;
   organizationName: string;
   /** True pour afficher l'option « Mes sessions » (prescripteurs avec
-   *  show_own_intra ; sinon le filtre n'a pas de sens). */
+   *  show_own_intra OU OF avec sessions de sous-traitance). */
   showOwnSessionsFilter: boolean;
+  /** Type du partenaire — change le libellé du bouton "Mes sessions"
+   *  (prescripteur référent vs OF donneur d'ordre). */
+  partnerType: "of" | "prescripteur";
 }) {
   const [origin, setOrigin] = useState("");
   const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
@@ -64,8 +76,9 @@ export function InviteBlock({
     setOrigin(window.location.origin);
   }, []);
 
+  const filterDefs = buildFilterDefs(partnerType);
   const def =
-    FILTER_DEFS.find((f) => f.key === activeFilter) ?? FILTER_DEFS[0];
+    filterDefs.find((f) => f.key === activeFilter) ?? filterDefs[0];
   const publicUrl = origin
     ? def.param
       ? `${origin}/preinscription/${token}?filter=${def.param}`
@@ -95,7 +108,7 @@ Cordialement,
 ${partnerName}`,
   );
 
-  const visibleFilters = FILTER_DEFS.filter(
+  const visibleFilters = filterDefs.filter(
     (f) => f.key !== "mine" || showOwnSessionsFilter,
   );
 

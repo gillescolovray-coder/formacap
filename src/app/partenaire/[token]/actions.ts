@@ -63,11 +63,13 @@ export async function submitPartnerEnrollment(formData: FormData): Promise<
   // 1) Récupérer la session + sa formation (avec durée pour le calcul prix).
   // Eligibilité côté partenaire :
   //   - INTER distanciel (catalogue public)
-  //   - OU INTRA rattachée à ce partenaire (prescriber_company_id).
+  //   - OU INTRA rattachée à ce partenaire (prescriber_company_id)
+  //   - OU session de sous-traitance (subcontracting_company_id =
+  //     ce partenaire — typiquement un OF donneur d ordre)
   const { data: session } = await supabase
     .from("sessions")
     .select(
-      "id, organization_id, formation_id, is_inter, prescriber_company_id, start_date, end_date, formations!inner(modality, title, duration_hours, duration_days)",
+      "id, organization_id, formation_id, is_inter, prescriber_company_id, subcontracting_company_id, start_date, end_date, formations!inner(modality, title, duration_hours, duration_days)",
     )
     .eq("id", sessionId)
     .eq("organization_id", ctx.company.organization_id)
@@ -79,6 +81,7 @@ export async function submitPartnerEnrollment(formData: FormData): Promise<
     formation_id: string;
     is_inter: boolean | null;
     prescriber_company_id: string | null;
+    subcontracting_company_id: string | null;
     formations: unknown;
   };
   const formationId = sessionTyped.formation_id;
@@ -107,14 +110,23 @@ export async function submitPartnerEnrollment(formData: FormData): Promise<
     sessionTyped.is_inter === true && formation.modality === "distanciel";
   const isOwnIntra =
     sessionTyped.prescriber_company_id === ctx.company.id;
-  if (!isInterDistanciel && !isOwnIntra) {
+  const isSubcontracting =
+    sessionTyped.subcontracting_company_id === ctx.company.id;
+  if (!isInterDistanciel && !isOwnIntra && !isSubcontracting) {
     return {
       ok: false,
       error: "Cette session n'est pas accessible depuis votre espace.",
     };
   }
-  // Pour les OF (workflow quiz only) : pas d'accès aux INTRA.
-  if (ctx.company.type === "of" && !isInterDistanciel) {
+  // Pour les OF (workflow quiz only) : pas d'accès aux INTRA prescripteur.
+  // Mais ils ont acces aux sessions ou ils sont donneur d ordre
+  // (sous-traitance), meme si elles sont presentielles/INTRA
+  // (Gilles 2026-06-01).
+  if (
+    ctx.company.type === "of" &&
+    !isInterDistanciel &&
+    !isSubcontracting
+  ) {
     return {
       ok: false,
       error: "Cette session n'est pas accessible depuis votre espace.",
@@ -523,7 +535,7 @@ export async function submitPartnerBatchEnrollmentForm(formData: FormData) {
   const { data: session } = await supabase
     .from("sessions")
     .select(
-      "id, organization_id, formation_id, is_inter, prescriber_company_id, formations!inner(modality, title, duration_hours, duration_days)",
+      "id, organization_id, formation_id, is_inter, prescriber_company_id, subcontracting_company_id, formations!inner(modality, title, duration_hours, duration_days)",
     )
     .eq("id", sessionId)
     .eq("organization_id", ctx.company.organization_id)
@@ -534,6 +546,7 @@ export async function submitPartnerBatchEnrollmentForm(formData: FormData) {
     formation_id: string;
     is_inter: boolean | null;
     prescriber_company_id: string | null;
+    subcontracting_company_id: string | null;
     formations: unknown;
   };
   const formationRel = sessionTyped.formations;
@@ -556,10 +569,18 @@ export async function submitPartnerBatchEnrollmentForm(formData: FormData) {
   const isInterDistanciel =
     sessionTyped.is_inter === true && formation.modality === "distanciel";
   const isOwnIntra = sessionTyped.prescriber_company_id === ctx.company.id;
-  if (!isInterDistanciel && !isOwnIntra) {
+  const isSubcontracting =
+    sessionTyped.subcontracting_company_id === ctx.company.id;
+  if (!isInterDistanciel && !isOwnIntra && !isSubcontracting) {
     return redirectError("Session non eligible pour votre espace.");
   }
-  if (ctx.company.type === "of" && !isInterDistanciel) {
+  // OF : autorise INTER distanciel OU sessions de sous-traitance ou il est
+  // donneur d ordre (Gilles 2026-06-01 — peut etre presentiel/INTRA).
+  if (
+    ctx.company.type === "of" &&
+    !isInterDistanciel &&
+    !isSubcontracting
+  ) {
     return redirectError("Session non eligible pour votre espace.");
   }
 

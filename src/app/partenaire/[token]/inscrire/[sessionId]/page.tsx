@@ -48,7 +48,7 @@ export default async function PartnerInscribePage({
     .from("sessions")
     .select(
       `
-      id, internal_code, start_date, end_date, status, is_inter, prescriber_company_id,
+      id, internal_code, start_date, end_date, status, is_inter, prescriber_company_id, subcontracting_company_id,
       formation:formations!inner(id, title, subtitle, duration_hours, duration_days, modality)
     `,
     )
@@ -64,6 +64,7 @@ export default async function PartnerInscribePage({
     status: string;
     is_inter: boolean;
     prescriber_company_id: string | null;
+    subcontracting_company_id: string | null;
     formation:
       | {
           id: string;
@@ -89,8 +90,19 @@ export default async function PartnerInscribePage({
   const isInterDistanciel =
     session.is_inter && formation.modality === "distanciel";
   const isOwnIntra = session.prescriber_company_id === ctx.company.id;
-  if (!isInterDistanciel && !isOwnIntra) notFound();
-  if (ctx.company.type === "of" && !isInterDistanciel) notFound();
+  // Gilles 2026-06-01 : un OF peut etre donneur d ordre sur des
+  // sessions presentielles/INTRA (sous-traitance). Il doit pouvoir
+  // y inscrire ses apprenants meme si la session n est pas
+  // INTER-distanciel.
+  const isSubcontracting =
+    session.subcontracting_company_id === ctx.company.id;
+  if (!isInterDistanciel && !isOwnIntra && !isSubcontracting) notFound();
+  if (
+    ctx.company.type === "of" &&
+    !isInterDistanciel &&
+    !isSubcontracting
+  )
+    notFound();
 
   // Cherche un override formation, puis applique le helper
   const { data: priceRow } = await supabase
