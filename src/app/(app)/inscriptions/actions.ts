@@ -886,7 +886,7 @@ export async function updateInscription(id: string, formData: FormData) {
     const { data: learner } = await supabase
       .from("learners")
       .select(
-        "email, phone, mobile, birth_date, job_title, civility, company_id",
+        "first_name, last_name, email, phone, mobile, birth_date, job_title, civility, company_id",
       )
       .eq("id", payload.learner_id)
       .maybeSingle();
@@ -894,11 +894,28 @@ export async function updateInscription(id: string, formData: FormData) {
       // Sync demande → apprenant : ecrase la fiche si la valeur saisie
       // differe de l'existante. L'utilisateur peut DESACTIVER cette
       // sync via le radio "NON, uniquement sur cette inscription"
-      // (Bug Gilles 2026-05-26).
+      // (Bug Gilles 2026-05-26 + ajout first_name/last_name Gilles 2026-06-01).
       const userChoseToUpdateLearner =
         parseText(formData.get("update_learner_contact")) !== "no";
       const learnerUpdates: Record<string, unknown> = {};
       if (userChoseToUpdateLearner) {
+        // Fix Gilles 2026-06-01 : ajout sync first_name et last_name
+        // (bug CELLAR -> CELLARD : modif nom sur l inscription ne
+        // remontait pas a la fiche apprenant).
+        const learnerFirst = (learner as unknown as { first_name?: string | null })
+          .first_name;
+        const learnerLast = (learner as unknown as { last_name?: string | null })
+          .last_name;
+        if (
+          payload.prospect_first_name &&
+          payload.prospect_first_name !== learnerFirst
+        )
+          learnerUpdates.first_name = payload.prospect_first_name;
+        if (
+          payload.prospect_last_name &&
+          payload.prospect_last_name !== learnerLast
+        )
+          learnerUpdates.last_name = payload.prospect_last_name;
         if (payload.prospect_email && payload.prospect_email !== learner.email)
           learnerUpdates.email = payload.prospect_email;
         if (payload.prospect_phone && payload.prospect_phone !== learner.phone)
