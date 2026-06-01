@@ -2,7 +2,17 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Calendar, Search, Users, X } from "lucide-react";
+import {
+  ArrowRight,
+  Calendar,
+  CheckCircle2,
+  Clock,
+  Globe,
+  MapPin,
+  Search,
+  Users,
+  X,
+} from "lucide-react";
 
 export type ArchivedSession = {
   id: string;
@@ -15,13 +25,41 @@ export type ArchivedSession = {
   nb_learners: number;
 };
 
-function formatDate(iso: string | null): string {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("fr-FR", {
-    day: "2-digit",
-    month: "2-digit",
+function formatDate(s: string | null): string {
+  if (!s) return "—";
+  return new Date(s + "T00:00:00").toLocaleDateString("fr-FR", {
+    day: "numeric",
+    month: "long",
     year: "numeric",
   });
+}
+
+function formatDateRange(start: string | null, end: string | null): string {
+  if (!start) return "—";
+  if (!end || end === start) return formatDate(start);
+  const s = new Date(start + "T00:00:00");
+  const e = new Date(end + "T00:00:00");
+  const sameMonth =
+    s.getMonth() === e.getMonth() && s.getFullYear() === e.getFullYear();
+  if (sameMonth) {
+    return `${s.getDate()} – ${e.toLocaleDateString("fr-FR", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    })}`;
+  }
+  const sameYear = s.getFullYear() === e.getFullYear();
+  if (sameYear) {
+    return `${s.toLocaleDateString("fr-FR", {
+      day: "numeric",
+      month: "long",
+    })} – ${e.toLocaleDateString("fr-FR", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    })}`;
+  }
+  return `${formatDate(start)} – ${formatDate(end)}`;
 }
 
 function normalize(s: string): string {
@@ -32,9 +70,10 @@ function normalize(s: string): string {
 }
 
 /**
- * Liste client-side des sessions archivees avec moteur de recherche
- * (Gilles 2026-06-01). Filtre par titre de formation, code interne ou
- * annee (1ere 4 chiffres de la date).
+ * Liste des sessions archivees avec moteur de recherche
+ * (Gilles 2026-06-01). Mise en forme harmonisee avec le catalogue :
+ * cartes plutot que tableau, badges modalite/INTER-INTRA, badge
+ * "Archivee" + compteur apprenants.
  */
 export function ArchivesListClient({
   token,
@@ -64,8 +103,8 @@ export function ArchivesListClient({
   return (
     <div className="space-y-3">
       {/* Barre de recherche */}
-      <div className="rounded-2xl bg-white border border-zinc-200 p-3">
-        <div className="relative">
+      <div className="rounded-2xl bg-white border border-zinc-200 p-2 flex items-center gap-2 flex-wrap">
+        <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400 pointer-events-none" />
           <input
             type="search"
@@ -93,86 +132,113 @@ export function ArchivesListClient({
       </div>
 
       {sessions.length === 0 ? (
-        <div className="rounded-lg border border-zinc-200 bg-white p-8 text-center text-sm text-zinc-500">
-          Aucune session archivée pour le moment. Les sessions apparaîtront ici
-          une fois passées.
+        <div className="rounded-2xl bg-white border border-zinc-200 p-8 text-center">
+          <Calendar className="h-10 w-10 text-zinc-300 mx-auto mb-3" />
+          <p className="text-sm text-zinc-600">
+            Aucune session archivée pour le moment. Les sessions apparaîtront
+            ici une fois passées.
+          </p>
         </div>
       ) : filtered.length === 0 ? (
-        <div className="rounded-lg border border-zinc-200 bg-white p-8 text-center text-sm text-zinc-500">
-          Aucune session ne correspond à votre recherche.
+        <div className="rounded-2xl bg-white border border-zinc-200 p-8 text-center">
+          <Search className="h-8 w-8 text-zinc-300 mx-auto mb-2" />
+          <p className="text-sm text-zinc-600">
+            Aucune session ne correspond à votre recherche.
+          </p>
         </div>
       ) : (
-        <div className="rounded-lg border border-zinc-200 bg-white overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-zinc-50 border-b border-zinc-200 text-[11px] uppercase tracking-wider text-zinc-500 font-bold">
-              <tr>
-                <th className="px-3 py-2 text-left">Date</th>
-                <th className="px-3 py-2 text-left">Formation</th>
-                <th className="px-3 py-2 text-left">Modalité</th>
-                <th className="px-3 py-2 text-center">Apprenants</th>
-                <th className="px-3 py-2 text-right"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100">
-              {filtered.map((s) => (
-                <tr key={s.id} className="hover:bg-zinc-50/50">
-                  <td className="px-3 py-2 text-xs">
-                    <div className="inline-flex items-center gap-1.5 text-zinc-700 font-medium">
-                      <Calendar className="h-3 w-3" />
-                      {formatDate(s.start_date)}
-                    </div>
-                    {s.end_date && s.end_date !== s.start_date && (
-                      <div className="text-[10px] text-zinc-500">
-                        au {formatDate(s.end_date)}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 font-semibold text-zinc-900">
-                    {s.formation_title ?? "—"}
-                    {s.internal_code && (
-                      <div className="text-[10px] text-zinc-400 font-normal">
-                        {s.internal_code}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-xs text-zinc-600">
-                    {s.modality === "distanciel"
-                      ? "Distanciel"
-                      : s.modality === "presentiel"
-                        ? "Présentiel"
-                        : s.modality === "hybride"
-                          ? "Hybride"
-                          : "—"}
-                    {s.is_inter !== null && (
-                      <span className="ml-1 text-[10px] text-zinc-400">
-                        {s.is_inter ? "(INTER)" : "(INTRA)"}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-center">
-                    <span
-                      className={
-                        s.nb_learners > 0
-                          ? "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-cyan-100 text-cyan-700"
-                          : "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-zinc-100 text-zinc-500"
-                      }
-                    >
-                      <Users className="h-3 w-3" />
-                      {s.nb_learners}
+        <div className="grid grid-cols-1 gap-3">
+          {filtered.map((s) => (
+            <article
+              key={s.id}
+              className="rounded-2xl bg-white border-2 border-zinc-200 p-3 sm:p-5 flex flex-col gap-3 hover:border-cyan-400 hover:shadow-md transition-all"
+            >
+              {/* Header : titre + badges */}
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <h2 className="font-bold text-zinc-900 leading-snug">
+                    {s.formation_title ?? "(formation supprimée)"}
+                  </h2>
+                  {s.internal_code && (
+                    <p className="text-[11px] text-zinc-400 mt-0.5">
+                      {s.internal_code}
+                    </p>
+                  )}
+                </div>
+                <div className="shrink-0 flex flex-col items-end gap-1">
+                  {s.modality === "presentiel" ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold uppercase tracking-wider">
+                      <MapPin className="h-3 w-3" />
+                      Présentiel
                     </span>
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <Link
-                      href={`/partenaire/${token}/archives/${s.id}`}
-                      className="text-xs text-cyan-700 hover:underline font-medium"
-                    >
-                      Voir détails →
-                    </Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  ) : s.modality === "hybride" ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-violet-100 text-violet-700 text-[10px] font-bold uppercase tracking-wider">
+                      <Globe className="h-3 w-3" />
+                      Hybride
+                    </span>
+                  ) : s.modality === "distanciel" ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-cyan-100 text-cyan-700 text-[10px] font-bold uppercase tracking-wider">
+                      <Globe className="h-3 w-3" />
+                      Distanciel
+                    </span>
+                  ) : null}
+                  {s.is_inter !== null && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-600 text-[10px] font-bold uppercase tracking-wider">
+                      {s.is_inter ? "INTER" : "INTRA"}
+                    </span>
+                  )}
+                  <span
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-bold uppercase tracking-wider border border-amber-200"
+                    title="Session terminée"
+                  >
+                    <CheckCircle2 className="h-3 w-3" />
+                    Archivée
+                  </span>
+                </div>
+              </div>
+
+              {/* Date + apprenants */}
+              <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+                <div className="flex items-center gap-2 col-span-2 flex-wrap">
+                  <Calendar className="h-4 w-4 text-zinc-500 shrink-0" />
+                  <span className="text-sm font-bold text-zinc-900">
+                    {formatDateRange(s.start_date, s.end_date)}
+                  </span>
+                </div>
+              </dl>
+
+              {/* Footer : compteur apprenants + bouton */}
+              <div className="mt-auto pt-3 border-t border-zinc-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div className="inline-flex items-center gap-2">
+                  <span
+                    className={
+                      s.nb_learners > 0
+                        ? "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-cyan-100 text-cyan-800 text-sm font-bold"
+                        : "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-zinc-100 text-zinc-500 text-sm font-bold"
+                    }
+                  >
+                    <Users className="h-4 w-4" />
+                    {s.nb_learners}{" "}
+                    {s.nb_learners > 1 ? "apprenants" : "apprenant"}
+                  </span>
+                  {s.nb_learners === 0 && (
+                    <span className="inline-flex items-center gap-1 text-[10px] text-zinc-400 italic">
+                      <Clock className="h-3 w-3" />
+                      Aucune inscription
+                    </span>
+                  )}
+                </div>
+                <Link
+                  href={`/partenaire/${token}/archives/${s.id}`}
+                  className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 sm:py-2 rounded-lg bg-cyan-600 text-white text-sm font-bold hover:bg-cyan-700"
+                  title="Consulter le détail (apprenants + scores quiz)"
+                >
+                  Voir détails
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </div>
+            </article>
+          ))}
         </div>
       )}
     </div>
