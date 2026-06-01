@@ -323,7 +323,7 @@ export function CatalogueList({
                       </p>
                     )}
                   </div>
-                  <div className="shrink-0 flex flex-col items-end gap-1">
+                  <div className="shrink-0 flex flex-row items-center gap-1 flex-wrap justify-end">
                     {s.modality === "presentiel" ? (
                       <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold uppercase tracking-wider">
                         <MapPin className="h-3 w-3" />
