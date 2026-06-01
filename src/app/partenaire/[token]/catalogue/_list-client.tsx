@@ -182,48 +182,48 @@ export function CatalogueList({
 
   return (
     <div className="space-y-4">
-      {/* Segmented control "Tout / Mon role" — Gilles 2026-06-01.
-          Visible uniquement si le partenaire a au moins 1 session
-          "a lui" (sinon le bouton n a pas de sens). */}
-      {mineCount > 0 && (
-        <div className="rounded-full bg-white border border-zinc-200 p-1 inline-flex items-center gap-1 shadow-sm">
-          <button
-            type="button"
-            onClick={() => setOnlyOwn(false)}
-            className={
-              !onlyOwn
-                ? "inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-cyan-600 text-white text-xs font-bold shadow"
-                : "inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-zinc-600 hover:text-cyan-700 text-xs font-medium"
-            }
-            title="Voir tout le catalogue"
-          >
-            Tout
-            <span className={!onlyOwn ? "text-cyan-100" : "text-zinc-400"}>
-              ({sessions.length})
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setOnlyOwn(true)}
-            className={
-              onlyOwn
-                ? "inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-indigo-600 text-white text-xs font-bold shadow"
-                : "inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-indigo-700 hover:bg-indigo-50 text-xs font-medium"
-            }
-            title={mineTitle}
-          >
-            <Handshake className="h-3.5 w-3.5" />
-            {mineLabel}
-            <span className={onlyOwn ? "text-indigo-100" : "text-indigo-400"}>
-              ({mineCount})
-            </span>
-          </button>
-        </div>
-      )}
-
-      {/* Barre de recherche */}
-      <div className="rounded-2xl bg-white border border-zinc-200 p-3 flex items-center gap-3 flex-wrap">
-        <div className="relative flex-1 min-w-[240px]">
+      {/* Bloc filtres + recherche fusionnes sur une seule ligne
+          (Gilles 2026-06-01) — gain de place vertical. Le segmented
+          control "Tout / Mon role" est colle a gauche, la barre de
+          recherche occupe le reste de la largeur. Sur mobile, le
+          flex-wrap fait passer la recherche sous le segmented. */}
+      <div className="rounded-2xl bg-white border border-zinc-200 p-2 flex items-center gap-2 flex-wrap">
+        {mineCount > 0 && (
+          <div className="rounded-full bg-zinc-50 border border-zinc-200 p-1 inline-flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={() => setOnlyOwn(false)}
+              className={
+                !onlyOwn
+                  ? "inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-600 text-white text-xs font-bold shadow"
+                  : "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-zinc-600 hover:text-cyan-700 text-xs font-medium"
+              }
+              title="Voir tout le catalogue"
+            >
+              Tout
+              <span className={!onlyOwn ? "text-cyan-100" : "text-zinc-400"}>
+                ({sessions.length})
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setOnlyOwn(true)}
+              className={
+                onlyOwn
+                  ? "inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-600 text-white text-xs font-bold shadow"
+                  : "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-indigo-700 hover:bg-indigo-50 text-xs font-medium"
+              }
+              title={mineTitle}
+            >
+              <Handshake className="h-3.5 w-3.5" />
+              {mineLabel}
+              <span className={onlyOwn ? "text-indigo-100" : "text-indigo-400"}>
+                ({mineCount})
+              </span>
+            </button>
+          </div>
+        )}
+        <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400 pointer-events-none" />
           <input
             type="search"
