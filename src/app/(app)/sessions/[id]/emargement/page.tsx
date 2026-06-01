@@ -468,17 +468,46 @@ export default async function EmargementPage({
           { label: "Émargement" },
         ]}
         actions={
-          <Button
-            variant="outline"
-            size="sm"
-            nativeButton={false}
-            render={
-              <a href={`/sessions/${id}/emargement/print`} target="_blank" />
-            }
-          >
-            <Printer className="h-4 w-4" />
-            Version imprimable
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              nativeButton={false}
+              render={
+                <a
+                  href={`/sessions/${id}/emargement/print`}
+                  target="_blank"
+                />
+              }
+            >
+              <Printer className="h-4 w-4" />
+              Feuille collective
+            </Button>
+            {/* Menu déroulant feuilles individuelles (Gilles 2026-06-01) */}
+            {rows.length > 0 && (
+              <details className="relative">
+                <summary className="list-none cursor-pointer inline-flex items-center gap-1.5 h-9 px-3 rounded-md border text-sm font-medium hover:bg-zinc-50 dark:hover:bg-zinc-800">
+                  <Printer className="h-4 w-4" />
+                  Feuille individuelle ▾
+                </summary>
+                <div className="absolute right-0 top-full mt-1 w-64 max-h-80 overflow-auto bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-md shadow-lg z-50">
+                  <ul className="py-1">
+                    {rows.map((r) => (
+                      <li key={r.enrollmentId}>
+                        <a
+                          href={`/sessions/${id}/emargement/print?enrollment_id=${r.enrollmentId}`}
+                          target="_blank"
+                          className="block px-3 py-1.5 text-xs hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                        >
+                          {r.learnerName || "Apprenant"}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </details>
+            )}
+          </div>
         }
       />
 

@@ -87,10 +87,19 @@ const UUID_REGEX =
 
 export default async function EmargementPrintPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ enrollment_id?: string }>;
 }) {
   const { id } = await params;
+  const query = await searchParams;
+  // Filtre individuel : si enrollment_id fourni, on ne garde qu un seul
+  // apprenant sur la feuille (Gilles 2026-06-01).
+  const filterEnrollmentId =
+    query.enrollment_id && UUID_REGEX.test(query.enrollment_id)
+      ? query.enrollment_id
+      : null;
   if (!UUID_REGEX.test(id)) notFound();
 
   const supabase = await createClient();
@@ -141,7 +150,13 @@ export default async function EmargementPrintPage({
       .order("day_date", { ascending: true }),
   ]);
 
-  const enrollmentIds = (enrollments ?? []).map((e) => e.id as string);
+  // Si filtre individuel actif : ne garder que l enrollment cible
+  const filteredEnrollments = filterEnrollmentId
+    ? (enrollments ?? []).filter((e) => (e.id as string) === filterEnrollmentId)
+    : (enrollments ?? []);
+  const enrollmentIds = filteredEnrollments.map((e) => e.id as string);
+  // Surcharge la variable principale pour le rendu
+  const enrollmentsForRender = filteredEnrollments;
 
   // Détection du financement FSE : si au moins une demande d'inscription
   // rattachée à cette session a `financing_mode = 'fse'`, on affichera le
@@ -237,7 +252,9 @@ export default async function EmargementPrintPage({
 
   const { data: membership } = await supabase
     .from("organization_members")
-    .select("organization_id, organization:organizations(name, logo_url, legal_mentions)")
+    .select(
+      "organization_id, organization:organizations(name, logo_url, legal_mentions, signature_stamp_path)",
+    )
     .eq("profile_id", user.id)
     .eq("is_active", true)
     .limit(1)
@@ -247,12 +264,24 @@ export default async function EmargementPrintPage({
     name: string;
     logo_url: string | null;
     legal_mentions: string | null;
+    signature_stamp_path: string | null;
   } | null;
   const organizationId = (membership as { organization_id?: string } | null)
     ?.organization_id;
   const orgName = organization?.name ?? "CAP NUMÉRIQUE";
   const orgLogo = organization?.logo_url ?? null;
   const orgLegalMentions = organization?.legal_mentions ?? null;
+
+  // Cachet + signature OF (bucket prive organization-signatures).
+  // On genere une URL signee valable la duree d affichage de la page
+  // (Gilles 2026-06-01).
+  let orgSignatureUrl: string | null = null;
+  if (organization?.signature_stamp_path) {
+    const { data: signed } = await supabase.storage
+      .from("organization-signatures")
+      .createSignedUrl(organization.signature_stamp_path, 3600);
+    orgSignatureUrl = signed?.signedUrl ?? null;
+  }
 
   const template = organizationId
     ? await loadEmargementTemplate(organizationId)
@@ -373,7 +402,7 @@ export default async function EmargementPrintPage({
   const maxDaysPerPage =
     orientation === "portrait" ? MAX_DAYS_PORTRAIT : MAX_DAYS_LANDSCAPE;
 
-  const allEnrollments = (enrollments ?? []) as unknown as Array<{
+  const allEnrollments = enrollmentsForRender as unknown as Array<{
     id: string;
     learner: {
       first_name: string | null;
@@ -502,7 +531,33 @@ export default async function EmargementPrintPage({
       />
       <div className="min-h-screen bg-white px-8 pt-8 pb-2 max-w-[1400px] mx-auto">
         <div className="no-print mb-6 flex gap-2">
-          <PrintButton />
+          {(() => {
+            // Nommage auto du fichier PDF lors du Ctrl+P du navigateur
+            // (Gilles 2026-06-01) : Emargement-NOM-Prenom-Session-Date.pdf
+            // pour les individuels, Emargement-Session-Date.pdf collectif.
+            const slug = (s: string) =>
+              s
+                .normalize("NFD")
+                .replace(/[̀-ͯ]/g, "")
+                .replace(/[^a-zA-Z0-9]+/g, "_")
+                .replace(/^_+|_+$/g, "")
+                .slice(0, 60);
+            const formationSlug = slug(session.formation?.title ?? "Session");
+            const dateSlug = (session.start_date ?? "").slice(0, 10);
+            let titleSuggestion = `Emargement-${formationSlug}-${dateSlug}`;
+            if (filterEnrollmentId) {
+              const e = allEnrollments[0];
+              const learner = Array.isArray(e?.learner)
+                ? e.learner[0]
+                : e?.learner;
+              const last = slug(learner?.last_name ?? "");
+              const first = slug(learner?.first_name ?? "");
+              if (last) {
+                titleSuggestion = `Emargement-${last}-${first}-${formationSlug}-${dateSlug}`;
+              }
+            }
+            return <PrintButton documentTitle={titleSuggestion} />;
+          })()}
           <a
             href={`/sessions/${id}/emargement`}
             className="px-4 py-2 border rounded-md text-sm"
@@ -876,10 +931,24 @@ export default async function EmargementPrintPage({
                 </strong>
                 <br />
                 <span className="text-slate-600">{orgName}</span>
-                <br />
-                <span className="text-slate-500 text-[11px] italic">
-                  Signature et date :
-                </span>
+                {orgSignatureUrl ? (
+                  <>
+                    <br />
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={orgSignatureUrl}
+                      alt="Cachet et signature de l'organisme"
+                      className="mt-1 max-h-20 object-contain"
+                    />
+                  </>
+                ) : (
+                  <>
+                    <br />
+                    <span className="text-slate-500 text-[11px] italic">
+                      Signature et date :
+                    </span>
+                  </>
+                )}
               </div>
             </div>
           </div>

@@ -1,8 +1,17 @@
 "use client";
 
+import { useEffect } from "react";
 import { Printer } from "lucide-react";
 
-export function PrintButton() {
+export function PrintButton({ documentTitle }: { documentTitle?: string }) {
+  // Set le title du document => suggere comme nom de fichier dans
+  // la boite "Enregistrer en PDF" du navigateur (Gilles 2026-06-01).
+  useEffect(() => {
+    if (documentTitle) {
+      document.title = documentTitle;
+    }
+  }, [documentTitle]);
+
   return (
     <button
       onClick={() => window.print()}
