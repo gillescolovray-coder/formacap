@@ -94,6 +94,11 @@ function buildPayload(formData: FormData) {
       formData.get("is_inter") === "inter",
     is_subcontracted: formData.get("is_subcontracted") === "on",
     subcontractor_name: parseText(formData.get("subcontractor_name")),
+    // FK vers companies — Gilles 2026-06-01 — permet au portail de cet OF
+    // d afficher la session dans son catalogue.
+    subcontracting_company_id: parseText(
+      formData.get("subcontracting_company_id"),
+    ),
     prescriber_company_id: parseText(formData.get("prescriber_company_id")),
     amount_ht: parseDecimal(formData.get("amount_ht")),
     // ----- Tarification cascade (R7) -----

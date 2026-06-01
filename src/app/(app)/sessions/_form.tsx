@@ -306,6 +306,10 @@ export function SessionForm({
           companies={companies}
           defaultSubcontractorName={session?.subcontractor_name ?? ""}
           defaultPrescriberCompanyId={session?.prescriber_company_id ?? ""}
+          defaultSubcontractingCompanyId={
+            (session as unknown as { subcontracting_company_id?: string })
+              ?.subcontracting_company_id ?? ""
+          }
         />
       </CollapsibleSection>
 

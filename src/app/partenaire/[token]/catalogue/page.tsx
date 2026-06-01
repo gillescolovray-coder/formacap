@@ -131,6 +131,28 @@ export default async function PartnerCataloguePage({
     if (rows) collected.push(...(rows as unknown as RawRow[]));
   }
 
+  // 3e source : sessions ou cet OF/Prescripteur est SOUS-TRAITANT donneur
+  // d ordre (Gilles 2026-06-01). Toutes les sessions ou
+  // subcontracting_company_id = cette company. Quelle que soit la modalite
+  // / INTER ou INTRA / statut public.
+  {
+    const { data: rows } = await supabase
+      .from("sessions")
+      .select(
+        `
+      id, internal_code, start_date, end_date, status, is_inter, modality, max_participants, prescriber_company_id, location, video_app, video_link,
+      formation:formations!inner(id, title, duration_hours, duration_days, subtitle, modality, programme_pdf_url),
+      location_obj:formation_locations!location_id(id, name, address, postal_code, city)
+    `,
+      )
+      .eq("organization_id", ctx.company.organization_id)
+      .eq("subcontracting_company_id", ctx.company.id)
+      .gte("start_date", today)
+      .in("status", ["confirmed", "draft", "planned"])
+      .order("start_date", { ascending: true });
+    if (rows) collected.push(...(rows as unknown as RawRow[]));
+  }
+
   // Déduplique + retrie par date croissante (au cas où on aurait mixé
   // 2 requetes INTER + INTRA, l'ordre serait perdu).
   const seen = new Set<string>();
