@@ -98,7 +98,9 @@ export default async function AttestationPrintPage({
 
   const { data: membership } = await supabase
     .from("organization_members")
-    .select("organization:organizations(name, logo_url, legal_mentions)")
+    .select(
+      "organization:organizations(name, logo_url, legal_mentions, signature_stamp_path)",
+    )
     .eq("profile_id", user.id)
     .eq("is_active", true)
     .limit(1)
@@ -107,10 +109,20 @@ export default async function AttestationPrintPage({
     name: string;
     logo_url: string | null;
     legal_mentions: string | null;
+    signature_stamp_path: string | null;
   } | null;
   const orgName = organization?.name ?? "CAP NUMÉRIQUE";
   const orgLogo = organization?.logo_url ?? null;
   const orgLegalMentions = organization?.legal_mentions ?? null;
+
+  // Cachet + signature OF (Gilles 2026-06-01)
+  let orgSignatureUrl: string | null = null;
+  if (organization?.signature_stamp_path) {
+    const { data: signed } = await supabase.storage
+      .from("organization-signatures")
+      .createSignedUrl(organization.signature_stamp_path, 3600);
+    orgSignatureUrl = signed?.signedUrl ?? null;
+  }
 
   // Total des heures planifiées
   const sortedDays = (sessionDays ?? []).slice().sort((a, b) =>
@@ -324,7 +336,7 @@ export default async function AttestationPrintPage({
           </p>
         </div>
 
-        {/* Signature */}
+        {/* Signature + cachet OF en bas a droite (Gilles 2026-06-01) */}
         <div className="mt-12 grid grid-cols-2 gap-8">
           <div></div>
           <div className="text-sm">
@@ -333,8 +345,19 @@ export default async function AttestationPrintPage({
               <br />
               Pour <strong>{orgName}</strong>
             </p>
-            <div className="h-20 border-t border-slate-300 mt-12 pt-1 text-xs text-slate-500 italic">
-              Cachet et signature
+            <div className="border-t border-slate-300 mt-8 pt-2 text-right">
+              {orgSignatureUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={orgSignatureUrl}
+                  alt="Cachet et signature de l'organisme"
+                  className="inline-block max-h-24 max-w-[220px] object-contain"
+                />
+              ) : (
+                <div className="h-20 text-xs text-slate-500 italic">
+                  Cachet et signature
+                </div>
+              )}
             </div>
           </div>
         </div>

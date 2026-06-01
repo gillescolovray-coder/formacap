@@ -34,12 +34,19 @@ type Participant = {
   name: string;
 };
 
+/** Variante du selecteur : emargement (defaut) ou attestation */
+type Variant = "emargement" | "attestation";
+
 export function BatchPrintSelector({
   sessionId,
   participants,
+  variant = "emargement",
+  triggerLabel,
 }: {
   sessionId: string;
   participants: Participant[];
+  variant?: Variant;
+  triggerLabel?: string;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [opening, setOpening] = useState(false);
@@ -69,18 +76,25 @@ export function BatchPrintSelector({
     }
   }
 
+  // URLs adaptees a la variante
+  const individualPrintUrl = (enrollmentId: string) =>
+    variant === "attestation"
+      ? `/sessions/${sessionId}/attestations/${enrollmentId}/print`
+      : `/sessions/${sessionId}/emargement/print?enrollment_id=${enrollmentId}`;
+  const zipApiUrl = (ids: string) =>
+    variant === "attestation"
+      ? `/api/sessions/${sessionId}/attestations/pdf-zip?enrollment_ids=${ids}`
+      : `/api/sessions/${sessionId}/emargement/pdf-zip?enrollment_ids=${ids}`;
+  const docLabel = variant === "attestation" ? "attestation" : "feuille";
+
   async function openSelected() {
     if (selected.size === 0) return;
     setOpening(true);
-    // Tri pour respecter l ordre alphabetique
     const ids = participants
       .filter((p) => selected.has(p.enrollmentId))
       .map((p) => p.enrollmentId);
-    // Ouvre chaque feuille avec un leger delai pour eviter le popup blocker
     for (let i = 0; i < ids.length; i++) {
-      const url = `/sessions/${sessionId}/emargement/print?enrollment_id=${ids[i]}`;
-      window.open(url, "_blank", "noopener");
-      // Petit delai entre chaque ouverture
+      window.open(individualPrintUrl(ids[i]), "_blank", "noopener");
       if (i < ids.length - 1) {
         await new Promise((r) => setTimeout(r, 150));
       }
@@ -97,7 +111,7 @@ export function BatchPrintSelector({
         .filter((p) => selected.has(p.enrollmentId))
         .map((p) => p.enrollmentId)
         .join(",");
-      const url = `/api/sessions/${sessionId}/emargement/pdf-zip?enrollment_ids=${ids}`;
+      const url = zipApiUrl(ids);
       const res = await fetch(url, { method: "GET" });
       if (!res.ok) {
         const errText = await res.text().catch(() => "Erreur inconnue");
@@ -127,7 +141,10 @@ export function BatchPrintSelector({
     <details className="relative">
       <summary className="list-none cursor-pointer inline-flex items-center gap-1.5 h-9 px-3 rounded-md border text-sm font-medium hover:bg-zinc-50 dark:hover:bg-zinc-800">
         <Printer className="h-4 w-4" />
-        Feuille individuelle ▾
+        {triggerLabel ??
+          (variant === "attestation"
+            ? "Attestations individuelles ▾"
+            : "Feuille individuelle ▾")}
         {someChecked && (
           <span className="ml-1 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-cyan-600 text-white text-[10px] font-bold">
             {selected.size}
@@ -174,12 +191,12 @@ export function BatchPrintSelector({
                   />
                   <span className="flex-1 truncate">{p.name}</span>
                   <a
-                    href={`/sessions/${sessionId}/emargement/print?enrollment_id=${p.enrollmentId}`}
+                    href={individualPrintUrl(p.enrollmentId)}
                     target="_blank"
                     rel="noopener"
                     className="text-[10px] text-zinc-500 hover:text-cyan-700 px-1"
                     onClick={(e) => e.stopPropagation()}
-                    title="Ouvrir seulement cette feuille"
+                    title={`Ouvrir seulement cette ${docLabel}`}
                   >
                     Ouvrir →
                   </a>
@@ -237,7 +254,8 @@ export function BatchPrintSelector({
           )}
           {someChecked && !zipError && (
             <p className="text-[10px] text-zinc-500 mt-1 leading-snug">
-              💡 Le ZIP contient {selected.size} PDF
+              💡 Le ZIP contient {selected.size}{" "}
+              {variant === "attestation" ? "attestation" : "PDF"}
               {selected.size > 1 ? "s" : ""}, 1 par apprenant.
             </p>
           )}

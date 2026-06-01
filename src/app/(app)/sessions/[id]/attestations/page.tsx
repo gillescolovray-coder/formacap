@@ -10,6 +10,7 @@ import { isResendConfigured } from "@/lib/email/resend";
 import { SessionTabs } from "../_session-tabs";
 import { SessionHeaderMeta } from "../_session-header-meta";
 import { BulkSendAttestations, SendOneAttestation } from "./_send-buttons";
+import { BatchPrintSelector } from "../emargement/_batch-print-selector";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -116,7 +117,25 @@ export default async function AttestationsPage({
           { label: title, href: `/sessions/${id}` },
           { label: "Attestations" },
         ]}
-        actions={<BackButton fallbackHref={`/sessions/${id}`} />}
+        actions={
+          <div className="flex gap-2">
+            {rows.length > 0 && (
+              <BatchPrintSelector
+                sessionId={id}
+                variant="attestation"
+                participants={rows.map((r) => ({
+                  enrollmentId: r.id,
+                  name:
+                    [r.learner?.first_name, r.learner?.last_name]
+                      .filter(Boolean)
+                      .join(" ")
+                      .trim() || "Apprenant",
+                }))}
+              />
+            )}
+            <BackButton fallbackHref={`/sessions/${id}`} />
+          </div>
+        }
       />
 
       <SessionTabs sessionId={id} counts={{ attestations: rows.length }} />
