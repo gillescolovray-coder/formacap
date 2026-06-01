@@ -19,6 +19,7 @@ import {
 } from "../actions";
 import { OpcoFundingPanel } from "../_opco-funding-panel";
 import { BillingPanel } from "./_billing-panel";
+import { EmployerAmountField } from "./_employer-amount-field";
 import { ReferentPicker } from "../_referent-picker";
 import { BackButton } from "@/components/back-button";
 import { PageHeader } from "@/components/page-header";
@@ -644,6 +645,43 @@ export default async function InscriptionDetailPage({
             billingManuallyOverridden={!!request.billing_manually_overridden}
             billingNotes={request.billing_notes ?? null}
           />
+
+          {/* Décomposition OPCO + Employeur (refonte 2026-06-01) —
+              visible uniquement si au moins 1 accord OPCO rattaché. */}
+          {(() => {
+            const opcoTotalHt = (linkedFundings ?? []).reduce(
+              (acc, row) => {
+                const amt =
+                  row.amount_ht !== null && row.amount_ht !== undefined
+                    ? Number(row.amount_ht)
+                    : 0;
+                return acc + (Number.isFinite(amt) && amt > 0 ? amt : 0);
+              },
+              0,
+            );
+            const hasOpcoFundings =
+              (linkedFundings ?? []).length > 0 && opcoTotalHt > 0;
+            const employerAmountStored =
+              (
+                request as unknown as {
+                  employer_amount_ht?: number | string | null;
+                }
+              ).employer_amount_ht;
+            const employerAmountNum =
+              employerAmountStored !== null &&
+              employerAmountStored !== undefined
+                ? Number(employerAmountStored)
+                : null;
+            return (
+              <EmployerAmountField
+                inscriptionId={id}
+                totalHt={billingTotalHt}
+                opcoTotalHt={opcoTotalHt}
+                employerAmountStored={employerAmountNum}
+                hasOpcoFundings={hasOpcoFundings}
+              />
+            );
+          })()}
 
           {/* Note rapide */}
           <div className="rounded-xl bg-amber-50/40 border border-amber-200 p-4 space-y-3">
