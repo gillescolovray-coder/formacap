@@ -121,7 +121,7 @@ export async function GET(
   const { data: membership } = await supabase
     .from("organization_members")
     .select(
-      "organization:organizations(name, logo_url, legal_mentions, signature_stamp_path)",
+      "organization:organizations(name, logo_url, legal_mentions, signature_stamp_path, legal_representative_name, legal_representative_role)",
     )
     .eq("profile_id", user.id)
     .eq("is_active", true)
@@ -132,6 +132,8 @@ export async function GET(
     logo_url: string | null;
     legal_mentions: string | null;
     signature_stamp_path: string | null;
+    legal_representative_name: string | null;
+    legal_representative_role: string | null;
   } | null;
   const orgName = organization?.name ?? "CAP NUMERIQUE";
 
@@ -264,6 +266,8 @@ export async function GET(
       orgLogoUrl: organization?.logo_url ?? null,
       orgStampUrl,
       orgLegalText,
+      orgLegalRepName: organization?.legal_representative_name ?? null,
+      orgLegalRepRole: organization?.legal_representative_role ?? null,
       formationTitle,
       startDateLabel,
       endDateLabel,

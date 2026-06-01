@@ -150,6 +150,10 @@ export type AttestationPdfData = {
   orgLogoUrl: string | null;
   orgStampUrl: string | null;
   orgLegalText: string | null;
+  /** Nom du representant legal (ex: "Gilles COLOVRAY"). */
+  orgLegalRepName: string | null;
+  /** Fonction (ex: "Gerant"). */
+  orgLegalRepRole: string | null;
   formationTitle: string;
   startDateLabel: string; // "26/05/2026"
   endDateLabel: string;
@@ -198,7 +202,16 @@ export function AttestationPdf({ data }: { data: AttestationPdfData }) {
         {/* Corps */}
         <View style={styles.bodyBlock}>
           <Text style={styles.paragraph}>
-            Je soussigné(e), représentant légal de{" "}
+            Je soussigné(e)
+            {data.orgLegalRepName ? (
+              <>
+                , <Text style={styles.bold}>{data.orgLegalRepName}</Text>
+              </>
+            ) : null}
+            ,{" "}
+            {data.orgLegalRepRole
+              ? `${data.orgLegalRepRole.toLowerCase()} de `
+              : "représentant légal de "}
             <Text style={styles.bold}>{data.orgName}</Text>, organisme de
             formation enregistré, atteste que :
           </Text>

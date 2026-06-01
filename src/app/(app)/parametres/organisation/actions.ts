@@ -27,6 +27,13 @@ export async function updateOrgIdentity(orgId: string, formData: FormData) {
     phone: parseText(formData.get("phone")),
     email: parseText(formData.get("email")),
     website: parseText(formData.get("website")),
+    // Representant legal (Gilles 2026-06-01)
+    legal_representative_name: parseText(
+      formData.get("legal_representative_name"),
+    ),
+    legal_representative_role: parseText(
+      formData.get("legal_representative_role"),
+    ),
   };
 
   const { error } = await supabase

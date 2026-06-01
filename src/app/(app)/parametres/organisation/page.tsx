@@ -47,6 +47,8 @@ type OrgInfo = {
   phone: string | null;
   email: string | null;
   website: string | null;
+  legal_representative_name: string | null;
+  legal_representative_role: string | null;
   default_morning_start: string | null;
   default_morning_end: string | null;
   default_afternoon_start: string | null;
@@ -280,6 +282,8 @@ export default async function OrganizationSettingsPage({
               phone: org.phone,
               email: org.email,
               website: org.website,
+              legal_representative_name: org.legal_representative_name,
+              legal_representative_role: org.legal_representative_role,
             }}
           />
         </section>

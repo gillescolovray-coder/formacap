@@ -99,7 +99,7 @@ export default async function AttestationPrintPage({
   const { data: membership } = await supabase
     .from("organization_members")
     .select(
-      "organization:organizations(name, logo_url, legal_mentions, signature_stamp_path)",
+      "organization:organizations(name, logo_url, legal_mentions, signature_stamp_path, legal_representative_name, legal_representative_role)",
     )
     .eq("profile_id", user.id)
     .eq("is_active", true)
@@ -110,10 +110,14 @@ export default async function AttestationPrintPage({
     logo_url: string | null;
     legal_mentions: string | null;
     signature_stamp_path: string | null;
+    legal_representative_name: string | null;
+    legal_representative_role: string | null;
   } | null;
   const orgName = organization?.name ?? "CAP NUMÉRIQUE";
   const orgLogo = organization?.logo_url ?? null;
   const orgLegalMentions = organization?.legal_mentions ?? null;
+  const orgLegalRepName = organization?.legal_representative_name ?? null;
+  const orgLegalRepRole = organization?.legal_representative_role ?? null;
 
   // Cachet + signature OF (Gilles 2026-06-01)
   let orgSignatureUrl: string | null = null;
@@ -262,8 +266,18 @@ export default async function AttestationPrintPage({
         {/* Corps */}
         <div className="text-sm leading-loose text-slate-800 mb-8 space-y-4">
           <p>
-            Je soussigné(e), représentant légal de <strong>{orgName}</strong>,
-            organisme de formation enregistré, atteste que :
+            Je soussigné(e)
+            {orgLegalRepName ? (
+              <>
+                , <strong>{orgLegalRepName}</strong>
+              </>
+            ) : null}
+            ,{" "}
+            {orgLegalRepRole
+              ? `${orgLegalRepRole.toLowerCase()} de `
+              : "représentant légal de "}
+            <strong>{orgName}</strong>, organisme de formation enregistré,
+            atteste que :
           </p>
 
           <div className="rounded-lg ring-1 ring-slate-200 bg-slate-50 p-4 space-y-1.5 text-sm">

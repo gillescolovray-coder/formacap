@@ -14,6 +14,8 @@ type Identity = {
   phone: string | null;
   email: string | null;
   website: string | null;
+  legal_representative_name: string | null;
+  legal_representative_role: string | null;
 };
 
 export function OrgIdentityForm({
@@ -80,6 +82,20 @@ export function OrgIdentityForm({
           type="url"
           placeholder="https://www.capnumerique.com"
           spanFull
+        />
+        <Field
+          label="Représentant légal — Nom complet"
+          name="legal_representative_name"
+          defaultValue={initial.legal_representative_name}
+          placeholder="ex. Gilles COLOVRAY"
+          help="Insere automatiquement sur les attestations (« Je soussigné(e), <Nom>, représentant légal de … »)."
+        />
+        <Field
+          label="Représentant légal — Fonction"
+          name="legal_representative_role"
+          defaultValue={initial.legal_representative_role}
+          placeholder="ex. Gérant, Président, Directeur"
+          help="Optionnel — affiché si renseigné."
         />
       </div>
       <div className="flex justify-end">
