@@ -77,10 +77,18 @@ export async function upsertPartnerPrice(
 export type PartnerType = "of" | "prescripteur";
 
 export type EffectivePriceResult = {
-  /** Prix HT final par apprenant, ou null si pas de tarif disponible. */
+  /** Prix HT final. En mode "per_learner" = prix par apprenant.
+   *  En mode "flat_per_day" = total forfaitaire pour la session (peu
+   *  importe le nombre d apprenants). Null si pas de tarif disponible. */
   price: number | null;
   /** Source du prix : "override" | "auto" | null. */
   source: "override" | "auto" | null;
+  /** Mode de tarification (Gilles 2026-06-01) :
+   *  - "per_learner" : prix multiplie par chaque apprenant (catalogue
+   *    classique : CAP organise, l OF/prescripteur revend).
+   *  - "flat_per_day" : forfait journalier, independant du nombre
+   *    d apprenants (sous-traitance : l OF organise, CAP intervient). */
+  pricingMode: "per_learner" | "flat_per_day" | null;
   /** Explication courte pour affichage UI (ex: "85 € × 2 j"). */
   explain: string | null;
 };
@@ -106,12 +114,75 @@ export function computeEffectivePartnerPrice(input: {
   orgDefaultOfPresentielHt?: number | null;
   orgDefaultPrescripteurDistancielHt?: number | null;
   orgDefaultPrescripteurPresentielHt?: number | null;
+  /** TRUE si la session est en sous-traitance (cet OF/prescripteur est
+   *  donneur d ordre, CAP intervient). Active le mode forfait journalier.
+   *  Gilles 2026-06-01. */
+  isSubcontracting?: boolean;
+  /** Tarif HT par jour DISTANCIEL en sous-traitance (sur companies).
+   *  Fallback sur dailyRateDistancielHt si null. */
+  subcontractingDailyRateDistancielHt?: number | null;
+  /** Tarif HT par jour PRESENTIEL en sous-traitance. */
+  subcontractingDailyRatePresentielHt?: number | null;
 }): EffectivePriceResult {
+  // 0) Mode sous-traitance (Gilles 2026-06-01) : prix = forfait
+  //    journalier (independant du nb d apprenants). Tarif = champ
+  //    subcontracting_daily_rate_X_ht ; fallback sur daily_rate_X_ht
+  //    standard si vide (decision Gilles 2026-06-01).
+  if (input.isSubcontracting) {
+    let subDaily: number | null = null;
+    let modalityLabel = "";
+    if (input.modality === "presentiel") {
+      subDaily =
+        input.subcontractingDailyRatePresentielHt ??
+        input.dailyRatePresentielHt;
+      modalityLabel = "présentiel";
+    } else if (input.modality === "distanciel") {
+      subDaily =
+        input.subcontractingDailyRateDistancielHt ??
+        input.dailyRateDistancielHt;
+      modalityLabel = "distanciel";
+    } else if (input.modality === "hybride") {
+      subDaily =
+        input.subcontractingDailyRatePresentielHt ??
+        input.subcontractingDailyRateDistancielHt ??
+        input.dailyRatePresentielHt ??
+        input.dailyRateDistancielHt;
+      modalityLabel = "hybride";
+    } else {
+      subDaily =
+        input.subcontractingDailyRateDistancielHt ??
+        input.subcontractingDailyRatePresentielHt ??
+        input.dailyRateDistancielHt ??
+        input.dailyRatePresentielHt;
+    }
+    if (typeof subDaily === "number" && Number.isFinite(subDaily) && subDaily > 0) {
+      let days = input.durationDays;
+      if (!days && input.durationHours) days = input.durationHours / 7;
+      if (days && days > 0) {
+        const total = Math.round(subDaily * days * 100) / 100;
+        const daysLabel = Number.isInteger(days)
+          ? `${days} j`
+          : `${days.toFixed(1)} j`;
+        return {
+          price: total,
+          source: "auto",
+          pricingMode: "flat_per_day",
+          explain: `${subDaily.toFixed(2)} € × ${daysLabel} (forfait sous-traitance${modalityLabel ? ` ${modalityLabel}` : ""})`,
+        };
+      }
+    }
+    // Si on n a aucun tarif sous-traitance ni standard utilisable on
+    // tombe naturellement sur null en sortie (les branches suivantes
+    // ne s appliquent pas en mode sous-traitance).
+    return { price: null, source: null, pricingMode: null, explain: null };
+  }
+
   // 1) Override
   if (typeof input.overrideHt === "number" && Number.isFinite(input.overrideHt)) {
     return {
       price: input.overrideHt,
       source: "override",
+      pricingMode: "per_learner",
       explain: "Tarif négocié spécifique",
     };
   }
@@ -150,6 +221,7 @@ export function computeEffectivePartnerPrice(input: {
       return {
         price: total,
         source: "auto",
+        pricingMode: "per_learner",
         explain: modalityLabel
           ? `${dailyRate.toFixed(2)} € × ${daysLabel} (tarif ${modalityLabel})`
           : `${dailyRate.toFixed(2)} € × ${daysLabel}`,
@@ -211,6 +283,7 @@ export function computeEffectivePartnerPrice(input: {
       return {
         price: total,
         source: "auto",
+        pricingMode: "per_learner",
         explain: `${orgDaily.toFixed(2)} € × ${daysLabel} (${orgLabel})`,
       };
     }
@@ -226,12 +299,13 @@ export function computeEffectivePartnerPrice(input: {
     return {
       price: input.quizUnitPriceHt,
       source: "auto",
+      pricingMode: "per_learner",
       explain: "Forfait quiz / apprenant (legacy)",
     };
   }
 
   // 5) Rien
-  return { price: null, source: null, explain: null };
+  return { price: null, source: null, pricingMode: null, explain: null };
 }
 
 /**

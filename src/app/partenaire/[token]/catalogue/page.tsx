@@ -263,6 +263,7 @@ export default async function PartnerCataloguePage({
           negotiated_price_ht: undefined,
           price_source: null,
           price_explain: null,
+          pricing_mode: null,
         };
       }
       const effective = computeEffectivePartnerPrice({
@@ -278,6 +279,13 @@ export default async function PartnerCataloguePage({
           | "distanciel"
           | "hybride"
           | null,
+        // Sous-traitance (Gilles 2026-06-01) : tarif forfait jour si
+        // ce partenaire est donneur d ordre sur cette session.
+        isSubcontracting,
+        subcontractingDailyRateDistancielHt:
+          ctx.company.subcontracting_daily_rate_distanciel_ht,
+        subcontractingDailyRatePresentielHt:
+          ctx.company.subcontracting_daily_rate_presentiel_ht,
         ...orgDefaults,
       });
       return {
@@ -305,6 +313,7 @@ export default async function PartnerCataloguePage({
         negotiated_price_ht: effective.price ?? undefined,
         price_source: effective.source,
         price_explain: effective.explain,
+        pricing_mode: effective.pricingMode,
       };
     },
   );

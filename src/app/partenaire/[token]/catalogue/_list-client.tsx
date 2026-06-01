@@ -68,6 +68,12 @@ export type CatalogueSession = {
   price_source: "override" | "auto" | null;
   /** Explication courte pour l'utilisateur (ex: "85 € × 2 j"). */
   price_explain: string | null;
+  /** Mode de tarification (Gilles 2026-06-01) :
+   *  - "per_learner" : prix par apprenant (catalogue distanciel classique)
+   *  - "flat_per_day" : forfait journalier (sous-traitance, indep. du nb
+   *    d apprenants)
+   *  - null : pas de tarif disponible */
+  pricing_mode: "per_learner" | "flat_per_day" | null;
 };
 
 function formatDate(s: string | null): string {
@@ -486,7 +492,9 @@ export function CatalogueList({
                   {negotiated !== undefined ? (
                     <div>
                       <p className="text-[10px] uppercase tracking-wider text-emerald-700 font-bold">
-                        Tarif partenaire
+                        {s.pricing_mode === "flat_per_day"
+                          ? "Tarif sous-traitance"
+                          : "Tarif partenaire"}
                         {s.price_source === "override" && (
                           <span className="ml-1 normal-case tracking-normal text-zinc-500 font-medium">
                             (négocié)
@@ -497,9 +505,16 @@ export function CatalogueList({
                         <Euro className="h-4 w-4" />
                         {negotiated.toFixed(2)}{" "}
                         <span className="text-[11px] text-zinc-500 font-normal">
-                          HT / apprenant
+                          {s.pricing_mode === "flat_per_day"
+                            ? "HT (forfait pour la session)"
+                            : "HT / apprenant"}
                         </span>
                       </p>
+                      {s.pricing_mode === "flat_per_day" && (
+                        <p className="text-[10px] text-zinc-500 mt-0.5 italic">
+                          Forfait indépendant du nombre d&apos;apprenants
+                        </p>
+                      )}
                       {s.price_explain && s.price_source === "auto" && (
                         <p className="text-[10px] text-zinc-500 mt-0.5">
                           {s.price_explain}

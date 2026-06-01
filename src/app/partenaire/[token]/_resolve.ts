@@ -24,6 +24,12 @@ export type PartnerContext = {
     daily_rate_presentiel_ht: number | null;
     /** Forfait HT par apprenant pour ce partenaire (OF). */
     quiz_unit_price_ht: number | null;
+    /** Tarif HT par jour DISTANCIEL en cas de sous-traitance (cet OF est
+     *  donneur d ordre, CAP intervient). Migration 0112. */
+    subcontracting_daily_rate_distanciel_ht: number | null;
+    /** Tarif HT par jour PRESENTIEL en cas de sous-traitance (cet OF est
+     *  donneur d ordre, CAP intervient). Migration 0112. */
+    subcontracting_daily_rate_presentiel_ht: number | null;
     /** Voir le catalogue distanciel INTER public (prescripteur). */
     show_inter_catalog: boolean;
     /** Voir ses sessions INTRA rattachées (prescripteur). */
@@ -56,7 +62,7 @@ export async function resolvePartnerContext(
   const { data: company } = await supabase
     .from("companies")
     .select(
-      "id, name, type, organization_id, email, city, postal_code, partner_daily_rate_distanciel_ht, partner_daily_rate_presentiel_ht, partner_quiz_unit_price_ht, partner_portal_show_inter_catalog, partner_portal_show_own_intra",
+      "id, name, type, organization_id, email, city, postal_code, partner_daily_rate_distanciel_ht, partner_daily_rate_presentiel_ht, partner_quiz_unit_price_ht, subcontracting_daily_rate_distanciel_ht, subcontracting_daily_rate_presentiel_ht, partner_portal_show_inter_catalog, partner_portal_show_own_intra",
     )
     .eq("id", tokenRow.company_id)
     .maybeSingle<{
@@ -70,6 +76,8 @@ export async function resolvePartnerContext(
       partner_daily_rate_distanciel_ht: string | number | null;
       partner_daily_rate_presentiel_ht: string | number | null;
       partner_quiz_unit_price_ht: string | number | null;
+      subcontracting_daily_rate_distanciel_ht: string | number | null;
+      subcontracting_daily_rate_presentiel_ht: string | number | null;
       partner_portal_show_inter_catalog: boolean | null;
       partner_portal_show_own_intra: boolean | null;
     }>();
@@ -130,6 +138,16 @@ export async function resolvePartnerContext(
         company.partner_quiz_unit_price_ht !== null &&
         company.partner_quiz_unit_price_ht !== undefined
           ? Number(company.partner_quiz_unit_price_ht)
+          : null,
+      subcontracting_daily_rate_distanciel_ht:
+        company.subcontracting_daily_rate_distanciel_ht !== null &&
+        company.subcontracting_daily_rate_distanciel_ht !== undefined
+          ? Number(company.subcontracting_daily_rate_distanciel_ht)
+          : null,
+      subcontracting_daily_rate_presentiel_ht:
+        company.subcontracting_daily_rate_presentiel_ht !== null &&
+        company.subcontracting_daily_rate_presentiel_ht !== undefined
+          ? Number(company.subcontracting_daily_rate_presentiel_ht)
           : null,
       show_inter_catalog: company.partner_portal_show_inter_catalog ?? true,
       show_own_intra: company.partner_portal_show_own_intra ?? true,

@@ -129,6 +129,13 @@ export default async function PartnerInscribePage({
       | "distanciel"
       | "hybride"
       | null,
+    // Sous-traitance (Gilles 2026-06-01) : tarif forfait jour si cet
+    // OF/prescripteur est donneur d ordre sur cette session.
+    isSubcontracting,
+    subcontractingDailyRateDistancielHt:
+      ctx.company.subcontracting_daily_rate_distanciel_ht,
+    subcontractingDailyRatePresentielHt:
+      ctx.company.subcontracting_daily_rate_presentiel_ht,
     ...orgDefaults,
   });
 
@@ -347,12 +354,24 @@ export default async function PartnerInscribePage({
           </div>
           <div>
             <dt className="text-zinc-500 uppercase tracking-wider text-[10px] font-bold mb-0.5">
-              Tarif partenaire
+              {effective.pricingMode === "flat_per_day"
+                ? "Tarif sous-traitance"
+                : "Tarif partenaire"}
             </dt>
             <dd className="font-bold text-emerald-700 tabular-nums inline-flex items-center gap-1">
               <Euro className="h-3.5 w-3.5" />
               {unitPriceHt.toFixed(2)} HT
+              <span className="text-[10px] font-normal text-zinc-500 ml-1">
+                {effective.pricingMode === "flat_per_day"
+                  ? "(forfait pour la session)"
+                  : "/ apprenant"}
+              </span>
             </dd>
+            {effective.pricingMode === "flat_per_day" && (
+              <p className="text-[10px] text-zinc-500 mt-0.5 italic">
+                Forfait indépendant du nombre d&apos;apprenants
+              </p>
+            )}
             {effective.explain && (
               <p className="text-[10px] text-zinc-500 mt-0.5">
                 {effective.explain}
