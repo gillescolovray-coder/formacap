@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import NextTopLoader from "nextjs-toploader";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -41,6 +42,15 @@ export default function RootLayout({
       }}
     >
       <body className="min-h-full flex flex-col">
+        {/* Barre de progression top page pendant les navigations
+            (Gilles 2026-06-01 — feedback fluidite). Visuel cyan
+            assorti au theme FORMACAP. */}
+        <NextTopLoader
+          color="#0891b2"
+          height={3}
+          showSpinner={false}
+          shadow="0 0 10px #0891b2, 0 0 5px #06b6d4"
+        />
         <LocalModeBanner />
         {children}
       </body>

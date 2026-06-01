@@ -31,6 +31,7 @@
     "libphonenumber-js": "^1.12.42",
     "lucide-react": "^1.8.0",
     "next": "16.2.4",
+    "nextjs-toploader": "^3.9.17",
     "pdf-lib": "^1.17.1",
     "puppeteer-core": "^24.43.0",
     "qrcode.react": "^4.2.0",
