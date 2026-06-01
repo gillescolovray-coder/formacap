@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
+  Archive,
   BookOpen,
   ClipboardList,
   Handshake,
@@ -128,6 +129,12 @@ export default async function PartnerLayout({
               icon={ListChecks}
               label="Mes inscriptions"
               labelShort="Mes insc."
+            />
+            <NavLink
+              href={`${base}/archives`}
+              icon={Archive}
+              label="Archives"
+              labelShort="Archives"
             />
           </div>
         </nav>
