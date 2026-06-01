@@ -29,6 +29,9 @@ export type CatalogueSession = {
   /** TRUE si ce partenaire est le prescripteur référent de la session
    *  (qu'elle soit INTRA ou INTER). Sert au filtre « Mes sessions ». */
   is_own: boolean;
+  /** TRUE si cet OF est le donneur d'ordre (CAP est sous-traitant).
+   *  Affichage avec couleur dédiée. Gilles 2026-06-01. */
+  is_subcontracting: boolean;
   /** Modalité de la formation (presentiel, distanciel, hybride). */
   modality: string | null;
   /** Statut de la session : "planned" | "confirmed" | ... */
@@ -227,15 +230,17 @@ export function CatalogueList({
               <article
                 key={s.id}
                 className={
-                  // Priorité visuelle : sessions "Mes sessions" (où le
-                  // partenaire est prescripteur) → bordure indigo distinctive,
-                  // peu importe le statut. Sinon : vert si confirmée, blanc
-                  // sinon.
-                  s.is_own
-                    ? "rounded-2xl bg-indigo-50/40 border-2 border-indigo-300 p-3 sm:p-5 flex flex-col gap-3 hover:border-indigo-400 hover:shadow-md transition-all"
-                    : s.status === "confirmed"
-                      ? "rounded-2xl bg-emerald-50/40 border-2 border-emerald-300 p-3 sm:p-5 flex flex-col gap-3 hover:border-emerald-400 hover:shadow-md transition-all"
-                      : "rounded-2xl bg-white border border-zinc-200 p-3 sm:p-5 flex flex-col gap-3 hover:border-cyan-300 hover:shadow-sm transition-all"
+                  // Priorité visuelle : sessions sous-traitance (cet OF est
+                  // donneur d ordre) -> bordure ambre distinctive. Sinon :
+                  // sessions "Mes sessions" (prescripteur) -> indigo.
+                  // Sinon : vert si confirmée, blanc sinon.
+                  s.is_subcontracting
+                    ? "rounded-2xl bg-amber-50/40 border-2 border-amber-400 p-3 sm:p-5 flex flex-col gap-3 hover:border-amber-500 hover:shadow-md transition-all"
+                    : s.is_own
+                      ? "rounded-2xl bg-indigo-50/40 border-2 border-indigo-300 p-3 sm:p-5 flex flex-col gap-3 hover:border-indigo-400 hover:shadow-md transition-all"
+                      : s.status === "confirmed"
+                        ? "rounded-2xl bg-emerald-50/40 border-2 border-emerald-300 p-3 sm:p-5 flex flex-col gap-3 hover:border-emerald-400 hover:shadow-md transition-all"
+                        : "rounded-2xl bg-white border border-zinc-200 p-3 sm:p-5 flex flex-col gap-3 hover:border-cyan-300 hover:shadow-sm transition-all"
                 }
               >
                 <div className="flex items-start justify-between gap-2">
@@ -266,7 +271,16 @@ export function CatalogueList({
                         Distanciel
                       </span>
                     )}
-                    {s.is_own && (
+                    {s.is_subcontracting && (
+                      <span
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold uppercase tracking-wider border border-amber-300"
+                        title="Vous êtes le donneur d'ordre — CAP NUMÉRIQUE est sous-traitant"
+                      >
+                        <Handshake className="h-3 w-3" />
+                        Vous donneur d&apos;ordre
+                      </span>
+                    )}
+                    {s.is_own && !s.is_subcontracting && (
                       <span
                         className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-bold uppercase tracking-wider border border-indigo-200"
                         title="Vous êtes le prescripteur référent de cette session"

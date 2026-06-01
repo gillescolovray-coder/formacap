@@ -29,6 +29,7 @@ type SessionRow = {
   modality: string | null;
   max_participants: number | null;
   prescriber_company_id: string | null;
+  subcontracting_company_id: string | null;
   /** Texte libre rétro-compat si pas de lieu référencé. */
   location: string | null;
   /** Application visio (Zoom, Teams, Meet, …) pour le distanciel. */
@@ -91,7 +92,7 @@ export default async function PartnerCataloguePage({
       .from("sessions")
       .select(
         `
-      id, internal_code, start_date, end_date, status, is_inter, modality, max_participants, prescriber_company_id, location, video_app, video_link,
+      id, internal_code, start_date, end_date, status, is_inter, modality, max_participants, prescriber_company_id, subcontracting_company_id, location, video_app, video_link,
       formation:formations!inner(id, title, duration_hours, duration_days, subtitle, modality, programme_pdf_url),
       location_obj:formation_locations!location_id(id, name, address, postal_code, city)
     `,
@@ -118,7 +119,7 @@ export default async function PartnerCataloguePage({
       .from("sessions")
       .select(
         `
-      id, internal_code, start_date, end_date, status, is_inter, modality, max_participants, prescriber_company_id, location, video_app, video_link,
+      id, internal_code, start_date, end_date, status, is_inter, modality, max_participants, prescriber_company_id, subcontracting_company_id, location, video_app, video_link,
       formation:formations!inner(id, title, duration_hours, duration_days, subtitle, modality, programme_pdf_url),
       location_obj:formation_locations!location_id(id, name, address, postal_code, city)
     `,
@@ -140,7 +141,7 @@ export default async function PartnerCataloguePage({
       .from("sessions")
       .select(
         `
-      id, internal_code, start_date, end_date, status, is_inter, modality, max_participants, prescriber_company_id, location, video_app, video_link,
+      id, internal_code, start_date, end_date, status, is_inter, modality, max_participants, prescriber_company_id, subcontracting_company_id, location, video_app, video_link,
       formation:formations!inner(id, title, duration_hours, duration_days, subtitle, modality, programme_pdf_url),
       location_obj:formation_locations!location_id(id, name, address, postal_code, city)
     `,
@@ -215,6 +216,10 @@ export default async function PartnerCataloguePage({
       // (true qu'elle soit INTRA ou INTER). Permet au client de filtrer
       // « Mes sessions ».
       const isOwn = s.prescriber_company_id === ctx.company.id;
+      // is_subcontracting = cet OF est le donneur d ordre (CAP est
+      // sous-traitant). Gilles 2026-06-01 — affichage badge specifique.
+      const isSubcontracting =
+        s.subcontracting_company_id === ctx.company.id;
       // Lieu détaillé : la jointure peut renvoyer un objet ou un tableau.
       const locObj = Array.isArray(s.location_obj)
         ? (s.location_obj[0] ?? null)
@@ -247,6 +252,7 @@ export default async function PartnerCataloguePage({
           end_date: s.end_date,
           is_intra: isIntra,
           is_own: isOwn,
+          is_subcontracting: isSubcontracting,
           modality: null,
           status: s.status,
           enrolled_count: enrolledBySession.get(s.id) ?? 0,
@@ -281,6 +287,7 @@ export default async function PartnerCataloguePage({
         end_date: s.end_date,
         is_intra: isIntra,
         is_own: isOwn,
+        is_subcontracting: isSubcontracting,
         modality: formation.modality ?? null,
         status: s.status,
         enrolled_count: enrolledBySession.get(s.id) ?? 0,
