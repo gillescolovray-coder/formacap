@@ -444,9 +444,10 @@ export function SessionInscriptionsTable({
                         {FINANCING_MODE_LABELS[r.financing_mode]}
                       </span>
                     )}
-                    {/* Accord(s) OPCO rattachés : n° dossier + nom OPCO
-                        + icone oeil cliquable pour consulter le PDF
-                        (Gilles 2026-06-01). */}
+                    {/* Piste A (Gilles 2026-06-01) : si financing_mode=opco
+                        mais aucun accord rattache, on affiche le texte
+                        libre financing_details + un bouton "Convertir" qui
+                        ouvre la modale de creation pre-remplie. */}
                     {(() => {
                       const fundings = (r as unknown as {
                         opco_fundings?: Array<{
@@ -458,7 +459,33 @@ export function SessionInscriptionsTable({
                           } | null;
                         }>;
                       }).opco_fundings;
-                      if (!fundings || fundings.length === 0) return null;
+                      const hasFormalAgreement =
+                        fundings && fundings.length > 0;
+                      if (
+                        r.financing_mode === "opco" &&
+                        !hasFormalAgreement &&
+                        r.financing_details
+                      ) {
+                        // Extrait le nom OPCO du texte "Constructys — avec subrogation"
+                        const opcoName = r.financing_details
+                          .split(/—|-/)[0]
+                          .trim();
+                        return (
+                          <div className="mt-1 space-y-1">
+                            <p className="text-[11px] text-violet-700 italic leading-tight">
+                              {r.financing_details}
+                            </p>
+                            <Link
+                              href={`/inscriptions/${r.id}?openOpcoModal=1&prefill_opco_name=${encodeURIComponent(opcoName)}`}
+                              className="inline-flex items-center gap-1 text-[10px] text-cyan-700 hover:underline font-semibold"
+                              title="Creer un accord OPCO officiel a partir de cette declaration"
+                            >
+                              + Convertir en accord officiel
+                            </Link>
+                          </div>
+                        );
+                      }
+                      if (!hasFormalAgreement) return null;
                       return (
                         <ul className="mt-1 space-y-0.5">
                           {fundings.flatMap((f, i) => {

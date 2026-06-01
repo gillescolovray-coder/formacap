@@ -60,6 +60,10 @@ type Props = {
    *  premier rendu. Utilisé par le picker Financement de l'onglet
    *  Participants (query param ?openOpcoModal=1). */
   autoOpenCreate?: boolean;
+  /** Pre-remplit le champ "Nom OPCO" lors de l ouverture de la modale
+   *  de creation. Permet la conversion d une declaration portail
+   *  prescripteur en accord officiel (Gilles 2026-06-01, piste C). */
+  prefillOpcoName?: string | null;
 };
 
 /**
@@ -78,6 +82,7 @@ export function OpcoFundingPanel({
   availableAgreements,
   sessionInscriptions,
   autoOpenCreate = false,
+  prefillOpcoName = null,
 }: Props) {
   const [openCreate, setOpenCreate] = useState(autoOpenCreate);
   const [openLink, setOpenLink] = useState(false);
@@ -159,6 +164,7 @@ export function OpcoFundingPanel({
         inscriptionId={inscriptionId}
         sessionId={sessionId}
         sessionInscriptions={sessionInscriptions}
+        prefillOpcoName={prefillOpcoName}
       />
       <LinkAgreementModal
         open={openLink}
@@ -421,12 +427,14 @@ function CreateAgreementModal({
   inscriptionId,
   sessionId,
   sessionInscriptions,
+  prefillOpcoName,
 }: {
   open: boolean;
   onClose: () => void;
   inscriptionId: string;
   sessionId: string | null;
   sessionInscriptions: SessionInscription[];
+  prefillOpcoName?: string | null;
 }) {
   return (
     <Modal
@@ -440,6 +448,7 @@ function CreateAgreementModal({
         sessionId={sessionId}
         sessionInscriptions={sessionInscriptions}
         onCancel={onClose}
+        prefillOpcoName={prefillOpcoName}
       />
     </Modal>
   );
@@ -450,11 +459,13 @@ function CreateAgreementForm({
   sessionId,
   sessionInscriptions,
   onCancel,
+  prefillOpcoName,
 }: {
   inscriptionId: string;
   sessionId: string | null;
   sessionInscriptions: SessionInscription[];
   onCancel: () => void;
+  prefillOpcoName?: string | null;
 }) {
   const [file, setFile] = useState<File | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -462,7 +473,7 @@ function CreateAgreementForm({
   const [extractionInfo, setExtractionInfo] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [opcoName, setOpcoName] = useState("");
+  const [opcoName, setOpcoName] = useState(prefillOpcoName?.trim() ?? "");
   const [dossierNumber, setDossierNumber] = useState("");
   const [agreementDate, setAgreementDate] = useState("");
   const [totalAmountHt, setTotalAmountHt] = useState("");

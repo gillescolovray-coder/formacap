@@ -52,6 +52,10 @@ export default async function InscriptionDetailPage({
      *  le bouton « + Créer un nouvel accord (PDF + OCR) » du picker
      *  Financement de l'onglet Participants. */
     openOpcoModal?: string;
+    /** Pre-remplit le champ "Nom OPCO" dans la modale de creation
+     *  (Piste C — conversion d une declaration portail prescripteur
+     *  en accord officiel, Gilles 2026-06-01). */
+    prefill_opco_name?: string;
     /** Contexte de retour (ex: "participants" → bouton retour vers
      *  /sessions/{session_id}/participants après création OPCO). */
     return_to?: string;
@@ -551,6 +555,7 @@ export default async function InscriptionDetailPage({
                 <OpcoFundingPanel
                     inscriptionId={id}
                     autoOpenCreate={query.openOpcoModal === "1"}
+                    prefillOpcoName={query.prefill_opco_name ?? null}
                     linkedAgreements={(linkedFundings ?? []).flatMap((row) => {
                       const ag = row.agreement as unknown as {
                         id: string;
