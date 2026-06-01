@@ -1,7 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Printer, Square, SquareCheck } from "lucide-react";
+import {
+  Check,
+  Download,
+  Loader2,
+  Printer,
+  Square,
+  SquareCheck,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 /**
@@ -36,6 +43,8 @@ export function BatchPrintSelector({
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [opening, setOpening] = useState(false);
+  const [downloadingZip, setDownloadingZip] = useState(false);
+  const [zipError, setZipError] = useState<string | null>(null);
 
   if (participants.length === 0) return null;
 
@@ -77,6 +86,41 @@ export function BatchPrintSelector({
       }
     }
     setOpening(false);
+  }
+
+  async function downloadZip() {
+    if (selected.size === 0) return;
+    setDownloadingZip(true);
+    setZipError(null);
+    try {
+      const ids = participants
+        .filter((p) => selected.has(p.enrollmentId))
+        .map((p) => p.enrollmentId)
+        .join(",");
+      const url = `/api/sessions/${sessionId}/emargement/pdf-zip?enrollment_ids=${ids}`;
+      const res = await fetch(url, { method: "GET" });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "Erreur inconnue");
+        throw new Error(errText || `HTTP ${res.status}`);
+      }
+      const blob = await res.blob();
+      // Extract filename from Content-Disposition or fallback
+      const cd = res.headers.get("Content-Disposition") ?? "";
+      const match = cd.match(/filename="?([^"]+)"?/);
+      const filename = match?.[1] ?? "Emargements.zip";
+      const downloadUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = downloadUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(downloadUrl);
+    } catch (e) {
+      setZipError(e instanceof Error ? e.message : "Erreur ZIP");
+    } finally {
+      setDownloadingZip(false);
+    }
   }
 
   return (
@@ -145,13 +189,36 @@ export function BatchPrintSelector({
           })}
         </ul>
 
-        {/* Footer : action batch */}
-        <div className="px-3 py-2 border-t border-zinc-200 dark:border-zinc-800 sticky bottom-0 bg-white dark:bg-zinc-900">
+        {/* Footer : actions batch */}
+        <div className="px-3 py-2 border-t border-zinc-200 dark:border-zinc-800 sticky bottom-0 bg-white dark:bg-zinc-900 space-y-1.5">
+          {/* Bouton principal : telecharge ZIP */}
           <Button
             type="button"
             size="sm"
+            onClick={downloadZip}
+            disabled={!someChecked || downloadingZip || opening}
+            className="w-full"
+          >
+            {downloadingZip ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Génération en cours…
+              </>
+            ) : (
+              <>
+                <Download className="h-3.5 w-3.5" />
+                Télécharger le ZIP ({selected.size} PDF
+                {selected.size > 1 ? "s" : ""})
+              </>
+            )}
+          </Button>
+          {/* Bouton secondaire : ouvrir dans des onglets */}
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
             onClick={openSelected}
-            disabled={!someChecked || opening}
+            disabled={!someChecked || opening || downloadingZip}
             className="w-full"
           >
             {opening ? (
@@ -159,18 +226,19 @@ export function BatchPrintSelector({
             ) : (
               <>
                 <Check className="h-3.5 w-3.5" />
-                Ouvrir les {selected.size} feuille
-                {selected.size > 1 ? "s" : ""} sélectionnée
-                {selected.size > 1 ? "s" : ""}
+                Ouvrir en onglets séparés
               </>
             )}
           </Button>
-          {someChecked && (
-            <p className="text-[10px] text-zinc-500 mt-1.5 leading-snug">
-              💡 {selected.size} onglet
-              {selected.size > 1 ? "s" : ""} vont s&apos;ouvrir. Fais
-              Ctrl+P → « Enregistrer en PDF » dans chacun. Le nom est
-              pré-rempli automatiquement.
+          {zipError && (
+            <p className="text-[10px] text-red-600 mt-1 leading-snug">
+              ⚠️ {zipError}
+            </p>
+          )}
+          {someChecked && !zipError && (
+            <p className="text-[10px] text-zinc-500 mt-1 leading-snug">
+              💡 Le ZIP contient {selected.size} PDF
+              {selected.size > 1 ? "s" : ""}, 1 par apprenant.
             </p>
           )}
         </div>
