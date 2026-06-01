@@ -489,7 +489,15 @@ export function CatalogueList({
                 </dl>
 
                 <div className="mt-auto pt-3 border-t border-zinc-100 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
-                  {negotiated !== undefined ? (
+                  {/* Zone tarification — masquee cote OF tant que la
+                      facturation backoffice n est pas finalisee
+                      (Gilles 2026-06-01). A reactiver via le helper
+                      computeEffectivePartnerPrice quand le mode
+                      flat_per_day sera repercute dans inscription_requests.
+                      Cf. project_pending_of_tarif_unmask.md. */}
+                  {isOf ? (
+                    <div />
+                  ) : negotiated !== undefined ? (
                     <div>
                       <p className="text-[10px] uppercase tracking-wider text-emerald-700 font-bold">
                         {s.pricing_mode === "flat_per_day"
@@ -553,20 +561,25 @@ export function CatalogueList({
                         bouton est en couleur secondaire avec libellé
                         "Tarif à confirmer" et la page d'inscription
                         affichera un message si nécessaire. */}
+                    {/* Bouton inscription. Pour les OF (Gilles 2026-06-01),
+                        on masque la mention "tarif a confirmer" puisque
+                        la zone tarification globale est masquee. */}
                     <Link
                       href={`/partenaire/${token}/inscrire/${s.id}`}
                       className={
-                        negotiated !== undefined
+                        isOf || negotiated !== undefined
                           ? "inline-flex items-center justify-center gap-1.5 px-4 py-2.5 sm:py-2 rounded-lg bg-cyan-600 text-white text-sm font-bold hover:bg-cyan-700"
                           : "inline-flex items-center justify-center gap-1.5 px-4 py-2.5 sm:py-2 rounded-lg bg-amber-500 text-white text-sm font-bold hover:bg-amber-600"
                       }
                       title={
-                        negotiated !== undefined
+                        isOf
                           ? "Inscrire un apprenant sur cette session"
-                          : "Aucun tarif spécifique défini — l'inscription sera possible après validation du tarif par CAP NUMERIQUE."
+                          : negotiated !== undefined
+                            ? "Inscrire un apprenant sur cette session"
+                            : "Aucun tarif spécifique défini — l'inscription sera possible après validation du tarif par CAP NUMERIQUE."
                       }
                     >
-                      {negotiated !== undefined
+                      {isOf || negotiated !== undefined
                         ? "Inscrire un apprenant"
                         : "Inscrire (tarif à confirmer)"}
                       <ArrowRight className="h-4 w-4" />

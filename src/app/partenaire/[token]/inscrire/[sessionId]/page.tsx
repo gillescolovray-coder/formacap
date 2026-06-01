@@ -352,32 +352,38 @@ export default async function PartnerInscribePage({
               {formation.duration_hours ? `${formation.duration_hours} h` : "—"}
             </dd>
           </div>
-          <div>
-            <dt className="text-zinc-500 uppercase tracking-wider text-[10px] font-bold mb-0.5">
-              {effective.pricingMode === "flat_per_day"
-                ? "Tarif sous-traitance"
-                : "Tarif partenaire"}
-            </dt>
-            <dd className="font-bold text-emerald-700 tabular-nums inline-flex items-center gap-1">
-              <Euro className="h-3.5 w-3.5" />
-              {unitPriceHt.toFixed(2)} HT
-              <span className="text-[10px] font-normal text-zinc-500 ml-1">
+          {/* Zone tarif masquee cote OF (Gilles 2026-06-01) tant que la
+              facturation backoffice n est pas finalisee. Cf.
+              project_pending_of_tarif_unmask.md pour le rappel de
+              reactivation. */}
+          {ctx.company.type !== "of" && (
+            <div>
+              <dt className="text-zinc-500 uppercase tracking-wider text-[10px] font-bold mb-0.5">
                 {effective.pricingMode === "flat_per_day"
-                  ? "(forfait pour la session)"
-                  : "/ apprenant"}
-              </span>
-            </dd>
-            {effective.pricingMode === "flat_per_day" && (
-              <p className="text-[10px] text-zinc-500 mt-0.5 italic">
-                Forfait indépendant du nombre d&apos;apprenants
-              </p>
-            )}
-            {effective.explain && (
-              <p className="text-[10px] text-zinc-500 mt-0.5">
-                {effective.explain}
-              </p>
-            )}
-          </div>
+                  ? "Tarif sous-traitance"
+                  : "Tarif partenaire"}
+              </dt>
+              <dd className="font-bold text-emerald-700 tabular-nums inline-flex items-center gap-1">
+                <Euro className="h-3.5 w-3.5" />
+                {unitPriceHt.toFixed(2)} HT
+                <span className="text-[10px] font-normal text-zinc-500 ml-1">
+                  {effective.pricingMode === "flat_per_day"
+                    ? "(forfait pour la session)"
+                    : "/ apprenant"}
+                </span>
+              </dd>
+              {effective.pricingMode === "flat_per_day" && (
+                <p className="text-[10px] text-zinc-500 mt-0.5 italic">
+                  Forfait indépendant du nombre d&apos;apprenants
+                </p>
+              )}
+              {effective.explain && (
+                <p className="text-[10px] text-zinc-500 mt-0.5">
+                  {effective.explain}
+                </p>
+              )}
+            </div>
+          )}
         </dl>
       </section>
 
