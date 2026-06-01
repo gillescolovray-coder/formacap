@@ -40,7 +40,7 @@ export default async function ArchivesPage({
   const { data: directSessions } = await supabase
     .from("sessions")
     .select(
-      "id, internal_code, start_date, end_date, status, is_inter, modality, subcontracting_company_id, prescriber_company_id, formation:formations(title, duration_hours)",
+      "id, internal_code, start_date, end_date, status, is_inter, modality, subcontracting_company_id, prescriber_company_id, location, location_obj:formation_locations!location_id(name, address, postal_code, city), formation:formations(title, duration_hours)",
     )
     .eq("organization_id", orgId)
     .or(
@@ -65,6 +65,13 @@ export default async function ArchivesPage({
     ),
   );
 
+  type LocObj = {
+    name: string | null;
+    address: string | null;
+    postal_code: string | null;
+    city: string | null;
+  };
+
   type RawSession = {
     id: string;
     internal_code: string | null;
@@ -75,6 +82,8 @@ export default async function ArchivesPage({
     modality: string | null;
     subcontracting_company_id: string | null;
     prescriber_company_id: string | null;
+    location: string | null;
+    location_obj: LocObj | LocObj[] | null;
     formation: { title: string } | Array<{ title: string }> | null;
   };
 
@@ -83,7 +92,7 @@ export default async function ArchivesPage({
     const { data } = await supabase
       .from("sessions")
       .select(
-        "id, internal_code, start_date, end_date, status, is_inter, modality, subcontracting_company_id, prescriber_company_id, formation:formations(title, duration_hours)",
+        "id, internal_code, start_date, end_date, status, is_inter, modality, subcontracting_company_id, prescriber_company_id, location, location_obj:formation_locations!location_id(name, address, postal_code, city), formation:formations(title, duration_hours)",
       )
       .in("id", sessionIdsFromInscriptions)
       .lt("start_date", today)
@@ -163,6 +172,24 @@ export default async function ArchivesPage({
     const formation = Array.isArray(s.formation)
       ? (s.formation[0] ?? null)
       : s.formation;
+    const locObj = Array.isArray(s.location_obj)
+      ? (s.location_obj[0] ?? null)
+      : s.location_obj;
+    const locationDetail = locObj
+      ? {
+          name: locObj.name,
+          address: locObj.address,
+          postal_code: locObj.postal_code,
+          city: locObj.city,
+        }
+      : s.location
+        ? {
+            name: s.location,
+            address: null,
+            postal_code: null,
+            city: null,
+          }
+        : null;
     return {
       id: s.id,
       internal_code: s.internal_code,
@@ -172,6 +199,7 @@ export default async function ArchivesPage({
       modality: s.modality,
       formation_title: formation?.title ?? null,
       nb_learners: learnersCountBySession.get(s.id) ?? 0,
+      location_detail: locationDetail,
     };
   });
 

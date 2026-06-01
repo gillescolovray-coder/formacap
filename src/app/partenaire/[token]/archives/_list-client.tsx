@@ -23,6 +23,14 @@ export type ArchivedSession = {
   modality: string | null;
   formation_title: string | null;
   nb_learners: number;
+  /** Lieu de la formation (objet référencé OU texte libre fallback).
+   *  Affiché sous la date dans la carte. Gilles 2026-06-01. */
+  location_detail: {
+    name: string | null;
+    address: string | null;
+    postal_code: string | null;
+    city: string | null;
+  } | null;
 };
 
 function formatDate(s: string | null): string {
@@ -153,7 +161,8 @@ export function ArchivesListClient({
               key={s.id}
               className="rounded-2xl bg-white border-2 border-zinc-200 p-3 sm:p-5 flex flex-col gap-3 hover:border-cyan-400 hover:shadow-md transition-all"
             >
-              {/* Header : titre + badges */}
+              {/* Header : titre + badges (Gilles 2026-06-01 : badges sur
+                  une seule ligne pour gagner de la place vertical) */}
               <div className="flex items-start justify-between gap-2">
                 <div className="flex-1 min-w-0">
                   <h2 className="font-bold text-zinc-900 leading-snug">
@@ -165,7 +174,7 @@ export function ArchivesListClient({
                     </p>
                   )}
                 </div>
-                <div className="shrink-0 flex flex-col items-end gap-1">
+                <div className="shrink-0 flex flex-row items-center gap-1 flex-wrap justify-end">
                   {s.modality === "presentiel" ? (
                     <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold uppercase tracking-wider">
                       <MapPin className="h-3 w-3" />
@@ -197,7 +206,7 @@ export function ArchivesListClient({
                 </div>
               </div>
 
-              {/* Date + apprenants */}
+              {/* Date + lieu (presentiel/hybride) */}
               <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
                 <div className="flex items-center gap-2 col-span-2 flex-wrap">
                   <Calendar className="h-4 w-4 text-zinc-500 shrink-0" />
@@ -205,6 +214,45 @@ export function ArchivesListClient({
                     {formatDateRange(s.start_date, s.end_date)}
                   </span>
                 </div>
+                {(s.modality === "presentiel" ||
+                  s.modality === "hybride") &&
+                  s.location_detail && (
+                    <div className="flex items-start gap-1.5 text-zinc-600 col-span-2">
+                      <MapPin className="h-3.5 w-3.5 text-zinc-400 mt-0.5 shrink-0" />
+                      <span className="text-zinc-700">
+                        {s.location_detail.name && (
+                          <span className="font-semibold">
+                            {s.location_detail.name}
+                          </span>
+                        )}
+                        {(() => {
+                          const addrLine = [
+                            s.location_detail.address,
+                            [
+                              s.location_detail.postal_code,
+                              s.location_detail.city,
+                            ]
+                              .filter(Boolean)
+                              .join(" "),
+                          ]
+                            .filter((x) => x && x.length > 0)
+                            .join(", ");
+                          if (!addrLine) return null;
+                          return (
+                            <span
+                              className={
+                                s.location_detail.name
+                                  ? "block text-[11px] text-zinc-500"
+                                  : ""
+                              }
+                            >
+                              {addrLine}
+                            </span>
+                          );
+                        })()}
+                      </span>
+                    </div>
+                  )}
               </dl>
 
               {/* Footer : compteur apprenants + bouton */}
