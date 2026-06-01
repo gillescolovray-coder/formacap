@@ -161,6 +161,7 @@ export default async function ParticipantsPage({
         id: string;
         opco_name: string;
         dossier_number: string | null;
+        pdf_url: string | null;
       } | null;
     }>
   >();
@@ -168,10 +169,37 @@ export default async function ParticipantsPage({
     const { data: fundings } = await supabase
       .from("inscription_opco_fundings")
       .select(
-        "inscription_id, amount_ht, agreement:opco_funding_agreements(id, opco_name, dossier_number)",
+        "inscription_id, amount_ht, agreement:opco_funding_agreements(id, opco_name, dossier_number, pdf_url)",
       )
       .in("inscription_id", inscriptionIds);
     fundingsByInscription = new Map();
+    // Genere les URL signees pour les PDF (bucket prive opco-agreements)
+    // — Gilles 2026-06-01 : permet de cliquer l icone oeil pour consulter
+    // l accord depuis le tableau Participants. URL valable 30 min.
+    const SIGNED_TTL = 30 * 60;
+    const signedUrlCache = new Map<string, string | null>();
+    async function resolveSignedUrlOnce(
+      stored: string | null,
+    ): Promise<string | null> {
+      if (!stored) return null;
+      if (signedUrlCache.has(stored)) return signedUrlCache.get(stored)!;
+      let path = stored;
+      if (stored.startsWith("http")) {
+        const marker = "/opco-agreements/";
+        const idx = stored.indexOf(marker);
+        if (idx === -1) {
+          signedUrlCache.set(stored, stored);
+          return stored;
+        }
+        path = stored.substring(idx + marker.length);
+      }
+      const { data: signed } = await supabase.storage
+        .from("opco-agreements")
+        .createSignedUrl(path, SIGNED_TTL);
+      const url = signed?.signedUrl ?? null;
+      signedUrlCache.set(stored, url);
+      return url;
+    }
     for (const f of (fundings ?? []) as unknown as Array<{
       inscription_id: string;
       amount_ht: number | string | null;
@@ -179,16 +207,27 @@ export default async function ParticipantsPage({
         id: string;
         opco_name: string;
         dossier_number: string | null;
+        pdf_url: string | null;
       } | null;
     }>) {
       const list = fundingsByInscription.get(f.inscription_id) ?? [];
-      // Fix Gilles 2026-06-01 : on stocke aussi amount_ht (pour la
-      // decomposition OPCO + Employeur dans le tableau Participants).
+      // Genere une URL signee pour le PDF (si dispo)
+      const pdfSignedUrl = f.agreement?.pdf_url
+        ? await resolveSignedUrlOnce(f.agreement.pdf_url)
+        : null;
       list.push({
-        amount_ht: f.amount_ht !== null && f.amount_ht !== undefined
-          ? Number(f.amount_ht)
+        amount_ht:
+          f.amount_ht !== null && f.amount_ht !== undefined
+            ? Number(f.amount_ht)
+            : null,
+        agreement: f.agreement
+          ? {
+              id: f.agreement.id,
+              opco_name: f.agreement.opco_name,
+              dossier_number: f.agreement.dossier_number,
+              pdf_url: pdfSignedUrl,
+            }
           : null,
-        agreement: f.agreement,
       });
       fundingsByInscription.set(f.inscription_id, list);
     }
@@ -347,6 +386,7 @@ export default async function ParticipantsPage({
           companyNameById={companyNameById}
           stageEventsByInscription={stageEventsByInscription}
           nbJours={nbJours}
+          returnTo="participants"
         />
       </div>
     </>

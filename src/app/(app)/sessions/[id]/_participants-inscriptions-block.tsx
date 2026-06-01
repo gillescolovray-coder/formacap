@@ -51,6 +51,7 @@ export function ParticipantsInscriptionsBlock({
   companyNameById,
   stageEventsByInscription,
   nbJours,
+  returnTo,
 }: {
   session: SessionForCard;
   requests: InscriptionRequest[];
@@ -58,6 +59,10 @@ export function ParticipantsInscriptionsBlock({
   companyNameById: Map<string, string>;
   stageEventsByInscription: Map<string, StageEvent[]>;
   nbJours: number;
+  /** URL de retour propage aux liens "Ouvrir" du tableau pour permettre
+   *  un retour contextuel apres action sur la fiche inscription
+   *  (Gilles 2026-06-01). */
+  returnTo?: string;
 }) {
   // Compteurs par étape (mêmes pastilles que sur /inscriptions)
   const counts = new Map<string, number>();
@@ -128,11 +133,13 @@ export function ParticipantsInscriptionsBlock({
         ) : (
           <SessionInscriptionsTable
             session={session}
+            sessionId={session.id}
             requests={requests}
             stagesArr={stagesArr}
             companyNameById={companyNameById}
             stageEventsByInscription={stageEventsByInscription}
             nbJours={nbJours}
+            returnTo={returnTo === "participants" ? "participants" : undefined}
           />
         )}
       </div>

@@ -46,13 +46,19 @@ export type StageEvent = {
 
 export function SessionInscriptionsTable({
   session,
+  sessionId,
   requests,
   stagesArr,
   companyNameById,
   stageEventsByInscription,
   nbJours,
+  returnTo,
 }: {
   session: SessionForCard;
+  /** ID de la session courante — sert a generer le lien "Ouvrir →"
+   *  avec retour contextuel vers /sessions/[id]/participants
+   *  (Gilles 2026-06-01). */
+  sessionId?: string;
   requests: InscriptionRequest[];
   stagesArr: InscriptionStage[];
   /** Map id→nom pour résoudre le nom de l'entreprise du canal. */
@@ -63,6 +69,10 @@ export function SessionInscriptionsTable({
    *  Utilisé pour calculer le montant HT par inscription selon la
    *  tarification cascade R7. */
   nbJours?: number;
+  /** Si "participants", les liens "Ouvrir →" renvoient le user vers
+   *  /sessions/[sessionId]/participants apres action.
+   *  Gilles 2026-06-01. */
+  returnTo?: string;
 }) {
   // Conf des colonnes : partagée globalement via le context (le bouton
   // de personnalisation est désormais en haut de la page Inscriptions,
@@ -434,8 +444,9 @@ export function SessionInscriptionsTable({
                         {FINANCING_MODE_LABELS[r.financing_mode]}
                       </span>
                     )}
-                    {/* Accord(s) OPCO rattachés : n° dossier + nom OPCO,
-                        affichés sous le badge "OPCO" */}
+                    {/* Accord(s) OPCO rattachés : n° dossier + nom OPCO
+                        + icone oeil cliquable pour consulter le PDF
+                        (Gilles 2026-06-01). */}
                     {(() => {
                       const fundings = (r as unknown as {
                         opco_fundings?: Array<{
@@ -443,6 +454,7 @@ export function SessionInscriptionsTable({
                             id: string;
                             opco_name: string;
                             dossier_number: string | null;
+                            pdf_url?: string | null;
                           } | null;
                         }>;
                       }).opco_fundings;
@@ -455,8 +467,37 @@ export function SessionInscriptionsTable({
                             return [
                               <li
                                 key={i}
-                                className="flex items-center gap-2 text-[11px]"
+                                className="flex items-center gap-1.5 text-[11px]"
                               >
+                                {ag.pdf_url ? (
+                                  <a
+                                    href={ag.pdf_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center justify-center w-5 h-5 rounded hover:bg-violet-100 text-violet-700"
+                                    title="Voir l'accord OPCO (PDF)"
+                                  >
+                                    <svg
+                                      xmlns="http://www.w3.org/2000/svg"
+                                      width="14"
+                                      height="14"
+                                      viewBox="0 0 24 24"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      strokeWidth="2"
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                    >
+                                      <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+                                      <circle cx="12" cy="12" r="3" />
+                                    </svg>
+                                  </a>
+                                ) : (
+                                  <span
+                                    className="inline-block w-5 h-5 opacity-30"
+                                    title="Pas de PDF rattache a cet accord"
+                                  />
+                                )}
                                 <span className="font-mono text-slate-600 truncate">
                                   {ag.dossier_number ?? "—"}
                                 </span>
@@ -597,7 +638,14 @@ export function SessionInscriptionsTable({
                 {v.ouvrir && (
                   <td className="px-2 py-2">
                     <Link
-                      href={`/inscriptions/${r.id}`}
+                      href={
+                        returnTo === "participants" && sessionId
+                          ? // Pattern existant : "return_to=participants" +
+                            // session_id, gere par updateInscription action
+                            // (Gilles 2026-06-01).
+                            `/inscriptions/${r.id}?return_to=participants&session_id=${sessionId}`
+                          : `/inscriptions/${r.id}`
+                      }
                       className="text-xs text-cyan-700 hover:underline"
                     >
                       Ouvrir →
