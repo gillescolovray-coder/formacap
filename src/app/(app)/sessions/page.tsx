@@ -304,7 +304,7 @@ export default async function SessionsListPage({
       ? supabase
           .from("inscription_requests")
           .select(
-            "target_session_id, learner_id, prospect_email, prospect_first_name, prospect_last_name, prospect_phone, stage_id, company_name_freetext, quote_amount_ht, via_partner_portal, billing_total_ht, inscription_channel, referrer:companies!referrer_company_id(name, type), learner:learners(first_name, last_name, email, phone, job_title, company:companies(name))",
+            "id, target_session_id, learner_id, prospect_email, prospect_first_name, prospect_last_name, prospect_phone, stage_id, company_name_freetext, quote_amount_ht, via_partner_portal, billing_total_ht, employer_amount_ht, inscription_channel, referrer:companies!referrer_company_id(name, type), learner:learners(first_name, last_name, email, phone, job_title, company:companies(name))",
           )
           .in("target_session_id", sessionIds)
       : Promise.resolve({ data: [] }),
@@ -662,6 +662,8 @@ export default async function SessionsListPage({
     stageName: string | null;
     stageColor: string | null;
     amountHt: number | null;
+    opcoAmount: number;
+    employerAmount: number;
     convention: "signed" | "sent" | "draft" | "cancelled" | "none";
     convocationSent: boolean;
     attestationSent: boolean;
@@ -713,12 +715,42 @@ export default async function SessionsListPage({
     });
   }
 
+  // OPCO fundings + employer amount par inscriptionId (Gilles
+  // 2026-06-01) — pour la decomposition dans la modal Voir detail.
+  type OpcoFundingSummary = { opcoTotal: number };
+  const opcoByInscription = new Map<string, OpcoFundingSummary>();
+  const inscriptionIdsForOpco = (
+    (inscriptions ?? []) as unknown as Array<{ id?: string }>
+  )
+    .map((r) => r.id)
+    .filter((x): x is string => !!x);
+  if (inscriptionIdsForOpco.length > 0) {
+    const { data: fundings } = await supabase
+      .from("inscription_opco_fundings")
+      .select("inscription_id, amount_ht")
+      .in("inscription_id", inscriptionIdsForOpco);
+    for (const f of (fundings ?? []) as Array<{
+      inscription_id: string;
+      amount_ht: number | string | null;
+    }>) {
+      const a =
+        f.amount_ht !== null && f.amount_ht !== undefined
+          ? Number(f.amount_ht)
+          : 0;
+      if (!Number.isFinite(a) || a <= 0) continue;
+      const cur = opcoByInscription.get(f.inscription_id) ?? { opcoTotal: 0 };
+      cur.opcoTotal += a;
+      opcoByInscription.set(f.inscription_id, cur);
+    }
+  }
+
   // sessionDetailItems : Map<sessionId, SessionDetailItem[]>
   const sessionDetailItems = new Map<string, SessionDetailItem[]>();
   for (const sid of sessionIds) {
     sessionDetailItems.set(sid, []);
   }
   for (const r of (inscriptions ?? []) as unknown as Array<{
+    id: string;
     target_session_id: string;
     learner_id: string | null;
     prospect_first_name: string | null;
@@ -728,6 +760,7 @@ export default async function SessionsListPage({
     company_name_freetext: string | null;
     quote_amount_ht: number | null;
     billing_total_ht: number | string | null;
+    employer_amount_ht: number | string | null;
     inscription_channel: string | null;
     referrer: { name: string | null; type: string | null } | Array<{ name: string | null; type: string | null }> | null;
     learner: { first_name: string | null; last_name: string | null; company: { name: string } | null } | null;
@@ -789,6 +822,20 @@ export default async function SessionsListPage({
         : "Prescripteur";
     }
 
+    // Decomposition OPCO + Employeur (Gilles 2026-06-01)
+    const opcoSummary = opcoByInscription.get(r.id) ?? { opcoTotal: 0 };
+    const opcoAmount = opcoSummary.opcoTotal;
+    const employerManual =
+      r.employer_amount_ht !== null && r.employer_amount_ht !== undefined
+        ? Number(r.employer_amount_ht)
+        : null;
+    const employerAmount =
+      opcoAmount > 0
+        ? employerManual !== null && Number.isFinite(employerManual)
+          ? employerManual
+          : Math.max(0, (amountHt ?? 0) - opcoAmount)
+        : 0;
+
     sessionDetailItems.get(sid)!.push({
       key: `i:${r.learner_id ?? email ?? fullName}`,
       learnerId: r.learner_id,
@@ -798,6 +845,8 @@ export default async function SessionsListPage({
       stageName: stage?.name ?? null,
       stageColor: stage?.color ?? null,
       amountHt,
+      opcoAmount,
+      employerAmount,
       convention: conventionStatus,
       convocationSent: !!enrollDetail?.convocation_sent_at,
       attestationSent: !!enrollDetail?.attestation_sent_at,

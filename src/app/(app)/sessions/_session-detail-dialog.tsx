@@ -33,6 +33,10 @@ export type SessionDetailItem = {
   stageName: string | null;
   stageColor: string | null;
   amountHt: number | null;
+  /** Decomposition OPCO + Employeur (Gilles 2026-06-01). 0 si pas
+   *  d accord OPCO actif. */
+  opcoAmount: number;
+  employerAmount: number;
   convention: "signed" | "sent" | "draft" | "cancelled" | "none";
   convocationSent: boolean;
   attestationSent: boolean;
@@ -256,7 +260,32 @@ export function SessionDetailDialog({
                     </td>
                     <td className="px-3 py-2 text-right font-bold tabular-nums">
                       {it.amountHt !== null ? (
-                        `${it.amountHt.toLocaleString("fr-FR", { minimumFractionDigits: 2 })} €`
+                        <div className="flex flex-col items-end leading-tight">
+                          <span>
+                            {it.amountHt.toLocaleString("fr-FR", {
+                              minimumFractionDigits: 2,
+                            })}{" "}
+                            €
+                          </span>
+                          {it.opcoAmount > 0 && (
+                            <div className="mt-0.5 text-[10px] font-medium space-y-0.5">
+                              <div className="text-violet-700">
+                                OPCO :{" "}
+                                {it.opcoAmount.toLocaleString("fr-FR", {
+                                  minimumFractionDigits: 2,
+                                })}{" "}
+                                €
+                              </div>
+                              <div className="text-amber-700">
+                                Employ. :{" "}
+                                {it.employerAmount.toLocaleString("fr-FR", {
+                                  minimumFractionDigits: 2,
+                                })}{" "}
+                                €
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       ) : (
                         <span className="text-zinc-400">—</span>
                       )}
