@@ -230,16 +230,19 @@ export function CatalogueList({
               <article
                 key={s.id}
                 className={
-                  // Priorité visuelle : sessions sous-traitance (cet OF est
-                  // donneur d ordre) -> bordure ambre distinctive. Sinon :
-                  // sessions "Mes sessions" (prescripteur) -> indigo.
-                  // Sinon : vert si confirmée, blanc sinon.
-                  s.is_subcontracting
-                    ? "rounded-2xl bg-amber-50/40 border-2 border-amber-400 p-3 sm:p-5 flex flex-col gap-3 hover:border-amber-500 hover:shadow-md transition-all"
-                    : s.is_own
-                      ? "rounded-2xl bg-indigo-50/40 border-2 border-indigo-300 p-3 sm:p-5 flex flex-col gap-3 hover:border-indigo-400 hover:shadow-md transition-all"
-                      : s.status === "confirmed"
-                        ? "rounded-2xl bg-emerald-50/40 border-2 border-emerald-300 p-3 sm:p-5 flex flex-col gap-3 hover:border-emerald-400 hover:shadow-md transition-all"
+                  // Harmonisation visuelle portail OF / Prescripteur
+                  // (Gilles 2026-06-01) — 3 niveaux distincts :
+                  //   1. "Mes sessions" (prescripteur OU OF donneur d ordre)
+                  //      -> INDIGO (couleur partagee = sessions dediees)
+                  //   2. Sessions confirmees CAP -> EMERAUDE
+                  //   3. Sessions distanciel non confirmees -> CYAN clair
+                  //   4. Sinon -> blanc neutre
+                  s.is_own || s.is_subcontracting
+                    ? "rounded-2xl bg-indigo-50/40 border-2 border-indigo-300 p-3 sm:p-5 flex flex-col gap-3 hover:border-indigo-400 hover:shadow-md transition-all"
+                    : s.status === "confirmed"
+                      ? "rounded-2xl bg-emerald-50/40 border-2 border-emerald-300 p-3 sm:p-5 flex flex-col gap-3 hover:border-emerald-400 hover:shadow-md transition-all"
+                      : s.modality === "distanciel"
+                        ? "rounded-2xl bg-cyan-50/40 border-2 border-cyan-200 p-3 sm:p-5 flex flex-col gap-3 hover:border-cyan-400 hover:shadow-sm transition-all"
                         : "rounded-2xl bg-white border border-zinc-200 p-3 sm:p-5 flex flex-col gap-3 hover:border-cyan-300 hover:shadow-sm transition-all"
                 }
               >
@@ -273,7 +276,7 @@ export function CatalogueList({
                     )}
                     {s.is_subcontracting && (
                       <span
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold uppercase tracking-wider border border-amber-300"
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-bold uppercase tracking-wider border border-indigo-200"
                         title="Vous êtes le donneur d'ordre — CAP NUMÉRIQUE est sous-traitant"
                       >
                         <Handshake className="h-3 w-3" />
