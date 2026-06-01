@@ -156,6 +156,7 @@ export default async function ParticipantsPage({
   let fundingsByInscription = new Map<
     string,
     Array<{
+      amount_ht: number | null;
       agreement: {
         id: string;
         opco_name: string;
@@ -173,6 +174,7 @@ export default async function ParticipantsPage({
     fundingsByInscription = new Map();
     for (const f of (fundings ?? []) as unknown as Array<{
       inscription_id: string;
+      amount_ht: number | string | null;
       agreement: {
         id: string;
         opco_name: string;
@@ -180,7 +182,14 @@ export default async function ParticipantsPage({
       } | null;
     }>) {
       const list = fundingsByInscription.get(f.inscription_id) ?? [];
-      list.push({ agreement: f.agreement });
+      // Fix Gilles 2026-06-01 : on stocke aussi amount_ht (pour la
+      // decomposition OPCO + Employeur dans le tableau Participants).
+      list.push({
+        amount_ht: f.amount_ht !== null && f.amount_ht !== undefined
+          ? Number(f.amount_ht)
+          : null,
+        agreement: f.agreement,
+      });
       fundingsByInscription.set(f.inscription_id, list);
     }
   }
