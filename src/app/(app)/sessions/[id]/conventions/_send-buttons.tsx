@@ -152,7 +152,7 @@ export function EnsureAndSendConventionButton({
             onClick={() => setPopoverOpen(false)}
             aria-hidden="true"
           />
-          <div className="absolute right-0 top-full mt-1 z-40 w-[340px] rounded-lg border border-zinc-200 bg-white shadow-xl p-3 text-left">
+          <div className="absolute right-0 top-full mt-1 z-40 w-[380px] rounded-lg border border-zinc-200 bg-white shadow-xl p-3 text-left">
             <div className="flex items-start justify-between gap-2 mb-2">
               <div className="flex items-center gap-1.5 text-xs font-bold text-zinc-700">
                 <MessageSquare className="h-3.5 w-3.5 text-amber-600" />
@@ -169,19 +169,74 @@ export function EnsureAndSendConventionButton({
             </div>
             <p className="text-[11px] text-zinc-500 mb-2 leading-relaxed">
               Ajoutez un message qui apparaîtra en haut de l&apos;email
-              (encadré ambre). Utile pour signaler une correction,
-              demander une re-signature, etc.
+              (encadré ambre). Cliquez sur un modèle pour le charger,
+              modifiez si besoin, puis Envoyez.
             </p>
+
+            {/* Boutons modeles rapides — Gilles 2026-06-02 : pour ne pas
+                avoir a retaper le message a chaque fois. Le texte est
+                charge dans le textarea et reste editable. */}
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              <button
+                type="button"
+                onClick={() =>
+                  setCustomMessage(
+                    "Bonjour,\n\nSuite à votre signalement, voici la convention corrigée avec le bon représentant légal.\n\nMerci de détruire la version précédente et de signer uniquement cette nouvelle version.\n\nCordialement,",
+                  )
+                }
+                className="text-[10px] px-2 py-1 rounded border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 font-medium"
+                title="Charger un modèle de correction de convention"
+              >
+                ✏️ Correction convention
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setCustomMessage(
+                    "Bonjour,\n\nMerci de me communiquer le nom et la fonction du nouveau dirigeant afin que je puisse corriger la convention avant signature.\n\nCordialement,",
+                  )
+                }
+                className="text-[10px] px-2 py-1 rounded border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 font-medium"
+                title="Charger un modèle de demande d'info"
+              >
+                ❓ Demande d&apos;info représentant
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setCustomMessage(
+                    "Bonjour,\n\nVeuillez trouver ci-joint la convention de formation mise à jour.\n\nCordialement,",
+                  )
+                }
+                className="text-[10px] px-2 py-1 rounded border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 font-medium"
+                title="Charger un modèle générique"
+              >
+                📄 Mise à jour
+              </button>
+              {customMessage && (
+                <button
+                  type="button"
+                  onClick={() => setCustomMessage("")}
+                  className="text-[10px] px-2 py-1 rounded border border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-50 font-medium"
+                  title="Effacer le message"
+                >
+                  ✕ Effacer
+                </button>
+              )}
+            </div>
+
             <textarea
               value={customMessage}
               onChange={(e) => setCustomMessage(e.target.value)}
-              placeholder="Ex : Bonjour, suite à votre signalement, voici la convention corrigée avec le bon représentant légal. Merci de signer uniquement cette nouvelle version."
-              rows={5}
+              placeholder="Tapez votre message ou cliquez sur un modèle ci-dessus…"
+              rows={6}
               className="w-full text-xs px-2 py-1.5 rounded-md border border-zinc-300 focus:outline-none focus:ring-2 focus:ring-cyan-200 focus:border-cyan-400 resize-y"
             />
             <div className="mt-2 flex items-center justify-between gap-2">
               <span className="text-[10px] text-zinc-400">
-                Laisser vide pour envoyer sans message
+                {customMessage
+                  ? `${customMessage.length} caractères`
+                  : "Laisser vide pour envoyer sans message"}
               </span>
               <Button
                 type="button"
