@@ -760,12 +760,92 @@ export async function sendConvention(
   if (!convention) {
     return { ok: false, error: "Convention introuvable." };
   }
+  // FIX Gilles 2026-06-02 : si la convention brouillon a ete creee avant
+  // que le contact RH / l email d apprenant soit renseigne, contact_email
+  // est NULL et figé. On relance ici la cascade (contact primary entreprise
+  // -> 1er apprenant inscrit avec email) pour auto-reparer la convention
+  // brouillon. Evite a l utilisateur d avoir a faire "Annuler + Recreer".
   if (!convention.contact_email) {
-    return {
-      ok: false,
-      error:
-        "Le contact RH n'a pas d'email renseigné. Ajoute-le dans la fiche entreprise (contact principal).",
-    };
+    // 1) Contact RH principal de l entreprise
+    const { data: primaryContact } = await supabase
+      .from("company_contacts")
+      .select("id, first_name, last_name, email")
+      .eq("company_id", convention.company_id)
+      .eq("is_primary", true)
+      .limit(1)
+      .maybeSingle<{
+        id: string;
+        first_name: string | null;
+        last_name: string | null;
+        email: string | null;
+      }>();
+
+    let refreshedContactId: string | null = null;
+    let refreshedContactName: string | null = null;
+    let refreshedContactEmail: string | null = null;
+
+    if (primaryContact?.email) {
+      refreshedContactId = primaryContact.id;
+      refreshedContactName = [primaryContact.first_name, primaryContact.last_name]
+        .filter(Boolean)
+        .join(" ");
+      refreshedContactEmail = primaryContact.email;
+    } else {
+      // 2) Fallback : 1er apprenant inscrit de cette entreprise avec email
+      const { data: enrollFallback } = await supabase
+        .from("session_enrollments")
+        .select(
+          "id, learner:learners(first_name, last_name, email, company_id)",
+        )
+        .eq("session_id", sessionId);
+      type Row = {
+        id: string;
+        learner: {
+          first_name: string | null;
+          last_name: string | null;
+          email: string | null;
+          company_id: string | null;
+        } | null;
+      };
+      const learnerWithEmail = ((enrollFallback ?? []) as unknown as Row[])
+        .find((e) => e.learner?.company_id === convention.company_id && e.learner?.email);
+      if (learnerWithEmail?.learner) {
+        refreshedContactId = null;
+        refreshedContactName = [
+          learnerWithEmail.learner.first_name,
+          learnerWithEmail.learner.last_name,
+        ]
+          .filter(Boolean)
+          .join(" ");
+        refreshedContactEmail = learnerWithEmail.learner.email;
+      }
+    }
+
+    if (!refreshedContactEmail) {
+      return {
+        ok: false,
+        error:
+          "Le contact RH n'a pas d'email renseigné. Ajoute-le dans la fiche entreprise (contact principal).",
+      };
+    }
+
+    // Update la convention pour figer le nouveau contact
+    await supabase
+      .from("session_conventions")
+      .update({
+        contact_id: refreshedContactId,
+        contact_name: refreshedContactName,
+        contact_email: refreshedContactEmail,
+      })
+      .eq("id", conventionId);
+
+    // Patch local pour la suite du flux (eviter de re-fetch)
+    convention.contact_name = refreshedContactName;
+    convention.contact_email = refreshedContactEmail;
+    console.log("[sendConvention] auto-refresh contact_email", {
+      conventionId,
+      refreshedContactEmail,
+    });
   }
 
   // Bloquer l'envoi si le montant est 0 € HT (Gilles 2026-05-22).
