@@ -1192,10 +1192,9 @@ export default async function ConventionsPage({
                               ) : (
                                 <Link
                                   href={`/entreprises/${c.companyId}#contacts`}
-                                  className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md border border-cyan-300 bg-cyan-50 text-cyan-700 text-[11px] font-bold hover:bg-cyan-100"
-                                  title="Créer un nouveau contact dans la fiche entreprise. Revenez ensuite ici pour le désigner comme référent."
+                                  className="inline-flex items-center gap-1 text-[11px] font-medium text-cyan-700 hover:text-cyan-900 hover:underline"
                                 >
-                                  + Créer un contact dans la fiche entreprise
+                                  + Ajouter un contact dans la société
                                 </Link>
                               )}
                             </div>

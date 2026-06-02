@@ -94,21 +94,10 @@ export function ReferentsModal({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className={
-          selectedCount > 0
-            ? "inline-flex items-center gap-1 text-[11px] font-medium text-cyan-700 hover:text-cyan-900 hover:underline"
-            : "inline-flex items-center gap-1.5 px-2 py-1 rounded-md border border-cyan-300 bg-cyan-50 text-cyan-700 text-[11px] font-bold hover:bg-cyan-100"
-        }
-        title={
-          selectedCount > 0
-            ? "Modifier la liste des référents pédagogiques de cette société"
-            : "Choisir un contact de la société comme référent pédagogique (recevra les emails : convention, convocation, attestation…)"
-        }
+        className="inline-flex items-center gap-1 text-[11px] font-medium text-cyan-700 hover:text-cyan-900 hover:underline"
       >
         <Settings2 className="h-3 w-3" />
-        {selectedCount > 0
-          ? "Gérer les référents"
-          : "Sélectionner un référent pédagogique"}
+        Gérer les référents
       </button>
 
       {mounted && open
