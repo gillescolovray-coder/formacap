@@ -763,8 +763,7 @@ export async function sendConvention(
   if (!convention.contact_email) {
     return {
       ok: false,
-      error:
-        "Le contact RH n'a pas d'email renseigné. Ajoute-le dans la fiche entreprise (contact principal).",
+      error: `Le contact RH n'a pas d'email renseigné. Ouvrez la fiche entreprise « ${convention.company?.name ?? "—"} » et ajoutez un contact principal avec son email. URL directe : /entreprises/${convention.company_id}#contacts`,
     };
   }
 
