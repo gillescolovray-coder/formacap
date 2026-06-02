@@ -938,9 +938,19 @@ export default async function ConventionsPage({
                       )}
                     >
                       <td className="px-4 py-3 align-top max-w-[240px]">
-                        <div className="font-bold text-zinc-900 leading-tight break-words">
+                        {/* Lien direct vers la fiche entreprise (Gilles
+                            2026-06-02) — permet de corriger le representant
+                            legal sans avoir a chercher dans Entreprises. */}
+                        <Link
+                          href={`/entreprises/${c.companyId}`}
+                          className="font-bold text-zinc-900 leading-tight break-words hover:text-cyan-700 hover:underline inline-flex items-baseline gap-1 group"
+                          title="Ouvrir la fiche entreprise (modifier représentant légal, adresse, etc.)"
+                        >
                           {c.companyName}
-                        </div>
+                          <span className="text-[10px] text-cyan-600 opacity-0 group-hover:opacity-100 transition-opacity">
+                            ↗
+                          </span>
+                        </Link>
                         {c.industry && (
                           <div className="text-xs text-zinc-500 mt-0.5 break-words">
                             {c.industry}
