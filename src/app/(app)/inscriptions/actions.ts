@@ -378,6 +378,28 @@ export async function createInscription(formData: FormData) {
         .maybeSingle();
       foundId = (byEmail?.id as string | null) ?? null;
     }
+    // FIX Gilles 2026-06-02 : si pas d email, on cherche aussi par
+    // (nom + prenom + entreprise) pour eviter de creer un doublon de
+    // learner en cas de double-soumission du formulaire.
+    if (
+      !foundId &&
+      payload.prospect_first_name &&
+      payload.prospect_last_name
+    ) {
+      const baseQuery = supabase
+        .from("learners")
+        .select("id")
+        .eq("organization_id", organizationId)
+        .ilike("first_name", payload.prospect_first_name)
+        .ilike("last_name", payload.prospect_last_name);
+      const { data: byName } = payload.company_id
+        ? await baseQuery
+            .eq("company_id", payload.company_id)
+            .limit(1)
+            .maybeSingle()
+        : await baseQuery.is("email", null).limit(1).maybeSingle();
+      foundId = (byName?.id as string | null) ?? null;
+    }
     if (!foundId) {
       const { data: newLearner } = await supabase
         .from("learners")
@@ -713,6 +735,25 @@ async function processAdditionalLearners(
         .limit(1)
         .maybeSingle();
       resolvedLearnerId = (byEmail?.id as string | null) ?? null;
+    }
+    // FIX Gilles 2026-06-02 : si pas d email saisi, on cherche par
+    // (nom + prenom + entreprise) avant de creer. Sinon un double-clic
+    // creait 2 learners distincts (cas PRO CLIM ENERGIES : Alexis BIBEY
+    // et Emerick MARTIN dupliques) car la recherche par email ne match
+    // pas avec email NULL.
+    if (!resolvedLearnerId && firstName && lastName) {
+      const queryNoEmail = supabase
+        .from("learners")
+        .select("id")
+        .eq("organization_id", parent.organizationId)
+        .ilike("first_name", firstName)
+        .ilike("last_name", lastName);
+      // On limite a l entreprise si elle est connue (evite de fusionner
+      // 2 "Jean DUPONT" de societes differentes).
+      const { data: byName } = parent.companyId
+        ? await queryNoEmail.eq("company_id", parent.companyId).limit(1).maybeSingle()
+        : await queryNoEmail.is("email", null).limit(1).maybeSingle();
+      resolvedLearnerId = (byName?.id as string | null) ?? null;
     }
     if (!resolvedLearnerId) {
       const { data: newLearner, error: createErr } = await supabase
