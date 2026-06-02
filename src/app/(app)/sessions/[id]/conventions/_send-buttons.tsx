@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
+import { createPortal } from "react-dom";
 import { Loader2, MessageSquare, Send, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
@@ -94,9 +95,65 @@ export function EnsureAndSendConventionButton({
   } | null>(null);
   // Mini-popover de saisie d un message personnalise avant envoi
   // (Gilles 2026-06-02). Permet de signaler une correction, demander
-  // une re-signature, etc.
+  // une re-signature, etc. Rendu via React Portal + position:fixed
+  // calculee depuis le bouton trigger (Gilles 2026-06-02 : evite que
+  // le popover soit clippe par les bords de viewport ou par overflow
+  // des parents — cf. memory feedback_dropdown_portal).
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [customMessage, setCustomMessage] = useState("");
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const [popoverPos, setPopoverPos] = useState<{
+    top: number;
+    left: number;
+    placement: "above" | "below";
+  } | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Recalcule la position quand le popover s ouvre + a chaque resize/scroll
+  useEffect(() => {
+    if (!popoverOpen) {
+      setPopoverPos(null);
+      return;
+    }
+    const compute = () => {
+      const btn = triggerRef.current;
+      if (!btn) return;
+      const rect = btn.getBoundingClientRect();
+      const popWidth = 380;
+      const popHeight = 420; // approximation
+      const margin = 8;
+      const viewportH = window.innerHeight;
+      const viewportW = window.innerWidth;
+      // Place a droite du bouton, aligne sur son bord droit
+      let left = rect.right - popWidth;
+      if (left < margin) left = margin;
+      if (left + popWidth > viewportW - margin) {
+        left = viewportW - popWidth - margin;
+      }
+      // Verticale : si la place sous le bouton est insuffisante, on
+      // affiche au-dessus.
+      const spaceBelow = viewportH - rect.bottom - margin;
+      const spaceAbove = rect.top - margin;
+      let placement: "above" | "below" = "below";
+      let top = rect.bottom + margin;
+      if (spaceBelow < popHeight && spaceAbove > spaceBelow) {
+        placement = "above";
+        top = Math.max(margin, rect.top - popHeight - margin);
+      }
+      setPopoverPos({ top, left, placement });
+    };
+    compute();
+    window.addEventListener("resize", compute);
+    window.addEventListener("scroll", compute, true);
+    return () => {
+      window.removeEventListener("resize", compute);
+      window.removeEventListener("scroll", compute, true);
+    };
+  }, [popoverOpen]);
 
   const doSend = (msg: string) => {
     setResult(null);
@@ -122,9 +179,10 @@ export function EnsureAndSendConventionButton({
   };
 
   return (
-    <div className="relative inline-flex flex-col items-end gap-1 max-w-md">
+    <div className="inline-flex flex-col items-end gap-1 max-w-md">
       <div className="inline-flex items-center gap-2">
         <Button
+          ref={triggerRef}
           type="button"
           size="sm"
           onClick={() => setPopoverOpen((v) => !v)}
@@ -143,16 +201,26 @@ export function EnsureAndSendConventionButton({
         )}
       </div>
 
-      {/* Popover : message personnalise optionnel */}
-      {popoverOpen && !pending && (
-        <>
-          {/* Overlay pour fermer en cliquant a cote */}
-          <div
-            className="fixed inset-0 z-30"
-            onClick={() => setPopoverOpen(false)}
-            aria-hidden="true"
-          />
-          <div className="absolute right-0 top-full mt-1 z-40 w-[380px] rounded-lg border border-zinc-200 bg-white shadow-xl p-3 text-left">
+      {/* Popover : message personnalise optionnel — rendu via React Portal
+          dans document.body avec position:fixed pour eviter d etre clippe
+          par les bords de viewport ou par les overflow des parents
+          (Gilles 2026-06-02 — bug avec popover invisible en bas a droite). */}
+      {mounted && popoverOpen && !pending && popoverPos
+        ? createPortal(
+            <>
+              {/* Overlay pour fermer en cliquant a cote */}
+              <div
+                className="fixed inset-0 z-[100]"
+                onClick={() => setPopoverOpen(false)}
+                aria-hidden="true"
+              />
+              <div
+                className="fixed z-[110] w-[380px] max-h-[90vh] overflow-y-auto rounded-lg border border-zinc-200 bg-white shadow-2xl p-3 text-left"
+                style={{
+                  top: `${popoverPos.top}px`,
+                  left: `${popoverPos.left}px`,
+                }}
+              >
             <div className="flex items-start justify-between gap-2 mb-2">
               <div className="flex items-center gap-1.5 text-xs font-bold text-zinc-700">
                 <MessageSquare className="h-3.5 w-3.5 text-amber-600" />
@@ -248,8 +316,10 @@ export function EnsureAndSendConventionButton({
               </Button>
             </div>
           </div>
-        </>
-      )}
+            </>,
+            document.body,
+          )
+        : null}
 
       {result && !result.ok && (
         <div className="text-[11px] rounded-md bg-rose-50 border border-rose-200 px-3 py-2 text-rose-900 max-w-md text-left whitespace-pre-wrap break-words">
