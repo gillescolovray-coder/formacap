@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Loader2, Send, Trash2 } from "lucide-react";
+import { Loader2, MessageSquare, Send, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 import { cancelConvention, ensureConvention, sendConvention } from "./actions";
@@ -92,9 +92,15 @@ export function EnsureAndSendConventionButton({
     ok: boolean;
     msg: string;
   } | null>(null);
+  // Mini-popover de saisie d un message personnalise avant envoi
+  // (Gilles 2026-06-02). Permet de signaler une correction, demander
+  // une re-signature, etc.
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  const [customMessage, setCustomMessage] = useState("");
 
-  const onClick = () => {
+  const doSend = (msg: string) => {
     setResult(null);
+    setPopoverOpen(false);
     startTransition(async () => {
       let id = conventionId;
       if (!id) {
@@ -105,9 +111,10 @@ export function EnsureAndSendConventionButton({
         }
         id = created.conventionId;
       }
-      const sent = await sendConvention(sessionId, id);
+      const sent = await sendConvention(sessionId, id, msg || undefined);
       if (sent.ok) {
         setResult({ ok: true, msg: "Envoyée." });
+        setCustomMessage("");
       } else {
         setResult({ ok: false, msg: sent.error });
       }
@@ -115,12 +122,12 @@ export function EnsureAndSendConventionButton({
   };
 
   return (
-    <div className="inline-flex flex-col items-end gap-1 max-w-md">
+    <div className="relative inline-flex flex-col items-end gap-1 max-w-md">
       <div className="inline-flex items-center gap-2">
         <Button
           type="button"
           size="sm"
-          onClick={onClick}
+          onClick={() => setPopoverOpen((v) => !v)}
           disabled={disabled || pending}
           title={disabledReason ?? "Envoyer la convention par email au RH"}
         >
@@ -135,6 +142,60 @@ export function EnsureAndSendConventionButton({
           <span className="text-[11px] text-emerald-700">✓ Envoyée</span>
         )}
       </div>
+
+      {/* Popover : message personnalise optionnel */}
+      {popoverOpen && !pending && (
+        <>
+          {/* Overlay pour fermer en cliquant a cote */}
+          <div
+            className="fixed inset-0 z-30"
+            onClick={() => setPopoverOpen(false)}
+            aria-hidden="true"
+          />
+          <div className="absolute right-0 top-full mt-1 z-40 w-[340px] rounded-lg border border-zinc-200 bg-white shadow-xl p-3 text-left">
+            <div className="flex items-start justify-between gap-2 mb-2">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-zinc-700">
+                <MessageSquare className="h-3.5 w-3.5 text-amber-600" />
+                Message personnalisé (optionnel)
+              </div>
+              <button
+                type="button"
+                onClick={() => setPopoverOpen(false)}
+                className="text-zinc-400 hover:text-zinc-700 p-0.5"
+                title="Fermer"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            <p className="text-[11px] text-zinc-500 mb-2 leading-relaxed">
+              Ajoutez un message qui apparaîtra en haut de l&apos;email
+              (encadré ambre). Utile pour signaler une correction,
+              demander une re-signature, etc.
+            </p>
+            <textarea
+              value={customMessage}
+              onChange={(e) => setCustomMessage(e.target.value)}
+              placeholder="Ex : Bonjour, suite à votre signalement, voici la convention corrigée avec le bon représentant légal. Merci de signer uniquement cette nouvelle version."
+              rows={5}
+              className="w-full text-xs px-2 py-1.5 rounded-md border border-zinc-300 focus:outline-none focus:ring-2 focus:ring-cyan-200 focus:border-cyan-400 resize-y"
+            />
+            <div className="mt-2 flex items-center justify-between gap-2">
+              <span className="text-[10px] text-zinc-400">
+                Laisser vide pour envoyer sans message
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => doSend(customMessage.trim())}
+              >
+                <Send className="h-3.5 w-3.5" />
+                Envoyer
+              </Button>
+            </div>
+          </div>
+        </>
+      )}
+
       {result && !result.ok && (
         <div className="text-[11px] rounded-md bg-rose-50 border border-rose-200 px-3 py-2 text-rose-900 max-w-md text-left whitespace-pre-wrap break-words">
           <strong>Erreur :</strong>

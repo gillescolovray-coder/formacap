@@ -709,6 +709,106 @@ export default async function ConventionsPage({
           </p>
         </div>
 
+        {/* Bloc d aide repliable : marche a suivre pour corriger une
+            convention (Gilles 2026-06-02 — cas client PLOMBERIE GRANGE
+            ou le representant legal etait faux). */}
+        <details className="rounded-lg bg-amber-50/60 border border-amber-200 p-3 group">
+          <summary className="cursor-pointer flex items-start gap-2.5 text-xs text-amber-900 leading-relaxed select-none">
+            <AlertTriangle className="h-4 w-4 text-amber-700 shrink-0 mt-0.5" />
+            <span className="flex-1">
+              <strong>
+                Comment modifier le contenu d&apos;une convention
+                (représentant, adresse, prix…) ?
+              </strong>
+              <span className="ml-2 text-amber-700 group-open:hidden">
+                Cliquer pour voir la démarche
+              </span>
+            </span>
+          </summary>
+          <div className="mt-3 pl-6 text-xs text-amber-900 leading-relaxed space-y-2">
+            <p>
+              La convention reprend automatiquement les informations issues
+              de plusieurs fiches. Pour corriger un élément, modifiez la
+              source puis renvoyez la convention :
+            </p>
+            <ul className="list-disc pl-5 space-y-1.5">
+              <li>
+                <strong>Nom / fonction du représentant légal, adresse,
+                SIRET de l&apos;entreprise</strong> →{" "}
+                <Link
+                  href="/entreprises"
+                  className="text-amber-800 underline font-semibold hover:text-amber-900"
+                >
+                  Entreprises
+                </Link>{" "}
+                → ouvrir la fiche → corriger les champs Représentant légal
+                / Adresse / SIRET → Enregistrer.
+              </li>
+              <li>
+                <strong>Liste des apprenants, fonctions affichées dans
+                la convention</strong> → onglet{" "}
+                <Link
+                  href={`/sessions/${id}/participants`}
+                  className="text-amber-800 underline font-semibold hover:text-amber-900"
+                >
+                  Participants
+                </Link>{" "}
+                → modifier l&apos;apprenant.
+              </li>
+              <li>
+                <strong>Dates, horaires, lieu, modalité, durée de la
+                session</strong> →{" "}
+                <Link
+                  href={`/sessions/${id}`}
+                  className="text-amber-800 underline font-semibold hover:text-amber-900"
+                >
+                  Fiche session
+                </Link>{" "}
+                → modifier les informations.
+              </li>
+              <li>
+                <strong>Prix HT facturé / type de financement</strong> →
+                ouvrir la fiche inscription concernée (onglet Participants)
+                → bloc Facturation.
+              </li>
+              <li>
+                <strong>Mentions légales, IBAN/BIC, NDA, logo, bandeau
+                commercial</strong> →{" "}
+                <Link
+                  href="/parametres/organisation"
+                  className="text-amber-800 underline font-semibold hover:text-amber-900"
+                >
+                  Paramètres → Organisation
+                </Link>
+                .
+              </li>
+              <li>
+                <strong>Texte des paragraphes I à XIII (objet, prix, dédit,
+                RGPD, litiges…)</strong> →{" "}
+                <Link
+                  href="/parametres/modeles-documents"
+                  className="text-amber-800 underline font-semibold hover:text-amber-900"
+                >
+                  Paramètres → Modèles documents
+                </Link>{" "}
+                → onglet Convention.
+              </li>
+            </ul>
+            <p className="pt-1">
+              <strong>Une fois la correction faite</strong> : revenez ici
+              et cliquez sur <strong>« Renvoyer »</strong> sur la ligne de
+              la société concernée. Une fenêtre permet d&apos;ajouter un
+              <strong> message personnalisé </strong>(encadré ambre en haut
+              de l&apos;email) — utile pour signaler la correction et
+              demander une nouvelle signature.
+            </p>
+            <p className="text-[11px] italic text-amber-700">
+              💡 Le PDF est régénéré à chaque envoi avec les données les
+              plus récentes : pas besoin de supprimer/recréer la convention.
+            </p>
+          </div>
+        </details>
+
         {/* Bouton bulk : notifier les inscriptions */}
         <div className="rounded-xl bg-white border border-zinc-200 p-4 space-y-3">
           <div>

@@ -712,6 +712,10 @@ export async function cancelConvention(
 export async function sendConvention(
   sessionId: string,
   conventionId: string,
+  /** Message libre optionnel insere en haut du corps email (Gilles
+   *  2026-06-02 : permet de signaler une correction, demander une
+   *  re-signature, etc. avant chaque envoi). */
+  customMessage?: string,
 ): Promise<SendConventionResult> {
   if (!isResendConfigured()) {
     return { ok: false, error: "Resend non configuré." };
@@ -1090,7 +1094,19 @@ export async function sendConvention(
     emailBlocks?.subject_template ??
       `Convention de formation à signer — {{formation_title}}`,
   );
+  // Bloc message personnalise (Gilles 2026-06-02) : encadre ambre en
+  // haut de l email, uniquement si l utilisateur a saisi un texte.
+  // Echappe les chevrons pour eviter toute injection HTML.
+  const customMessageHtml =
+    customMessage && customMessage.trim().length > 0
+      ? `<div style="background:#fef3c7;border:1px solid #fbbf24;border-left:4px solid #f59e0b;border-radius:6px;padding:14px 16px;margin-bottom:16px;font-family:Arial,sans-serif;font-size:14px;color:#78350f;white-space:pre-wrap;">${customMessage
+          .trim()
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")}</div>`
+      : "";
   const html = `
+    ${customMessageHtml}
     ${substitute(emailBlocks?.intro_html ?? "")}
     ${substitute(emailBlocks?.main_html ?? "")}
     ${substitute(emailBlocks?.closing_html ?? "")}
