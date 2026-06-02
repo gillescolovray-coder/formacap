@@ -743,6 +743,15 @@ export default async function ConventionsPage({
                 </Link>{" "}
                 → ouvrir la fiche → corriger les champs Représentant légal
                 / Adresse / SIRET → Enregistrer.
+                <div className="mt-1 ml-1 text-[11px] text-amber-800 bg-amber-100/60 border border-amber-200 rounded px-2 py-1.5">
+                  ⚠️ <strong>Important</strong> : si le bloc « Représentant
+                  légal » est <strong>vide</strong> dans la fiche entreprise,
+                  le PDF utilise en fallback le contact RH figé à la création
+                  de la convention (qui peut être un ancien dirigeant
+                  parti). <strong>Remplissez toujours le bloc Représentant
+                  légal de la fiche entreprise</strong> pour que ce nom
+                  s&apos;impose partout.
+                </div>
               </li>
               <li>
                 <strong>Liste des apprenants, fonctions affichées dans
