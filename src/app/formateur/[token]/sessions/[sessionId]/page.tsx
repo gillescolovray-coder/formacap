@@ -1210,16 +1210,19 @@ export default async function FormateurSessionDetailPage({
                                       : "text-zinc-600"
                                 }
                               >
+                                {/* Gilles 2026-06-03 : on bascule le %
+                                    en chiffre principal (plus parlant que
+                                    pts), les pts en sous-titre discret. */}
+                                <div className="text-sm font-bold">
+                                  {delta > 0 ? "+" : ""}
+                                  {delta} %
+                                </div>
                                 {deltaPoints !== null && (
-                                  <div className="text-sm font-bold">
-                                    {deltaPoints > 0 ? "+" : ""}
-                                    {deltaPoints} pts
+                                  <div className="text-[11px] opacity-70">
+                                    ({deltaPoints > 0 ? "+" : ""}
+                                    {deltaPoints} pts)
                                   </div>
                                 )}
-                                <div className="text-[11px] opacity-80">
-                                  ({delta > 0 ? "+" : ""}
-                                  {delta} %)
-                                </div>
                               </div>
                             )}
                           </td>

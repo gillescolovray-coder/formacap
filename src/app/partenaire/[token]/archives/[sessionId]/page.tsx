@@ -371,7 +371,7 @@ export default async function ArchiveSessionDetailPage({
                         }
                       >
                         {r.progression > 0 ? "+" : ""}
-                        {r.progression} pts
+                        {r.progression} %
                       </span>
                     ) : (
                       <span className="text-zinc-400 text-xs italic">—</span>

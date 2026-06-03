@@ -383,7 +383,7 @@ export function SyntheseScoresPdf({ data }: { data: SyntheseScoresPdfData }) {
             <Text style={styles.statLabel}>Progression moyenne</Text>
             <Text style={styles.statValueGreen}>
               {avgProg !== null
-                ? `${avgProg > 0 ? "+" : ""}${avgProg} pts`
+                ? `${avgProg > 0 ? "+" : ""}${avgProg} %`
                 : "—"}
             </Text>
           </View>
@@ -425,7 +425,7 @@ export function SyntheseScoresPdf({ data }: { data: SyntheseScoresPdfData }) {
                 }
               >
                 {r.progression !== null
-                  ? `${r.progression > 0 ? "+" : ""}${r.progression} pts`
+                  ? `${r.progression > 0 ? "+" : ""}${r.progression} %`
                   : "—"}
               </Text>
             </View>

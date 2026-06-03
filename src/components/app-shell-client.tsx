@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, Suspense, useContext, useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { Menu, PanelLeftClose, PanelLeft, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NavigationProgress } from "./navigation-progress";
@@ -24,6 +25,14 @@ type AppShellClientProps = {
 };
 
 export function AppShellClient({ sidebar, children }: AppShellClientProps) {
+  // Mode "print" / "kiosque" : sur toute URL contenant /print, on
+  // RETIRE COMPLETEMENT le sidebar et le header admin (Gilles
+  // 2026-06-03 — gros bug securite : un apprenant qui recevait une
+  // attestation PDF voyait le sidebar admin complet avec tous les
+  // modules cliquables). Le rendu devient un simple <main>{children}</main>
+  // plein ecran, sans aucune trace de navigation admin.
+  const pathname = usePathname() ?? "";
+  const isPrintMode = pathname.includes("/print");
   // Initialize from localStorage on first render (client-only)
   const [collapsed, setCollapsed] = useState(false);
   const [hydrated, setHydrated] = useState(false);
@@ -67,6 +76,13 @@ export function AppShellClient({ sidebar, children }: AppShellClientProps) {
 
   // Avant hydratation, on est en mode étendu pour éviter un flash visuel
   const isCollapsed = hydrated && collapsed;
+
+  // Mode print : on ne rend QUE les children, dans un wrapper minimal.
+  // Aucun acces au sidebar / navigation / user menu n est expose
+  // (place ici APRES tous les hooks pour respecter les rules of hooks).
+  if (isPrintMode) {
+    return <main className="min-h-screen bg-white">{children}</main>;
+  }
 
   return (
     <SidebarCollapsedContext.Provider value={isCollapsed}>

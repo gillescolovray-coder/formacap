@@ -238,7 +238,7 @@ export default async function SessionQuizDashboardPage({
             value={
               progression === null
                 ? "—"
-                : `${progression > 0 ? "+" : ""}${progression} pts`
+                : `${progression > 0 ? "+" : ""}${progression} %`
             }
             sub={progression !== null ? "moyenne classe" : null}
             color={
@@ -367,16 +367,20 @@ export default async function SessionQuizDashboardPage({
                                     : "text-zinc-600")
                               }
                             >
+                              {/* Gilles 2026-06-03 : on bascule l affichage
+                                  principal en %, plus parlant que pts.
+                                  Les points (deltaPoints) sont conserves
+                                  en sous-titre discret pour reference. */}
+                              <div className="text-sm font-bold">
+                                {delta > 0 ? "+" : ""}
+                                {delta} %
+                              </div>
                               {deltaPoints !== null && (
-                                <div className="text-sm font-bold">
-                                  {deltaPoints > 0 ? "+" : ""}
-                                  {deltaPoints} pts
+                                <div className="text-xs opacity-70">
+                                  ({deltaPoints > 0 ? "+" : ""}
+                                  {deltaPoints} pts)
                                 </div>
                               )}
-                              <div className="text-xs opacity-80">
-                                ({delta > 0 ? "+" : ""}
-                                {delta} %)
-                              </div>
                             </div>
                           )}
                         </td>
@@ -436,7 +440,7 @@ export default async function SessionQuizDashboardPage({
                   Progression moyenne de la cohorte :{" "}
                   <strong>
                     {progression > 0 ? "+" : ""}
-                    {progression} points
+                    {progression} %
                   </strong>{" "}
                   entre le pré-test ({avgPre} %) et le post-test ({avgPost} %).
                 </span>
