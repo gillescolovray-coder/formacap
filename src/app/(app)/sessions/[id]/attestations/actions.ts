@@ -43,12 +43,14 @@ export async function sendAttestationEmail(
   const { data: enrollment } = await supabase
     .from("session_enrollments")
     .select(
-      "id, learner:learners(first_name, last_name, email, civility), session:sessions(id, organization_id, formation:formations(title), start_date, end_date)",
+      "id, learner_id, learner:learners(id, first_name, last_name, email, civility), session:sessions(id, organization_id, formation:formations(title), start_date, end_date)",
     )
     .eq("id", enrollmentId)
     .maybeSingle<{
       id: string;
+      learner_id: string | null;
       learner: {
+        id: string;
         first_name: string | null;
         last_name: string | null;
         email: string | null;
@@ -109,18 +111,48 @@ export async function sendAttestationEmail(
   const formationTitle =
     enrollment.session?.formation?.title ?? "votre formation";
 
+  // Genere/recupere le token portail apprenant + URL (Gilles 2026-06-03).
+  // L apprenant pourra y consulter toutes ses formations, ses documents
+  // et ses scores quiz, sans avoir besoin d un compte.
+  let learnerPortalUrl: string | null = null;
+  if (enrollment.learner?.id) {
+    try {
+      const { getOrCreateLearnerPortalToken, buildLearnerPortalUrl } =
+        await import("@/lib/portal/learner-token");
+      const { token: learnerToken } = await getOrCreateLearnerPortalToken(
+        supabase,
+        enrollment.learner.id,
+      );
+      learnerPortalUrl = buildLearnerPortalUrl(origin, learnerToken);
+    } catch (e) {
+      console.warn(
+        "[sendAttestationEmail] generation token apprenant echouee :",
+        (e as Error).message,
+      );
+    }
+  }
+
   const subject = `Attestation de réalisation — ${formationTitle}`;
+  const portalSection = learnerPortalUrl
+    ? `<p style="margin-top:18px;padding:12px 14px;background:#ecfeff;border-left:4px solid #06b6d4;border-radius:4px;">
+        <strong>🎓 Votre espace personnel</strong><br/>
+        Retrouvez à tout moment l&apos;ensemble de vos formations,
+        attestations et résultats de quiz sur votre espace dédié :<br/>
+        <a href="${learnerPortalUrl}" style="color:#0e7490;font-weight:bold;text-decoration:underline;">${learnerPortalUrl}</a>
+      </p>`
+    : "";
   const html = `
     <p>Bonjour ${enrollment.learner.civility ?? ""} ${learnerName},</p>
     <p>Nous vous félicitons pour la réalisation de la formation
     <strong>« ${formationTitle} »</strong>.</p>
     <p>Vous trouverez ci-joint votre <strong>attestation de réalisation</strong>,
     document officiel à conserver pour vos démarches (Qualiopi, OPCO, CPF…).</p>
+    ${portalSection}
     <p>Nous vous remercions de la confiance accordée et restons à votre
     disposition pour tout besoin futur.</p>
     <p>Bien cordialement,<br/><strong>${orgName}</strong></p>
   `;
-  const text = `Bonjour ${learnerName},\n\nVeuillez trouver ci-joint votre attestation de réalisation pour la formation « ${formationTitle} ».\n\nCordialement,\n${orgName}`;
+  const text = `Bonjour ${learnerName},\n\nVeuillez trouver ci-joint votre attestation de réalisation pour la formation « ${formationTitle} ».${learnerPortalUrl ? `\n\nVotre espace personnel : ${learnerPortalUrl}` : ""}\n\nCordialement,\n${orgName}`;
 
   const safeName = learnerName
     .toLowerCase()
