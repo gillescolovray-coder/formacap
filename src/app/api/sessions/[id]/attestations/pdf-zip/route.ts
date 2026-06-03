@@ -182,6 +182,14 @@ export async function GET(
     .select("enrollment_id, period_date, moment, status")
     .in("enrollment_id", enrollmentIds);
 
+  // FIX Gilles 2026-06-03 : la signature d apprenant sur la feuille
+  // d emargement vaut preuve de presence (cf. /attestations/[id]/print).
+  const { data: signaturesAll } = await supabase
+    .from("attendance_signatures")
+    .select("enrollment_id, period_date, moment, signer_role")
+    .in("enrollment_id", enrollmentIds)
+    .eq("signer_role", "learner");
+
   const attByEnrollment = new Map<string, Map<string, string>>();
   for (const a of (attendancesAll ?? []) as Array<{
     enrollment_id: string;
@@ -193,6 +201,16 @@ export async function GET(
       attByEnrollment.get(a.enrollment_id) ?? new Map<string, string>();
     m.set(`${a.period_date}:${a.moment}`, a.status);
     attByEnrollment.set(a.enrollment_id, m);
+  }
+  const signedByEnrollment = new Map<string, Set<string>>();
+  for (const s of (signaturesAll ?? []) as Array<{
+    enrollment_id: string;
+    period_date: string;
+    moment: string;
+  }>) {
+    const set = signedByEnrollment.get(s.enrollment_id) ?? new Set<string>();
+    set.add(`${s.period_date}:${s.moment}`);
+    signedByEnrollment.set(s.enrollment_id, set);
   }
 
   const startDateLabel = new Date(sessionTyped.start_date).toLocaleDateString(
@@ -234,21 +252,29 @@ export async function GET(
     const lInfo = e.learner;
     if (!lInfo) continue;
 
-    // Heures suivies pour cet apprenant
+    // Heures suivies pour cet apprenant : on cumule attendances status
+    // present/late ET signatures graphiques (preuve forte de presence).
     const attMap = attByEnrollment.get(e.id) ?? new Map<string, string>();
+    const signedSet = signedByEnrollment.get(e.id) ?? new Set<string>();
+    const isPresentLocal = (key: string) => {
+      if (signedSet.has(key)) return true;
+      const s = attMap.get(key);
+      return s === "present" || s === "late";
+    };
     let actualMinutes = 0;
     for (const d of sortedDays) {
-      const morningStatus = attMap.get(`${d.day_date}:morning`);
-      const afternoonStatus = attMap.get(`${d.day_date}:afternoon`);
-      if (morningStatus === "present" || morningStatus === "late") {
+      if (isPresentLocal(`${d.day_date}:morning`)) {
         actualMinutes += diffMin(d.morning_start, d.morning_end);
       }
-      if (afternoonStatus === "present" || afternoonStatus === "late") {
+      if (isPresentLocal(`${d.day_date}:afternoon`)) {
         actualMinutes += diffMin(d.afternoon_start, d.afternoon_end);
       }
     }
-    // Si aucune presence enregistree, on suppose 100%
-    if (attMap.size === 0) actualMinutes = totalPlannedMin;
+    // Si aucune donnee de presence (ni attendance, ni signature),
+    // on suppose 100 %.
+    if (attMap.size === 0 && signedSet.size === 0) {
+      actualMinutes = totalPlannedMin;
+    }
     const actualHours = actualMinutes / 60;
     const ratePct =
       totalPlannedHours > 0

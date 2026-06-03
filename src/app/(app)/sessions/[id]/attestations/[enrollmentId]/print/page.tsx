@@ -90,11 +90,24 @@ export default async function AttestationPrintPage({
     .eq("session_id", id)
     .order("day_date", { ascending: true });
 
-  // Calcul des heures réellement suivies (basé sur les attendances)
+  // Calcul des heures réellement suivies (basé sur les attendances ET
+  // sur les signatures graphiques de l apprenant).
+  // FIX Gilles 2026-06-03 : avant on ne regardait que attendances.status,
+  // mais quand l apprenant signe l emargement la presence est enregistree
+  // dans attendance_signatures (signer_role='learner') sans toujours
+  // mettre a jour attendances.status. Resultat : l attestation
+  // affichait 0h / 0 % alors que l apprenant avait bien signe matin et
+  // apres-midi. On considere donc qu une signature d apprenant vaut
+  // presence.
   const { data: attendances } = await supabase
     .from("attendances")
     .select("period_date, moment, status")
     .eq("enrollment_id", enrollmentId);
+  const { data: learnerSignatures } = await supabase
+    .from("attendance_signatures")
+    .select("period_date, moment, signer_role")
+    .eq("enrollment_id", enrollmentId)
+    .eq("signer_role", "learner");
 
   const { data: membership } = await supabase
     .from("organization_members")
@@ -142,8 +155,10 @@ export default async function AttestationPrintPage({
   }, 0);
 
   // Heures réellement suivies : on additionne les demi-journées où le
-  // statut est "present" ou "late". Pour chaque demi-journée, on
-  // calcule la durée correspondante depuis session_days.
+  // statut est "present" ou "late" DANS attendances, OU bien ou
+  // l apprenant a signe la feuille d emargement (attendance_signatures
+  // avec signer_role='learner'). La signature graphique est la preuve
+  // forte de presence — Gilles 2026-06-03.
   const attendanceMap = new Map<string, string>(); // "date:moment" → status
   (attendances ?? []).forEach((a) => {
     attendanceMap.set(
@@ -151,25 +166,36 @@ export default async function AttestationPrintPage({
       a.status as string,
     );
   });
+  const signedSet = new Set<string>(); // "date:moment"
+  (learnerSignatures ?? []).forEach((s) => {
+    signedSet.add(`${s.period_date}:${s.moment}`);
+  });
   const dayByDate = new Map<string, SessionDay>();
   sortedDays.forEach((d) => {
     const sd = d as SessionDay;
     dayByDate.set(sd.day_date, sd);
   });
+  const isPresent = (key: string): boolean => {
+    if (signedSet.has(key)) return true;
+    const status = attendanceMap.get(key);
+    return status === "present" || status === "late";
+  };
   let actualMinutes = 0;
   for (const sd of sortedDays) {
     const day = sd as SessionDay;
-    const morningStatus = attendanceMap.get(`${day.day_date}:morning`);
-    const afternoonStatus = attendanceMap.get(`${day.day_date}:afternoon`);
-    if (morningStatus === "present" || morningStatus === "late") {
+    if (isPresent(`${day.day_date}:morning`)) {
       actualMinutes += diffMin(day.morning_start, day.morning_end);
     }
-    if (afternoonStatus === "present" || afternoonStatus === "late") {
+    if (isPresent(`${day.day_date}:afternoon`)) {
       actualMinutes += diffMin(day.afternoon_start, day.afternoon_end);
     }
   }
-  // Si aucune présence enregistrée, on suppose 100% (= heures planifiées)
-  if ((attendances ?? []).length === 0) {
+  // Si aucune donnee de presence (ni attendance, ni signature),
+  // on suppose 100 % (= heures planifiees) — fallback historique.
+  if (
+    (attendances ?? []).length === 0 &&
+    (learnerSignatures ?? []).length === 0
+  ) {
     actualMinutes = totalPlanned;
   }
   const totalPlannedHours = totalPlanned / 60;
