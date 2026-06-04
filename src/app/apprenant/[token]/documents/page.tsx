@@ -4,8 +4,11 @@ import {
   Award,
   Calendar,
   ChevronRight,
+  ClipboardCheck,
+  Download,
   Eye,
   FileText,
+  FolderOpen,
   GraduationCap,
 } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -121,6 +124,68 @@ export default async function LearnerDocumentsPage({
     });
   }
 
+  // Documents partagés par le formateur / CAP (par session), avec URLs
+  // signées (TTL 1h). Inclut le programme officiel (is_training_program).
+  type SharedDoc = {
+    id: string;
+    file_name: string;
+    size_bytes: number | null;
+    is_training_program: boolean;
+    downloadUrl: string | null;
+  };
+  const sharedBySession = new Map<string, SharedDoc[]>();
+  if (sessionIds.length > 0) {
+    const { data: docs } = await supabase
+      .from("session_documents")
+      .select(
+        "id, session_id, file_name, size_bytes, uploaded_at, storage_path, is_training_program, visibility",
+      )
+      .in("session_id", sessionIds)
+      .or("visibility.eq.shared_with_learners,is_training_program.eq.true")
+      .order("uploaded_at", { ascending: false });
+    const withUrls = await Promise.all(
+      ((docs ?? []) as Array<{
+        id: string;
+        session_id: string;
+        file_name: string;
+        size_bytes: number | null;
+        storage_path: string;
+        is_training_program: boolean;
+      }>).map(async (d) => {
+        const { data: signed } = await supabase.storage
+          .from("session-documents")
+          .createSignedUrl(d.storage_path, 3600);
+        return {
+          id: d.id,
+          session_id: d.session_id,
+          file_name: d.file_name,
+          size_bytes: d.size_bytes,
+          is_training_program: d.is_training_program,
+          downloadUrl: signed?.signedUrl ?? null,
+        };
+      }),
+    );
+    for (const d of withUrls) {
+      const arr = sharedBySession.get(d.session_id) ?? [];
+      arr.push(d);
+      sharedBySession.set(d.session_id, arr);
+    }
+  }
+
+  // Émargement validé par le formateur (≥ 1 créneau signé trainer) par
+  // enrollment → conditionne l'accès à la feuille de présence.
+  const emargeValidated = new Set<string>();
+  if (enrollmentIds.length > 0) {
+    const { data: trainerSigs } = await supabase
+      .from("attendance_signatures")
+      .select("enrollment_id")
+      .in("enrollment_id", enrollmentIds)
+      .eq("signer_role", "trainer");
+    for (const s of (trainerSigs ?? []) as Array<{ enrollment_id: string }>) {
+      emargeValidated.add(s.enrollment_id);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <header>
@@ -148,7 +213,15 @@ export default async function LearnerDocumentsPage({
             const hasAttestation = item.isPast;
             const hasProgramme = !!item.programmePdfUrl;
             const hasConvention = !!conv && conv.status === "signed";
-            const hasAnyDoc = hasAttestation || hasProgramme || hasConvention;
+            const sharedDocs = sharedBySession.get(item.sessionId) ?? [];
+            const canEmargement =
+              item.isPast && emargeValidated.has(item.enrollmentId);
+            const hasAnyDoc =
+              hasAttestation ||
+              hasProgramme ||
+              hasConvention ||
+              sharedDocs.length > 0 ||
+              canEmargement;
 
             return (
               <article
@@ -210,6 +283,18 @@ export default async function LearnerDocumentsPage({
                         Programme de formation
                       </a>
                     )}
+                    {canEmargement && (
+                      <a
+                        href={`/apprenant/${token}/sessions/${item.sessionId}/emargement/print`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-cyan-300 bg-cyan-50 text-cyan-700 text-sm font-bold hover:bg-cyan-100"
+                        title="Télécharger ma feuille de présence (PDF)"
+                      >
+                        <ClipboardCheck className="h-4 w-4" />
+                        Feuille de présence
+                      </a>
+                    )}
                     {hasConvention && conv && (
                       <span
                         className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-zinc-200 bg-zinc-50 text-zinc-500 text-sm font-bold cursor-not-allowed"
@@ -219,6 +304,48 @@ export default async function LearnerDocumentsPage({
                         Convention signée (à venir)
                       </span>
                     )}
+                  </div>
+                )}
+
+                {/* Documents partagés par le formateur / CAP */}
+                {sharedDocs.length > 0 && (
+                  <div className="rounded-lg border border-indigo-100 bg-indigo-50/40 p-3">
+                    <p className="text-xs font-bold text-indigo-800 inline-flex items-center gap-1.5 mb-2">
+                      <FolderOpen className="h-4 w-4" />
+                      Documents partagés
+                    </p>
+                    <ul className="space-y-1.5">
+                      {sharedDocs.map((doc) => (
+                        <li
+                          key={doc.id}
+                          className="flex items-center gap-2 flex-wrap"
+                        >
+                          <FileText className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+                          <span className="text-sm text-zinc-700 break-all flex-1 min-w-0">
+                            {doc.file_name}
+                            {doc.is_training_program && (
+                              <span className="ml-1.5 text-[10px] uppercase tracking-wider font-bold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded-full">
+                                📋 Programme
+                              </span>
+                            )}
+                          </span>
+                          {doc.downloadUrl ? (
+                            <a
+                              href={doc.downloadUrl}
+                              download={doc.file_name}
+                              className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold"
+                            >
+                              <Download className="h-3.5 w-3.5" />
+                              Télécharger
+                            </a>
+                          ) : (
+                            <span className="text-xs text-zinc-400 italic shrink-0">
+                              Indisponible
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 )}
               </article>
