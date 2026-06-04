@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Building2, GitMerge, Loader2, Search, X } from "lucide-react";
 import {
@@ -30,6 +31,8 @@ export function MergeCompanyButton({
   const [selected, setSelected] = useState<CompanyCandidate | null>(null);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   async function runSearch(q: string) {
     setQuery(q);
@@ -77,8 +80,10 @@ export function MergeCompanyButton({
         Fusionner un doublon
       </button>
 
-      {open && (
-        <div className="fixed inset-0 z-[1000] flex items-start justify-center bg-black/40 p-4 overflow-y-auto">
+      {mounted &&
+        open &&
+        createPortal(
+          <div className="fixed inset-0 z-[1000] flex items-start justify-center bg-black/40 p-4 overflow-y-auto">
           <div className="mt-10 w-full max-w-md rounded-2xl bg-white shadow-xl border border-zinc-200 overflow-hidden">
             <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-zinc-200 bg-zinc-50">
               <h2 className="text-sm font-bold text-zinc-900 inline-flex items-center gap-1.5">
@@ -191,8 +196,9 @@ export function MergeCompanyButton({
               </div>
             </div>
           </div>
-        </div>
-      )}
+        </div>,
+          document.body,
+        )}
     </>
   );
 }
