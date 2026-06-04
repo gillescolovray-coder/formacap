@@ -414,7 +414,7 @@ export default async function CompaniesListPage({
       const { data: enrollments } = await supabase
         .from("session_enrollments")
         .select(
-          "id, learner_id, session:sessions(start_date, end_date, trainer:trainers!trainer_id(first_name, last_name), formation:formations(title, duration_hours)), evaluation_responses(nps_score, evaluation_type)",
+          "id, learner_id, session:sessions(id, start_date, end_date, trainer:trainers!trainer_id(first_name, last_name), formation:formations(title, duration_hours)), evaluation_responses(nps_score, evaluation_type)",
         )
         .in("learner_id", allLearnerIds)
         .neq("status", "cancelled");
@@ -436,6 +436,7 @@ export default async function CompaniesListPage({
         const meta = learnerMeta.get(e.learner_id);
         if (!meta) return;
         const s = pick<{
+          id: string | null;
           start_date: string | null;
           end_date: string | null;
           trainer: unknown;
@@ -454,6 +455,7 @@ export default async function CompaniesListPage({
         );
         const entry: FormationEntry = {
           enrollmentId: e.id,
+          sessionId: s?.id ?? null,
           startDate: s?.start_date ?? null,
           endDate: s?.end_date ?? null,
           durationHours: formation?.duration_hours ?? null,
@@ -472,10 +474,6 @@ export default async function CompaniesListPage({
         if (!formationsByLearner.has(e.learner_id))
           formationsByLearner.set(e.learner_id, []);
         formationsByLearner.get(e.learner_id)!.push(entry);
-        formationCountByCompany.set(
-          meta.companyId,
-          (formationCountByCompany.get(meta.companyId) ?? 0) + 1,
-        );
       });
 
       // Tri par date de début décroissante (plus récente en haut).
@@ -483,6 +481,15 @@ export default async function CompaniesListPage({
         (b.startDate ?? "").localeCompare(a.startDate ?? "");
       for (const list of formationsByCompany.values()) list.sort(byDateDesc);
       for (const list of formationsByLearner.values()) list.sort(byDateDesc);
+
+      // Le compteur entreprise = nombre de FORMATIONS distinctes (sessions),
+      // pas le nombre d'inscriptions (une formation peut avoir N participants).
+      for (const [cid, list] of formationsByCompany) {
+        const distinctSessions = new Set(
+          list.map((x) => x.sessionId ?? x.enrollmentId),
+        );
+        formationCountByCompany.set(cid, distinctSessions.size);
+      }
     }
   }
 

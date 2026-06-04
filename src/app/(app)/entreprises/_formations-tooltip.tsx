@@ -20,6 +20,8 @@ import { cn } from "@/lib/utils";
 
 export type FormationEntry = {
   enrollmentId: string;
+  /** Session de rattachement — sert au regroupement (variante company). */
+  sessionId: string | null;
   startDate: string | null;
   endDate: string | null;
   durationHours: number | null;
@@ -27,7 +29,7 @@ export type FormationEntry = {
   trainerName: string | null;
   /** Nom de l'apprenant — utilisé par la variante "company". */
   learnerName: string | null;
-  /** Recommandation (NPS à chaud, 0-10) — utilisée par la variante "learner". */
+  /** Recommandation (NPS à chaud, 0-10). */
   npsScore: number | null;
 };
 
@@ -67,6 +69,7 @@ export function FormationsTooltip({
   } | null>(null);
   const [mounted, setMounted] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => setMounted(true), []);
 
@@ -89,10 +92,22 @@ export function FormationsTooltip({
     });
   }
 
-  // Ferme au scroll / resize pour éviter un popover « décroché ».
+  // Ferme au scroll de la PAGE / resize pour éviter un popover « décroché ».
+  // IMPORTANT : on ignore le scroll INTERNE de la fenêtre (la liste a son
+  // propre ascenseur) — sinon scroller la liste fermait la fenêtre.
   useEffect(() => {
     if (!open) return;
-    const close = () => setOpen(false);
+    const close = (e: Event) => {
+      if (
+        e.type === "scroll" &&
+        dialogRef.current &&
+        e.target instanceof Node &&
+        dialogRef.current.contains(e.target)
+      ) {
+        return; // scroll à l'intérieur du popover → ne pas fermer
+      }
+      setOpen(false);
+    };
     window.addEventListener("scroll", close, true);
     window.addEventListener("resize", close);
     return () => {
@@ -102,8 +117,43 @@ export function FormationsTooltip({
   }, [open]);
 
   const isCompany = variant === "company";
-  const visible = entries.slice(0, MAX_VISIBLE);
-  const rest = entries.length - visible.length;
+
+  // Variante "company" : on regroupe les inscriptions par formation
+  // (session) -> 1 formation, puis la liste des participants + reco.
+  type Group = {
+    key: string;
+    title: string | null;
+    startDate: string | null;
+    durationHours: number | null;
+    participants: { name: string; nps: number | null }[];
+  };
+  const groups: Group[] = [];
+  if (isCompany) {
+    const byKey = new Map<string, Group>();
+    for (const e of entries) {
+      const key = e.sessionId ?? e.enrollmentId;
+      let g = byKey.get(key);
+      if (!g) {
+        g = {
+          key,
+          title: e.title,
+          startDate: e.startDate,
+          durationHours: e.durationHours,
+          participants: [],
+        };
+        byKey.set(key, g);
+        groups.push(g);
+      }
+      g.participants.push({ name: e.learnerName ?? "—", nps: e.npsScore });
+    }
+  }
+
+  const headerCount = isCompany ? groups.length : entries.length;
+  const visibleGroups = groups.slice(0, MAX_VISIBLE);
+  const visibleEntries = entries.slice(0, MAX_VISIBLE);
+  const rest = isCompany
+    ? groups.length - visibleGroups.length
+    : entries.length - visibleEntries.length;
 
   return (
     <>
@@ -140,6 +190,7 @@ export function FormationsTooltip({
               }}
             />
             <div
+              ref={dialogRef}
               role="dialog"
               onClick={(e) => e.stopPropagation()}
               style={{
@@ -152,7 +203,7 @@ export function FormationsTooltip({
             >
               <div className="flex items-center justify-between gap-2 bg-violet-50 border-b border-violet-100 px-3 py-2">
                 <p className="text-[11px] font-bold uppercase tracking-wide text-violet-800 truncate">
-                  Formations — {headerLabel} ({entries.length})
+                  Formations — {headerLabel} ({headerCount})
                 </p>
                 <button
                   type="button"
@@ -167,13 +218,54 @@ export function FormationsTooltip({
                 </button>
               </div>
 
-              {entries.length === 0 ? (
+              {headerCount === 0 ? (
                 <p className="px-3 py-4 text-center text-xs text-zinc-400">
                   Aucune formation.
                 </p>
-              ) : (
+              ) : isCompany ? (
+                /* Variante entreprise : 1 formation -> participants + reco */
                 <ul className="max-h-[320px] overflow-y-auto divide-y divide-zinc-100">
-                  {visible.map((f) => {
+                  {visibleGroups.map((g) => {
+                    const hours = formatHours(g.durationHours);
+                    return (
+                      <li key={g.key} className="px-3 py-2">
+                        <p className="text-[11px] font-bold text-zinc-700 tabular-nums">
+                          {formatDate(g.startDate)}
+                          {hours ? ` · ${hours}` : ""}
+                        </p>
+                        <p className="text-xs font-semibold text-zinc-900 italic">
+                          «&nbsp;{g.title ?? "Formation"}&nbsp;»
+                        </p>
+                        <ul className="mt-1 space-y-1">
+                          {g.participants.map((p, i) => (
+                            <li
+                              key={i}
+                              className="flex items-center justify-between gap-2 text-[11px]"
+                            >
+                              <span className="text-zinc-700 truncate">
+                                {p.name}
+                              </span>
+                              {p.nps != null ? (
+                                <span className="inline-flex items-center gap-1 font-semibold text-amber-600 shrink-0">
+                                  <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+                                  {p.nps}/10
+                                </span>
+                              ) : (
+                                <span className="text-zinc-400 italic shrink-0">
+                                  reco. n/r
+                                </span>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                /* Variante apprenant : liste de ses formations + reco */
+                <ul className="max-h-[320px] overflow-y-auto divide-y divide-zinc-100">
+                  {visibleEntries.map((f) => {
                     const hours = formatHours(f.durationHours);
                     return (
                       <li key={f.enrollmentId} className="px-3 py-2">
@@ -181,11 +273,6 @@ export function FormationsTooltip({
                           {formatDate(f.startDate)}
                           {hours ? ` · ${hours}` : ""}
                         </p>
-                        {isCompany && f.learnerName && (
-                          <p className="text-xs font-semibold text-zinc-900">
-                            {f.learnerName}
-                          </p>
-                        )}
                         <p className="text-xs text-zinc-600 italic">
                           «&nbsp;{f.title ?? "Formation"}&nbsp;»
                         </p>
