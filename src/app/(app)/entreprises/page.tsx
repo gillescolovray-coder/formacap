@@ -14,6 +14,7 @@ import {
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { CompanyRow } from "./_company-row";
+import { LearnerPortalButtons } from "./_learner-portal-buttons";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -264,6 +265,9 @@ export default async function CompaniesListPage({
     mobile: string | null;
     is_contact: boolean;
     is_learner: boolean;
+    /** ID du learner si is_learner=true (Gilles 2026-06-04 — lien
+     *  rapide vers le portail apprenant). */
+    learner_id?: string | null;
     role?: string;
     service?: string | null;
     is_primary?: boolean;
@@ -343,6 +347,7 @@ export default async function CompaniesListPage({
       if (existing) {
         // Fusion : déjà un contact, on ajoute le rôle apprenant
         existing.is_learner = true;
+        existing.learner_id = l.id;
         // On comble les champs vides depuis l'apprenant
         existing.email = existing.email ?? l.email;
         existing.phone = existing.phone ?? l.phone;
@@ -360,6 +365,7 @@ export default async function CompaniesListPage({
           mobile: l.mobile,
           is_contact: false,
           is_learner: true,
+          learner_id: l.id,
         });
       }
     });
@@ -1145,6 +1151,15 @@ export default async function CompaniesListPage({
                                 ) : null}
                               </p>
                             </div>
+                            {/* Boutons portail apprenant — visibles
+                                uniquement sur les apprenants
+                                (Gilles 2026-06-04). */}
+                            {p.is_learner && p.learner_id && (
+                              <LearnerPortalButtons
+                                learnerId={p.learner_id}
+                                hasEmail={Boolean(p.email)}
+                              />
+                            )}
                           </li>
                         );
                       })}

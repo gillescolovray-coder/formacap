@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useState } from "react";
+import { LearnerPortalButtons } from "./_learner-portal-buttons";
 import Link from "next/link";
 import {
   Building2,
@@ -42,6 +43,9 @@ type Person = {
   mobile: string | null;
   is_contact: boolean;
   is_learner: boolean;
+  /** ID du learner si is_learner=true. Sert au lien rapide portail
+   *  apprenant (Gilles 2026-06-04). */
+  learner_id?: string | null;
   role?: string;
   service?: string | null;
   is_primary?: boolean;
@@ -419,6 +423,14 @@ export function CompanyRow({
                         ) : null}
                       </p>
                     </div>
+                    {/* Boutons portail apprenant — visibles uniquement
+                        sur les apprenants (Gilles 2026-06-04). */}
+                    {p.is_learner && p.learner_id && (
+                      <LearnerPortalButtons
+                        learnerId={p.learner_id}
+                        hasEmail={Boolean(p.email)}
+                      />
+                    )}
                   </li>
                 );
               })}
