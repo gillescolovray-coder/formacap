@@ -189,20 +189,18 @@ export function FormationsTooltip({
                         <p className="text-xs text-zinc-600 italic">
                           «&nbsp;{f.title ?? "Formation"}&nbsp;»
                         </p>
-                        {!isCompany && (
-                          <p className="text-[11px] mt-0.5">
-                            {f.npsScore != null ? (
-                              <span className="inline-flex items-center gap-1 font-semibold text-amber-600">
-                                <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
-                                Recommandation&nbsp;: {f.npsScore}/10
-                              </span>
-                            ) : (
-                              <span className="text-zinc-400 italic">
-                                Recommandation&nbsp;: non renseignée
-                              </span>
-                            )}
-                          </p>
-                        )}
+                        <p className="text-[11px] mt-0.5">
+                          {f.npsScore != null ? (
+                            <span className="inline-flex items-center gap-1 font-semibold text-amber-600">
+                              <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+                              Recommandation&nbsp;: {f.npsScore}/10
+                            </span>
+                          ) : (
+                            <span className="text-zinc-400 italic">
+                              Recommandation&nbsp;: non renseignée
+                            </span>
+                          )}
+                        </p>
                       </li>
                     );
                   })}

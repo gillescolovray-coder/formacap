@@ -5,6 +5,7 @@ import {
   Building2,
   Calendar,
   CheckCircle2,
+  ClipboardCheck,
   Clock,
   Download,
   FileText,
@@ -12,6 +13,7 @@ import {
   Globe,
   GraduationCap,
   Hash,
+  Lock,
   MapPin,
   User,
 } from "lucide-react";
@@ -143,6 +145,8 @@ export default async function LearnerSessionDetailPage({
     afternoon_end: string | null;
   }>;
 
+  const today = new Date().toISOString().slice(0, 10);
+
   // Documents partagés par le formateur / CAP pour cette session
   // (visibility = 'shared_with_learners' + le programme officiel).
   // Même règle que le portail mon-parcours. URLs signées TTL 1h.
@@ -180,7 +184,42 @@ export default async function LearnerSessionDetailPage({
     }),
   );
 
-  const today = new Date().toISOString().slice(0, 10);
+  // Émargement : signatures de CET apprenant (matin/après-midi par jour).
+  // Un créneau n'est montré que s'il a été validé par le FORMATEUR
+  // (signer_role='trainer' present). La feuille de presence n'est
+  // telechargeable qu'une fois la formation terminee (cf. plus bas).
+  const { data: emargeRaw } = await supabase
+    .from("attendance_signatures")
+    .select("period_date, moment, signer_role, signed_at")
+    .eq("enrollment_id", enrollment.id);
+  const emarge = (emargeRaw ?? []) as Array<{
+    period_date: string;
+    moment: "morning" | "afternoon";
+    signer_role: "learner" | "trainer";
+    signed_at: string;
+  }>;
+  const trainerSigned = new Set<string>();
+  const learnerSigned = new Set<string>();
+  for (const s of emarge) {
+    const key = `${s.period_date}:${s.moment}`;
+    if (s.signer_role === "trainer") trainerSigned.add(key);
+    else learnerSigned.add(key);
+  }
+  // Liste des creneaux planifies (jour x moment) avec un horaire.
+  type Slot = { date: string; moment: "morning" | "afternoon" };
+  const slots: Slot[] = [];
+  for (const d of days) {
+    if (d.morning_start && d.morning_end)
+      slots.push({ date: d.day_date, moment: "morning" });
+    if (d.afternoon_start && d.afternoon_end)
+      slots.push({ date: d.day_date, moment: "afternoon" });
+  }
+  const hasAnyValidated = slots.some((s) =>
+    trainerSigned.has(`${s.date}:${s.moment}`),
+  );
+  // La formation est-elle terminee ? (gate du telechargement)
+  const isFinished = Boolean(sess.end_date && sess.end_date < today);
+
   const isPast = sess.end_date && sess.end_date < today;
   const modalityLabel =
     sess.modality === "presentiel"
@@ -478,6 +517,93 @@ export default async function LearnerSessionDetailPage({
           </p>
         )}
       </div>
+
+      {/* Feuille d'émargement : créneaux validés par le formateur */}
+      {slots.length > 0 && (
+        <div className="rounded-2xl bg-white border border-zinc-200 overflow-hidden">
+          <h2 className="px-4 py-2 border-b border-zinc-200 bg-zinc-50 text-sm font-bold text-zinc-700 inline-flex items-center gap-1.5">
+            <ClipboardCheck className="h-4 w-4 text-cyan-600" />
+            Feuille d&apos;émargement
+          </h2>
+
+          <table className="w-full text-sm">
+            <thead className="bg-zinc-50 border-b border-zinc-200 text-[11px] uppercase tracking-wider text-zinc-500 font-bold">
+              <tr>
+                <th className="px-3 py-2 text-left">Date</th>
+                <th className="px-3 py-2 text-left">Matin</th>
+                <th className="px-3 py-2 text-left">Après-midi</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100">
+              {days.map((d) => (
+                <tr key={d.day_date}>
+                  <td className="px-3 py-2 font-semibold text-zinc-900 align-top">
+                    {formatDate(d.day_date)}
+                  </td>
+                  {(["morning", "afternoon"] as const).map((moment) => {
+                    const hasSlot =
+                      moment === "morning"
+                        ? d.morning_start && d.morning_end
+                        : d.afternoon_start && d.afternoon_end;
+                    const key = `${d.day_date}:${moment}`;
+                    const validated = trainerSigned.has(key);
+                    const meSigned = learnerSigned.has(key);
+                    return (
+                      <td key={moment} className="px-3 py-2 align-top">
+                        {!hasSlot ? (
+                          <span className="text-zinc-300">—</span>
+                        ) : validated ? (
+                          <div className="space-y-0.5">
+                            <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold text-xs">
+                              <CheckCircle2 className="h-3.5 w-3.5" />
+                              Émargé
+                            </span>
+                            <div className="text-[11px] text-zinc-500">
+                              {meSigned
+                                ? "Votre signature enregistrée"
+                                : "Validé par le formateur"}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-zinc-400 text-xs italic">
+                            <Clock className="h-3.5 w-3.5" />
+                            En attente du formateur
+                          </span>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {/* Téléchargement de la feuille de présence */}
+          <div className="px-4 py-3 border-t border-zinc-200 bg-zinc-50/60">
+            {!hasAnyValidated ? (
+              <p className="text-xs text-zinc-500">
+                La feuille d&apos;émargement sera disponible au fur et à mesure
+                de sa validation par le formateur.
+              </p>
+            ) : isFinished ? (
+              <a
+                href={`/apprenant/${token}/sessions/${sessionId}/emargement/print`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-sm font-bold min-h-[40px]"
+              >
+                <ClipboardCheck className="h-4 w-4" />
+                Télécharger ma feuille de présence (PDF)
+              </a>
+            ) : (
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-100 border border-zinc-200 text-zinc-500 text-sm font-medium">
+                <Lock className="h-4 w-4" />
+                Feuille de présence téléchargeable à la fin de la formation
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Documents + quiz : liens vers les autres onglets */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
