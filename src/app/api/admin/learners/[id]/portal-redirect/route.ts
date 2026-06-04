@@ -50,15 +50,30 @@ export async function GET(
   if (!learner) {
     return NextResponse.json({ error: "Learner not found" }, { status: 404 });
   }
-  const { data: membership } = await admin
+  // On liste TOUTES les memberships actives de l'utilisateur (pas de
+  // .maybeSingle() : il plante s'il existe plusieurs lignes — doublons
+  // ou multi-org — ce qui renvoyait null -> Forbidden a tort).
+  const { data: memberships } = await admin
     .from("organization_members")
-    .select("id, role")
+    .select("organization_id, role")
     .eq("profile_id", user.id)
-    .eq("organization_id", learner.organization_id)
-    .eq("is_active", true)
-    .maybeSingle<{ id: string; role: string }>();
-  if (!membership) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    .eq("is_active", true);
+  const allowed = (memberships ?? []).some(
+    (m) => m.organization_id === learner.organization_id,
+  );
+  if (!allowed) {
+    return NextResponse.json(
+      {
+        error: "Forbidden",
+        // Aide au diagnostic (cause la plus frequente : l'apprenant n'est
+        // pas rattache a votre organisation, ou son organization_id est vide).
+        detail: {
+          learner_org: learner.organization_id,
+          your_active_orgs: (memberships ?? []).map((m) => m.organization_id),
+        },
+      },
+      { status: 403 },
+    );
   }
 
   // Genere ou recupere le token portail

@@ -76,14 +76,17 @@ export async function sendLearnerPortalLink(
     };
   }
 
-  const { data: membership } = await admin
+  // Liste toutes les memberships actives (pas de .maybeSingle() qui
+  // plante en cas de doublon -> faux "non autorise").
+  const { data: memberships } = await admin
     .from("organization_members")
-    .select("id, role")
+    .select("organization_id")
     .eq("profile_id", user.id)
-    .eq("organization_id", learner.organization_id)
-    .eq("is_active", true)
-    .maybeSingle();
-  if (!membership) {
+    .eq("is_active", true);
+  const allowed = (memberships ?? []).some(
+    (m) => m.organization_id === learner.organization_id,
+  );
+  if (!allowed) {
     return { ok: false, error: "Vous n'êtes pas autorisé pour cette organisation." };
   }
 
