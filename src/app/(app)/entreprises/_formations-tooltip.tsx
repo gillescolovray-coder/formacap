@@ -122,8 +122,16 @@ export function FormationsTooltip({
   const today = new Date().toISOString().slice(0, 10);
   const isRealized = (e: FormationEntry) =>
     Boolean(e.endDate && e.endDate < today);
+  // Réalisées : plus récente en haut (historique décroissant — ordre
+  // d'entrée déjà trié desc par les loaders).
   const realized = entries.filter(isRealized);
-  const upcoming = entries.filter((e) => !isRealized(e));
+  // À venir : la PROCHAINE date d'abord (ordre chronologique croissant).
+  const upcoming = entries
+    .filter((e) => !isRealized(e))
+    .slice()
+    .sort((a, b) =>
+      (a.startDate ?? "9999").localeCompare(b.startDate ?? "9999"),
+    );
 
   // Variante "company" : regroupement par formation (session) -> 1
   // formation, puis la liste des participants (+ reco si réalisée).
