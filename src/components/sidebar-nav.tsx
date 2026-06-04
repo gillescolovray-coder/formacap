@@ -15,6 +15,7 @@ import {
   Receipt,
   Route,
   Settings,
+  Sparkles,
   UserCog,
   Users,
 } from "lucide-react";
@@ -33,6 +34,7 @@ type NavItem = {
 const PRIMARY_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Tableau de bord", icon: LayoutDashboard },
   { href: "/formations", label: "Catalogue", icon: GraduationCap },
+  { href: "/programmes", label: "Programmes", icon: Sparkles },
   { href: "/catalogue", label: "Catalogue en ligne", icon: BookOpen },
   { href: "/entreprises", label: "Entreprises & Contacts", icon: Building2 },
   { href: "/apprenants", label: "Apprenants", icon: Users },
