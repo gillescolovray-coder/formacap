@@ -351,7 +351,6 @@ export function SessionInscriptionsTable({
                             {learnerFormations.length > 0 && (
                               <FormationsTooltip
                                 variant="learner"
-                                count={learnerFormations.length}
                                 entries={learnerFormations}
                                 headerLabel={fullName}
                               />

@@ -299,7 +299,6 @@ export function CompanyRow({
           {formationCount > 0 ? (
             <FormationsTooltip
               variant="company"
-              count={formationCount}
               entries={companyFormations}
               headerLabel={c.name}
             />
@@ -440,7 +439,6 @@ export function CompanyRow({
                         {p.formations && p.formations.length > 0 && (
                           <FormationsTooltip
                             variant="learner"
-                            count={p.formations.length}
                             entries={p.formations}
                             headerLabel={`${p.first_name ?? ""} ${p.last_name}`.trim()}
                           />

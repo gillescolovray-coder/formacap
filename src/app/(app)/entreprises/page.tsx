@@ -1254,7 +1254,6 @@ export default async function CompaniesListPage({
                                 {p.formations && p.formations.length > 0 && (
                                   <FormationsTooltip
                                     variant="learner"
-                                    count={p.formations.length}
                                     entries={p.formations}
                                     headerLabel={`${p.first_name ?? ""} ${p.last_name}`.trim()}
                                   />
