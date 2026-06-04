@@ -21,6 +21,7 @@ import { SubsidiariesManager } from "./_subsidiaries-manager";
 import { BackButton } from "@/components/back-button";
 import { CollapsibleSection } from "@/components/collapsible-section";
 import { PageHeader } from "@/components/page-header";
+import { MergeCompanyButton } from "./_merge-company-button";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
@@ -416,6 +417,7 @@ export default async function CompanyDetailPage({
         actions={
           <>
             <BackButton fallbackHref="/entreprises" />
+            <MergeCompanyButton targetId={id} targetName={company.name} />
             <form action={remove}>
               <Button type="submit" variant="outline" size="sm">
                 <Trash2 className="h-4 w-4" />

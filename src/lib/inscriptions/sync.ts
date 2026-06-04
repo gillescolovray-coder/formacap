@@ -12,6 +12,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { EnrollmentStatus } from "@/lib/sessions/types";
+import { normalizeCompanyName } from "@/lib/companies/dedup";
 
 /**
  * Mapping stage CRM → statut d'inscription session.
@@ -384,6 +385,61 @@ export async function healCompanyLinksForSession(
   let companiesCreated = 0;
   let linkedLearners = 0;
 
+  // Cache des entreprises par organisation (id + nom normalisé) pour un
+  // dédoublonnage robuste : « SMMM », « S.M.M.M », « smmm » -> même fiche.
+  // On y ajoute les fiches créées dans CE passage pour éviter qu'une même
+  // entreprise saisie 2x crée 2 doublons (race intra-run). Gilles 2026-06-04.
+  const orgCompaniesCache = new Map<
+    string,
+    Array<{ id: string; norm: string }>
+  >();
+  async function findOrCreateCompanyByName(
+    orgId: string,
+    rawName: string,
+  ): Promise<string | null> {
+    const name = rawName.trim();
+    if (!name) return null;
+    const norm = normalizeCompanyName(name);
+
+    let list = orgCompaniesCache.get(orgId);
+    if (!list) {
+      const { data: all } = await supabase
+        .from("companies")
+        .select("id, name")
+        .eq("organization_id", orgId);
+      list = (all ?? []).map((c) => ({
+        id: c.id as string,
+        norm: normalizeCompanyName(c.name as string),
+      }));
+      orgCompaniesCache.set(orgId, list);
+    }
+
+    const match = list.find((c) => c.norm === norm);
+    if (match) return match.id;
+
+    const { data: created, error: createErr } = await supabase
+      .from("companies")
+      .insert({
+        organization_id: orgId,
+        name,
+        type: "client",
+        is_active: true,
+      })
+      .select("id")
+      .single();
+    if (createErr || !created) {
+      console.warn("[healCompanyLinksForSession] create company failed", {
+        name,
+        error: createErr?.message,
+      });
+      return null;
+    }
+    const newId = created.id as string;
+    list.push({ id: newId, norm }); // alimente le cache (anti-doublon intra-run)
+    companiesCreated++;
+    return newId;
+  }
+
   try {
     // 1) Inscriptions avec freetext mais sans company_id
     const { data: broken } = await supabase
@@ -404,39 +460,11 @@ export async function healCompanyLinksForSession(
       const name = (ins.company_name_freetext ?? "").trim();
       if (!name) continue;
 
-      // a) Cherche un homonyme existant
-      const { data: existing } = await supabase
-        .from("companies")
-        .select("id")
-        .eq("organization_id", ins.organization_id)
-        .ilike("name", name)
-        .limit(1)
-        .maybeSingle<{ id: string }>();
-
-      let companyId = existing?.id ?? null;
-
-      // b) Sinon crée une fiche minimale (l'utilisateur enrichira)
-      if (!companyId) {
-        const { data: created, error: createErr } = await supabase
-          .from("companies")
-          .insert({
-            organization_id: ins.organization_id,
-            name,
-            type: "client",
-            is_active: true,
-          })
-          .select("id")
-          .single();
-        if (createErr) {
-          console.warn(
-            "[healCompanyLinksForSession] create company failed",
-            { name, error: createErr.message },
-          );
-          continue;
-        }
-        companyId = created?.id ?? null;
-        if (companyId) companiesCreated++;
-      }
+      // Cherche un homonyme (nom normalisé) sinon crée une fiche minimale.
+      const companyId = await findOrCreateCompanyByName(
+        ins.organization_id,
+        name,
+      );
 
       if (!companyId) continue;
 
