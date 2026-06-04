@@ -7,6 +7,7 @@ import {
   InscriptionColumnsProvider,
 } from "../../inscriptions/_columns-context";
 import { SessionInscriptionsTable } from "../../inscriptions/_session-table";
+import type { FormationEntry } from "../../entreprises/_formations-tooltip";
 import type {
   InscriptionRequest,
   InscriptionStage,
@@ -52,6 +53,7 @@ export function ParticipantsInscriptionsBlock({
   stageEventsByInscription,
   nbJours,
   returnTo,
+  formationsByLearner,
 }: {
   session: SessionForCard;
   requests: InscriptionRequest[];
@@ -63,6 +65,9 @@ export function ParticipantsInscriptionsBlock({
    *  un retour contextuel apres action sur la fiche inscription
    *  (Gilles 2026-06-01). */
   returnTo?: string;
+  /** Formations par learner_id pour la colonne "Portail apprenant"
+   *  (compteur + accès portail). Gilles 2026-06-04. */
+  formationsByLearner?: Map<string, FormationEntry[]>;
 }) {
   // Compteurs par étape (mêmes pastilles que sur /inscriptions)
   const counts = new Map<string, number>();
@@ -140,6 +145,8 @@ export function ParticipantsInscriptionsBlock({
             stageEventsByInscription={stageEventsByInscription}
             nbJours={nbJours}
             returnTo={returnTo === "participants" ? "participants" : undefined}
+            showPortalColumn
+            formationsByLearner={formationsByLearner}
           />
         )}
       </div>

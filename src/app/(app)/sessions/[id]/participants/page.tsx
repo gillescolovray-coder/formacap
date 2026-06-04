@@ -20,6 +20,7 @@ import {
   healLearnersForSession,
 } from "@/lib/inscriptions/sync";
 import { cleanupUserEmptyDrafts } from "@/lib/inscriptions/cleanup";
+import { loadFormationsByLearner } from "@/lib/learners/formations";
 
 // Force le rechargement à chaque accès pour que la liste des inscriptions
 // soit toujours à jour (auto-healing + filtres dynamiques).
@@ -324,6 +325,20 @@ export default async function ParticipantsPage({
   const title = session.formation?.title ?? "Session";
   const totalParticipants = allRequests.length;
 
+  // Formations par apprenant -> colonne "Portail apprenant" du tableau
+  // (compteur + accès portail + envoi du lien). Gilles 2026-06-04.
+  const participantLearnerIds = Array.from(
+    new Set(
+      allRequests
+        .map((r) => (r as unknown as { learner_id?: string | null }).learner_id)
+        .filter((x): x is string => Boolean(x)),
+    ),
+  );
+  const formationsByLearner = await loadFormationsByLearner(
+    supabase,
+    participantLearnerIds,
+  );
+
   return (
     <>
       <PageHeader
@@ -387,6 +402,7 @@ export default async function ParticipantsPage({
           stageEventsByInscription={stageEventsByInscription}
           nbJours={nbJours}
           returnTo="participants"
+          formationsByLearner={formationsByLearner}
         />
       </div>
     </>

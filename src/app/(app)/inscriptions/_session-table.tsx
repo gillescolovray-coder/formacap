@@ -22,6 +22,11 @@ import {
   type DisplayAmountSessionContext,
 } from "@/lib/billing/display-amount";
 import { formatLearnerName } from "@/lib/learners/format";
+import {
+  FormationsTooltip,
+  type FormationEntry,
+} from "@/app/(app)/entreprises/_formations-tooltip";
+import { LearnerPortalButtons } from "@/app/(app)/entreprises/_learner-portal-buttons";
 
 type SessionForCard = {
   formation: { public_price_excl_tax: number | null } | null;
@@ -53,6 +58,8 @@ export function SessionInscriptionsTable({
   stageEventsByInscription,
   nbJours,
   returnTo,
+  showPortalColumn,
+  formationsByLearner,
 }: {
   session: SessionForCard;
   /** ID de la session courante — sert a generer le lien "Ouvrir →"
@@ -73,6 +80,13 @@ export function SessionInscriptionsTable({
    *  /sessions/[sessionId]/participants apres action.
    *  Gilles 2026-06-01. */
   returnTo?: string;
+  /** Affiche une colonne "Portail apprenant" (compteur formations +
+   *  accès portail + envoi du lien par email) entre le nom et
+   *  l'entreprise. Activée uniquement sur l'onglet Participants d'une
+   *  session (Gilles 2026-06-04). */
+  showPortalColumn?: boolean;
+  /** Formations par learner_id (pour le compteur de la colonne portail). */
+  formationsByLearner?: Map<string, FormationEntry[]>;
 }) {
   // Conf des colonnes : partagée globalement via le context (le bouton
   // de personnalisation est désormais en haut de la page Inscriptions,
@@ -164,6 +178,11 @@ export function SessionInscriptionsTable({
         <thead className="bg-slate-50 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-500">
           <tr>
             {v.demandeur && <th className="px-2 py-2 w-[15%]">Demandeur</th>}
+            {showPortalColumn && (
+              <th className="px-2 py-2 w-[10%] leading-tight">
+                Portail apprenant
+              </th>
+            )}
             {v.entreprise && (
               <th className="px-2 py-2 w-[20%]">Entreprise</th>
             )}
@@ -315,6 +334,44 @@ export function SessionInscriptionsTable({
                     })()}
                   </td>
                 )}
+                {showPortalColumn &&
+                  (() => {
+                    const learnerId =
+                      (r as unknown as { learner_id?: string | null })
+                        .learner_id ?? null;
+                    const portalEmail =
+                      r.prospect_email ?? joined.learner?.email ?? null;
+                    const learnerFormations = learnerId
+                      ? (formationsByLearner?.get(learnerId) ?? [])
+                      : [];
+                    return (
+                      <td className="px-2 py-2 align-top">
+                        {learnerId ? (
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {learnerFormations.length > 0 && (
+                              <FormationsTooltip
+                                variant="learner"
+                                count={learnerFormations.length}
+                                entries={learnerFormations}
+                                headerLabel={fullName}
+                              />
+                            )}
+                            <LearnerPortalButtons
+                              learnerId={learnerId}
+                              hasEmail={Boolean(portalEmail)}
+                            />
+                          </div>
+                        ) : (
+                          <span
+                            className="text-slate-300 text-xs"
+                            title="Aucune fiche apprenant liée (prospect)"
+                          >
+                            —
+                          </span>
+                        )}
+                      </td>
+                    );
+                  })()}
                 {v.entreprise && (
                   <td className="px-2 py-2 text-xs align-top">
                     {companyName ? (
@@ -695,6 +752,7 @@ export function SessionInscriptionsTable({
                 className="px-2 py-2 text-right uppercase tracking-wider text-slate-600"
                 colSpan={
                   (v.demandeur ? 1 : 0) +
+                  (showPortalColumn ? 1 : 0) +
                   (v.entreprise ? 1 : 0) +
                   (v.source ? 1 : 0) +
                   (v.canal_inscription ? 1 : 0) +
