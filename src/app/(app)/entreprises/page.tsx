@@ -15,6 +15,10 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { CompanyRow } from "./_company-row";
 import { LearnerPortalButtons } from "./_learner-portal-buttons";
+import {
+  FormationsTooltip,
+  type FormationEntry,
+} from "./_formations-tooltip";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -271,6 +275,8 @@ export default async function CompaniesListPage({
     role?: string;
     service?: string | null;
     is_primary?: boolean;
+    /** Formations engagées par cet apprenant (info-bulle 📚). */
+    formations?: FormationEntry[];
   };
   const peopleByCompany = new Map<string, Person[]>();
 
@@ -381,35 +387,111 @@ export default async function CompaniesListPage({
     }
   }
 
-  // Comptage des formations engagées par entreprise (= nombre
-  // d'enrollments de session non annulés, agrégés via les apprenants).
+  // Formations engagées par entreprise ET par apprenant (1 seule requête).
+  // Sert au compteur + aux info-bulles 📚 (détail date/durée/formateur,
+  // recommandation NPS à chaud). Agrégé via les apprenants.
   const formationCountByCompany = new Map<string, number>();
+  const formationsByCompany = new Map<string, FormationEntry[]>();
+  const formationsByLearner = new Map<string, FormationEntry[]>();
   if (companyIds.length > 0) {
     // Récupère tous les apprenants de toutes les entreprises affichées
     const { data: allLearners } = await supabase
       .from("learners")
-      .select("id, company_id")
+      .select("id, company_id, first_name, last_name")
       .in("company_id", companyIds);
-    const learnerToCompany = new Map<string, string>();
+    const learnerMeta = new Map<
+      string,
+      { companyId: string; name: string }
+    >();
     (allLearners ?? []).forEach((l) => {
-      learnerToCompany.set(l.id as string, l.company_id as string);
+      learnerMeta.set(l.id as string, {
+        companyId: l.company_id as string,
+        name: `${l.first_name ?? ""} ${l.last_name ?? ""}`.trim() || "—",
+      });
     });
-    const allLearnerIds = Array.from(learnerToCompany.keys());
+    const allLearnerIds = Array.from(learnerMeta.keys());
     if (allLearnerIds.length > 0) {
       const { data: enrollments } = await supabase
         .from("session_enrollments")
-        .select("learner_id")
+        .select(
+          "id, learner_id, session:sessions(start_date, end_date, trainer:trainers!trainer_id(first_name, last_name), formation:formations(title, duration_hours)), evaluation_responses(nps_score, evaluation_type)",
+        )
         .in("learner_id", allLearnerIds)
         .neq("status", "cancelled");
-      (enrollments ?? []).forEach((e) => {
-        const cid = learnerToCompany.get(e.learner_id as string);
-        if (cid) {
-          formationCountByCompany.set(
-            cid,
-            (formationCountByCompany.get(cid) ?? 0) + 1,
-          );
-        }
+
+      type Raw = {
+        id: string;
+        learner_id: string;
+        session: unknown;
+        evaluation_responses:
+          | Array<{ nps_score: number | null; evaluation_type: string }>
+          | null;
+      };
+
+      const pick = <T,>(v: unknown): T | null =>
+        (Array.isArray(v) ? (v[0] ?? null) : (v ?? null)) as T | null;
+
+      (enrollments ?? []).forEach((row) => {
+        const e = row as unknown as Raw;
+        const meta = learnerMeta.get(e.learner_id);
+        if (!meta) return;
+        const s = pick<{
+          start_date: string | null;
+          end_date: string | null;
+          trainer: unknown;
+          formation: unknown;
+        }>(e.session);
+        const trainer = pick<{
+          first_name: string | null;
+          last_name: string | null;
+        }>(s?.trainer);
+        const formation = pick<{
+          title: string | null;
+          duration_hours: number | null;
+        }>(s?.formation);
+        const hot = (e.evaluation_responses ?? []).find(
+          (r) => r.evaluation_type === "hot",
+        );
+        const entry: FormationEntry = {
+          enrollmentId: e.id,
+          startDate: s?.start_date ?? null,
+          endDate: s?.end_date ?? null,
+          durationHours: formation?.duration_hours ?? null,
+          title: formation?.title ?? null,
+          trainerName: trainer
+            ? `${trainer.first_name ?? ""} ${trainer.last_name ?? ""}`.trim() ||
+              null
+            : null,
+          learnerName: meta.name,
+          npsScore: hot?.nps_score ?? null,
+        };
+
+        if (!formationsByCompany.has(meta.companyId))
+          formationsByCompany.set(meta.companyId, []);
+        formationsByCompany.get(meta.companyId)!.push(entry);
+        if (!formationsByLearner.has(e.learner_id))
+          formationsByLearner.set(e.learner_id, []);
+        formationsByLearner.get(e.learner_id)!.push(entry);
+        formationCountByCompany.set(
+          meta.companyId,
+          (formationCountByCompany.get(meta.companyId) ?? 0) + 1,
+        );
       });
+
+      // Tri par date de début décroissante (plus récente en haut).
+      const byDateDesc = (a: FormationEntry, b: FormationEntry) =>
+        (b.startDate ?? "").localeCompare(a.startDate ?? "");
+      for (const list of formationsByCompany.values()) list.sort(byDateDesc);
+      for (const list of formationsByLearner.values()) list.sort(byDateDesc);
+    }
+  }
+
+  // Rattache la liste des formations à chaque apprenant (info-bulle 📚).
+  for (const people of peopleByCompany.values()) {
+    for (const p of people) {
+      if (p.is_learner && p.learner_id) {
+        p.formations = formationsByLearner.get(p.learner_id) ?? [];
+      }
     }
   }
 
@@ -1151,14 +1233,23 @@ export default async function CompaniesListPage({
                                 ) : null}
                               </p>
                             </div>
-                            {/* Boutons portail apprenant — visibles
-                                uniquement sur les apprenants
-                                (Gilles 2026-06-04). */}
+                            {/* Compteur formations + boutons portail —
+                                visibles uniquement sur les apprenants. */}
                             {p.is_learner && p.learner_id && (
-                              <LearnerPortalButtons
-                                learnerId={p.learner_id}
-                                hasEmail={Boolean(p.email)}
-                              />
+                              <div className="flex items-center gap-2 shrink-0">
+                                {p.formations && p.formations.length > 0 && (
+                                  <FormationsTooltip
+                                    variant="learner"
+                                    count={p.formations.length}
+                                    entries={p.formations}
+                                    headerLabel={`${p.first_name ?? ""} ${p.last_name}`.trim()}
+                                  />
+                                )}
+                                <LearnerPortalButtons
+                                  learnerId={p.learner_id}
+                                  hasEmail={Boolean(p.email)}
+                                />
+                              </div>
                             )}
                           </li>
                         );
@@ -1197,6 +1288,9 @@ export default async function CompaniesListPage({
                         learnerCount={learnerCountByCompany.get(c.id) ?? 0}
                         formationCount={
                           formationCountByCompany.get(c.id) ?? 0
+                        }
+                        companyFormations={
+                          formationsByCompany.get(c.id) ?? []
                         }
                         parentName={parentName}
                         parentId={c.parent_company_id ?? null}

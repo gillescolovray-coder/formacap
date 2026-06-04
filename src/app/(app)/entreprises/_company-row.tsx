@@ -2,10 +2,13 @@
 
 import { Fragment, useState } from "react";
 import { LearnerPortalButtons } from "./_learner-portal-buttons";
+import {
+  FormationsTooltip,
+  type FormationEntry,
+} from "./_formations-tooltip";
 import Link from "next/link";
 import {
   Building2,
-  Calendar,
   ChevronRight,
   Eye,
   Handshake,
@@ -49,6 +52,8 @@ type Person = {
   role?: string;
   service?: string | null;
   is_primary?: boolean;
+  /** Formations engagées par cet apprenant (info-bulle 📚). */
+  formations?: FormationEntry[];
 };
 
 type Props = {
@@ -58,6 +63,8 @@ type Props = {
   learnerCount: number;
   /** Nombre de formations engagées (session_enrollments non annulés). */
   formationCount: number;
+  /** Détail des formations de l'entreprise (info-bulle du compteur). */
+  companyFormations?: FormationEntry[];
   /** Nom de la société mère (NULL si l'entreprise n'a pas de parent).
    *  Affiché dans la colonne dédiée du tableau. */
   parentName?: string | null;
@@ -84,6 +91,7 @@ export function CompanyRow({
   contactCount,
   learnerCount,
   formationCount,
+  companyFormations = [],
   parentName = null,
   parentId = null,
   defaultExpanded = false,
@@ -284,15 +292,17 @@ export function CompanyRow({
             )}
           </span>
         </td>
-        <td className="px-4 py-3 text-center tabular-nums">
+        <td
+          className="px-4 py-3 text-center tabular-nums"
+          onClick={(e) => e.stopPropagation()}
+        >
           {formationCount > 0 ? (
-            <span
-              title={`${formationCount} formation${formationCount > 1 ? "s" : ""} engagée${formationCount > 1 ? "s" : ""} par cette entreprise`}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-violet-100 text-violet-800 border border-violet-200 text-sm font-bold"
-            >
-              <Calendar className="h-3.5 w-3.5" />
-              {formationCount}
-            </span>
+            <FormationsTooltip
+              variant="company"
+              count={formationCount}
+              entries={companyFormations}
+              headerLabel={c.name}
+            />
           ) : (
             <span className="text-zinc-300 text-sm">—</span>
           )}
@@ -423,13 +433,23 @@ export function CompanyRow({
                         ) : null}
                       </p>
                     </div>
-                    {/* Boutons portail apprenant — visibles uniquement
-                        sur les apprenants (Gilles 2026-06-04). */}
+                    {/* Compteur formations + boutons portail — visibles
+                        uniquement sur les apprenants. */}
                     {p.is_learner && p.learner_id && (
-                      <LearnerPortalButtons
-                        learnerId={p.learner_id}
-                        hasEmail={Boolean(p.email)}
-                      />
+                      <div className="flex items-center gap-2 shrink-0">
+                        {p.formations && p.formations.length > 0 && (
+                          <FormationsTooltip
+                            variant="learner"
+                            count={p.formations.length}
+                            entries={p.formations}
+                            headerLabel={`${p.first_name ?? ""} ${p.last_name}`.trim()}
+                          />
+                        )}
+                        <LearnerPortalButtons
+                          learnerId={p.learner_id}
+                          hasEmail={Boolean(p.email)}
+                        />
+                      </div>
                     )}
                   </li>
                 );
