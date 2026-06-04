@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/page-header";
 import { BackButton } from "@/components/back-button";
 import { BlueprintEditor } from "../_blueprint-editor";
+import { ImportBlueprint } from "../_import-blueprint";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +36,17 @@ export default async function NewProgrammePage() {
         ]}
         actions={<BackButton fallbackHref="/programmes" />}
       />
-      <div className="p-4 sm:p-8 max-w-4xl">
+      <div className="p-4 sm:p-8 max-w-4xl space-y-5">
+        <ImportBlueprint />
+
+        <div className="flex items-center gap-3">
+          <div className="h-px flex-1 bg-zinc-200" />
+          <span className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+            ou partez de zéro
+          </span>
+          <div className="h-px flex-1 bg-zinc-200" />
+        </div>
+
         <BlueprintEditor initial={{}} canEdit />
       </div>
     </>

@@ -22,6 +22,8 @@ export type BloomGenerationInput = {
   targetAudience?: string | null;
   durationHours?: number | null;
   generalObjective?: string | null;
+  /** Objectifs existants à RÉADAPTER (cas import d'un programme PDF). */
+  existingObjectives?: string[] | null;
 };
 
 const LEVELS_DESC = BLOOM_LEVELS.map(
@@ -29,9 +31,16 @@ const LEVELS_DESC = BLOOM_LEVELS.map(
 ).join("\n");
 
 function buildPrompt(input: BloomGenerationInput): string {
+  const existing =
+    input.existingObjectives && input.existingObjectives.length > 0
+      ? `\n\nObjectifs ACTUELS du programme (à RÉADAPTER pour les rendre mesurables et conformes Bloom — conserve l'intention, reformule, fusionne/scinde si besoin) :\n${input.existingObjectives
+          .map((o) => `- ${o}`)
+          .join("\n")}`
+      : "";
+
   return `Tu es un ingénieur pédagogique expert en formation professionnelle continue (France) et en taxonomie de Bloom.
 
-À partir des informations d'une formation, génère des OBJECTIFS OPÉRATIONNELS mesurables, formulés du point de vue de l'apprenant ("À l'issue, l'apprenant sera capable de ...").
+À partir des informations d'une formation${existing ? " et de ses objectifs actuels" : ""}, ${existing ? "RÉADAPTE-les en" : "génère des"} OBJECTIFS OPÉRATIONNELS mesurables, formulés du point de vue de l'apprenant ("À l'issue, l'apprenant sera capable de ...").${existing}
 
 Règles :
 - Chaque objectif commence par un VERBE D'ACTION à l'infinitif, observable et évaluable.
