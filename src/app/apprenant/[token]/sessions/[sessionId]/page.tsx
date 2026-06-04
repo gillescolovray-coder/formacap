@@ -6,7 +6,9 @@ import {
   Calendar,
   CheckCircle2,
   Clock,
+  Download,
   FileText,
+  FolderOpen,
   Globe,
   GraduationCap,
   Hash,
@@ -33,6 +35,13 @@ function formatDate(s: string | null): string {
 function formatTime(s: string | null): string {
   if (!s) return "—";
   return s.slice(0, 5);
+}
+
+function formatSize(bytes: number | null): string {
+  if (!bytes) return "—";
+  if (bytes < 1024) return `${bytes} o`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} Ko`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`;
 }
 
 export default async function LearnerSessionDetailPage({
@@ -133,6 +142,43 @@ export default async function LearnerSessionDetailPage({
     afternoon_start: string | null;
     afternoon_end: string | null;
   }>;
+
+  // Documents partagés par le formateur / CAP pour cette session
+  // (visibility = 'shared_with_learners' + le programme officiel).
+  // Même règle que le portail mon-parcours. URLs signées TTL 1h.
+  const { data: sharedDocsRaw } = await supabase
+    .from("session_documents")
+    .select(
+      "id, file_name, mime_type, size_bytes, description, uploaded_at, storage_path, is_training_program, visibility",
+    )
+    .eq("session_id", sessionId)
+    .or("visibility.eq.shared_with_learners,is_training_program.eq.true")
+    .order("uploaded_at", { ascending: false });
+
+  const sharedDocs = (sharedDocsRaw ?? []) as Array<{
+    id: string;
+    file_name: string;
+    mime_type: string | null;
+    size_bytes: number | null;
+    description: string | null;
+    uploaded_at: string;
+    storage_path: string;
+    is_training_program: boolean;
+    visibility: string;
+  }>;
+  sharedDocs.sort((a, b) => {
+    if (a.is_training_program && !b.is_training_program) return -1;
+    if (!a.is_training_program && b.is_training_program) return 1;
+    return b.uploaded_at.localeCompare(a.uploaded_at);
+  });
+  const sharedDocsWithUrls = await Promise.all(
+    sharedDocs.map(async (doc) => {
+      const { data: signed } = await supabase.storage
+        .from("session-documents")
+        .createSignedUrl(doc.storage_path, 3600);
+      return { ...doc, downloadUrl: signed?.signedUrl ?? null };
+    }),
+  );
 
   const today = new Date().toISOString().slice(0, 10);
   const isPast = sess.end_date && sess.end_date < today;
@@ -349,6 +395,89 @@ export default async function LearnerSessionDetailPage({
           </table>
         </div>
       )}
+
+      {/* Documents partagés par le formateur / CAP pour cette session */}
+      <div className="rounded-2xl bg-white border border-zinc-200 overflow-hidden">
+        <h2 className="px-4 py-2 border-b border-zinc-200 bg-zinc-50 text-sm font-bold text-zinc-700 inline-flex items-center gap-1.5">
+          <FolderOpen className="h-4 w-4 text-indigo-600" />
+          Documents partagés
+        </h2>
+        {sharedDocsWithUrls.length === 0 ? (
+          <div className="px-4 py-6 text-center">
+            <FolderOpen className="h-8 w-8 text-zinc-300 mx-auto mb-2" />
+            <p className="text-sm font-medium text-zinc-600">
+              Aucun document partagé pour le moment.
+            </p>
+            <p className="text-xs text-zinc-400 mt-1">
+              Votre formateur déposera les supports ici pendant la formation.
+            </p>
+          </div>
+        ) : (
+          <ul className="divide-y divide-zinc-100">
+            {sharedDocsWithUrls.map((doc) => (
+              <li key={doc.id} className="p-3 sm:p-4">
+                <div className="flex items-start gap-3">
+                  <div
+                    className={
+                      doc.is_training_program
+                        ? "shrink-0 h-10 w-10 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center"
+                        : "shrink-0 h-10 w-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center"
+                    }
+                  >
+                    <FileText className="h-5 w-5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium text-sm text-zinc-900 break-all">
+                        {doc.file_name}
+                      </span>
+                      {doc.is_training_program && (
+                        <span className="text-[10px] uppercase tracking-wider font-bold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded-full">
+                          📋 Programme officiel
+                        </span>
+                      )}
+                    </div>
+                    {doc.description && (
+                      <p className="text-xs text-zinc-600 mt-0.5">
+                        {doc.description}
+                      </p>
+                    )}
+                    <div className="text-[11px] text-zinc-400 mt-1 flex flex-wrap gap-x-3">
+                      {doc.size_bytes !== null && (
+                        <span>{formatSize(doc.size_bytes)}</span>
+                      )}
+                      <span>
+                        Ajouté le{" "}
+                        {new Date(doc.uploaded_at).toLocaleDateString("fr-FR")}
+                      </span>
+                    </div>
+                  </div>
+                  {doc.downloadUrl ? (
+                    <a
+                      href={doc.downloadUrl}
+                      download={doc.file_name}
+                      className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold min-h-[36px]"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">Télécharger</span>
+                    </a>
+                  ) : (
+                    <span className="text-xs text-zinc-400 italic shrink-0">
+                      Indisponible
+                    </span>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        {sharedDocsWithUrls.length > 0 && (
+          <p className="px-4 py-2 text-[11px] text-zinc-400 border-t border-zinc-100">
+            Les liens de téléchargement sont valables 1 heure. Rafraîchissez la
+            page si un lien ne fonctionne plus.
+          </p>
+        )}
+      </div>
 
       {/* Documents + quiz : liens vers les autres onglets */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

@@ -97,9 +97,23 @@ export default async function LearnerLayout({
 
       <main className="max-w-6xl mx-auto p-3 sm:p-6">{children}</main>
 
-      <footer className="max-w-6xl mx-auto px-3 sm:px-4 py-4 sm:py-6 text-center text-[10px] sm:text-[11px] text-zinc-500">
-        Espace réservé aux apprenants de {ctx.organization.name}. Pour toute
-        question : {ctx.organization.email ?? "—"}
+      <footer className="max-w-6xl mx-auto px-3 sm:px-4 py-5 sm:py-7 text-center">
+        <p className="text-sm sm:text-base font-semibold text-zinc-700">
+          Espace réservé aux apprenants de {ctx.organization.name}.
+        </p>
+        <p className="text-sm sm:text-base text-zinc-600 mt-1">
+          Pour toute question :{" "}
+          {ctx.organization.email ? (
+            <a
+              href={`mailto:${ctx.organization.email}`}
+              className="font-bold text-cyan-700 hover:underline break-all"
+            >
+              {ctx.organization.email}
+            </a>
+          ) : (
+            "—"
+          )}
+        </p>
       </footer>
     </div>
   );
