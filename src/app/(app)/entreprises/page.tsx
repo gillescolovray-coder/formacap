@@ -296,7 +296,9 @@ export default async function CompaniesListPage({
           "id, company_id, first_name, last_name, job_title, email, phone, mobile, is_active",
         )
         .in("company_id", companyIds)
-        .eq("is_active", true)
+        // Pas de filtre is_active : on veut TOUS les apprenants rattachés
+        // (certains sont créés inactifs via la saisie express, mais ils
+        // participent bien aux sessions — ils doivent apparaître).
         .order("last_name", { ascending: true }),
     ]);
 
@@ -350,18 +352,23 @@ export default async function CompaniesListPage({
         indexByCompany.set(l.company_id, new Map());
       const k = personKey(l);
       const existing = indexByCompany.get(l.company_id)!.get(k);
-      if (existing) {
-        // Fusion : déjà un contact, on ajoute le rôle apprenant
+      if (existing && !existing.is_learner) {
+        // Fusion contact + apprenant : MÊME personne (un contact existant
+        // qui est aussi apprenant). On ajoute le rôle apprenant.
         existing.is_learner = true;
         existing.learner_id = l.id;
-        // On comble les champs vides depuis l'apprenant
         existing.email = existing.email ?? l.email;
         existing.phone = existing.phone ?? l.phone;
         existing.mobile = existing.mobile ?? l.mobile;
         existing.job_title = existing.job_title ?? l.job_title;
       } else {
-        indexByCompany.get(l.company_id)!.set(k, {
-          key: k,
+        // Soit un nouvel apprenant, soit DEUX apprenants distincts qui
+        // partagent le même email (ex. email entreprise commun). Dans ce
+        // dernier cas on NE fusionne PAS : chacun garde sa fiche (clé
+        // unique par learner.id) avec son propre accès portail + compteur.
+        const key = existing ? `${k}#${l.id}` : k;
+        indexByCompany.get(l.company_id)!.set(key, {
+          key,
           company_id: l.company_id,
           first_name: l.first_name,
           last_name: l.last_name,
