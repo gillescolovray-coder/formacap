@@ -185,7 +185,7 @@ export default async function FormateurSessionDetailPage({
   const { data: enrollments } = await supabase
     .from("session_enrollments")
     .select(
-      "id, learner:learners(id, civility, first_name, last_name, email, job_title, is_temporary, company_name_temp, company_siret_temp, company:companies(name))",
+      "id, learner:learners(id, civility, first_name, last_name, email, phone, mobile, job_title, is_temporary, company_name_temp, company_siret_temp, company:companies(name))",
     )
     .eq("session_id", sessionId);
 
@@ -197,6 +197,8 @@ export default async function FormateurSessionDetailPage({
       first_name: string | null;
       last_name: string | null;
       email: string | null;
+      phone: string | null;
+      mobile: string | null;
       job_title: string | null;
       is_temporary: boolean | null;
       company_name_temp: string | null;
@@ -211,6 +213,7 @@ export default async function FormateurSessionDetailPage({
       .join(" "),
     civility: e.learner?.civility ?? "",
     email: e.learner?.email ?? null,
+    phone: e.learner?.mobile ?? e.learner?.phone ?? null,
     jobTitle: e.learner?.job_title ?? null,
     isTemporary: e.learner?.is_temporary === true,
     // Société : fiche entreprise officielle OU texte libre temporaire
@@ -954,6 +957,17 @@ export default async function FormateurSessionDetailPage({
                         className="text-[11px] text-cyan-700 hover:underline truncate block"
                       >
                         {p.email}
+                      </a>
+                    )}
+                    {/* Téléphone : affiché UNIQUEMENT pour les sessions en
+                        distanciel (le formateur peut avoir besoin d'appeler
+                        un apprenant absent de la visio). Gilles 2026-06-05. */}
+                    {session.modality === "distanciel" && p.phone && (
+                      <a
+                        href={`tel:${p.phone}`}
+                        className="text-[11px] font-semibold text-zinc-700 hover:text-cyan-700 tabular-nums block"
+                      >
+                        ☎ {p.phone}
                       </a>
                     )}
                   </div>
