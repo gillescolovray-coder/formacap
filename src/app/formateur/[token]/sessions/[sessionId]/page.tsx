@@ -225,7 +225,7 @@ export default async function FormateurSessionDetailPage({
   const { data: convocationLogs } =
     enrollmentIds.length > 0
       ? await supabase
-          .from("email_logs")
+          .from("email_log")
           .select("enrollment_id, sent_at, status, to_email")
           .in("enrollment_id", enrollmentIds)
           .eq("type", "convocation")
