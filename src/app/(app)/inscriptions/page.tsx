@@ -26,6 +26,10 @@ import { SessionInscriptionsTable } from "./_session-table";
 import { TrainerPopover } from "./_trainer-popover";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import {
+  loadAndComputeBillingForInscription,
+  persistComputedBilling,
+} from "@/lib/billing/compute-billing";
 import { cleanupUserEmptyDrafts } from "@/lib/inscriptions/cleanup";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -354,37 +358,75 @@ export default async function InscriptionsListPage({
     list.sort(sortByName);
   }
 
-  // Sessions affichées :
-  //   - Toujours : celles qui ont au moins 1 demande (peu importe la date)
-  //   - Toujours : les sessions à venir (start_date >= aujourd'hui), même
-  //     vides — pour permettre d'y inscrire un apprenant
-  //   - Exclues : les sessions passées sans aucune demande (inutiles).
-  // Tri : échéance la plus proche d'aujourd'hui en premier.
-  const todayMs = Date.now();
+  // Sessions affichées (objectif du module = inscrire / confirmer / annuler /
+  // reporter rapidement les sessions à venir) :
+  //   - Affichées : sessions à venir OU en cours (end_date >= aujourd'hui),
+  //     planifiées et confirmées, même vides — pour y inscrire un apprenant.
+  //   - Exclues : sessions TERMINÉES (end_date passée) — plus aucune action
+  //     d'inscription à mener ; leur fiche reste accessible via /sessions/{id}.
+  //   - Exclues : sessions archivées.
+  // Tri : strictement CHRONOLOGIQUE croissant -> la prochaine session à venir
+  // en premier, puis on s'éloigne dans le temps en descendant.
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
   const todayStartMs = todayStart.getTime();
+
+  // Réalignement AUTO des montants au prix actuel de la session
+  // (Gilles 2026-06-05 — bug récurrent type "Elodie 640 € au lieu de 680 €").
+  // À l'ouverture du module, on recalcule la facturation des inscriptions des
+  // sessions à venir/en cours affichées ici, via la logique canonique
+  // (loadAndComputeBillingForInscription). persistComputedBilling RESPECTE les
+  // montants saisis manuellement (billing_manually_overridden). Best-effort +
+  // patch en mémoire pour que le bon montant s'affiche dès ce rendu.
+  try {
+    // On cible les objets RÉELLEMENT affichés (ceux de bySession), car
+    // allRequests.map() a recopié baseRequests : patcher baseRequests ne
+    // suffirait pas pour ce rendu.
+    const toHeal: InscriptionRequest[] = [];
+    for (const s of sessionsArr) {
+      if (s.status === "archived") continue;
+      if (new Date(s.end_date).getTime() < todayStartMs) continue;
+      for (const r of bySession.get(s.id) ?? []) {
+        if (!r.billing_manually_overridden) toHeal.push(r);
+      }
+    }
+    await Promise.all(
+      toHeal.map(async (r) => {
+        try {
+          const billing = await loadAndComputeBillingForInscription(
+            supabase,
+            r.id,
+          );
+          if (billing && typeof billing.totalHt === "number") {
+            const current =
+              r.billing_total_ht == null ? null : Number(r.billing_total_ht);
+            if (current !== billing.totalHt) {
+              await persistComputedBilling(supabase, r.id, billing);
+              // patch en mémoire (les objets de bySession référencent ceux-ci)
+              r.billing_total_ht = billing.totalHt;
+            }
+          }
+        } catch {
+          // best-effort par inscription : ne bloque jamais l'affichage
+        }
+      }),
+    );
+  } catch {
+    // best-effort global
+  }
+
   const sessionEntriesWithRequests = sessionsArr
     .filter((s) => {
-      // Sessions archivées : toujours masquées du tableau d'inscriptions.
-      // La fiche reste accessible via /sessions/{id} pour rééditer un
-      // document a posteriori.
       if (s.status === "archived") return false;
-      const hasRequests = (bySession.get(s.id)?.length ?? 0) > 0;
-      // « Encore active » : la dernière date de la session (end_date)
-      // est aujourd'hui ou dans le futur. Cela couvre les sessions
-      // étalées sur plusieurs jours non consécutifs (04/05 → 21/05) :
-      // on continue de pouvoir y inscrire un apprenant tant que la
-      // session n'est pas totalement passée.
-      const stillActive =
-        new Date(s.end_date).getTime() >= todayStartMs;
-      return hasRequests || stillActive;
+      // « Encore active » : la dernière date de la session (end_date) est
+      // aujourd'hui ou dans le futur (couvre les sessions étalées sur
+      // plusieurs jours non consécutifs).
+      return new Date(s.end_date).getTime() >= todayStartMs;
     })
-    .sort((a, b) => {
-      const distA = Math.abs(new Date(a.start_date).getTime() - todayMs);
-      const distB = Math.abs(new Date(b.start_date).getTime() - todayMs);
-      return distA - distB;
-    });
+    .sort(
+      (a, b) =>
+        new Date(a.start_date).getTime() - new Date(b.start_date).getTime(),
+    );
   const orphanRequests = bySession.get("none") ?? [];
 
   // Pour le kanban
