@@ -55,7 +55,15 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const pathname = request.nextUrl.pathname;
-  const isPublic = PUBLIC_PATHS.some((p) => pathname.startsWith(p));
+  // Convocation imprimable servie en mode public via le token portail de
+  // l'inscription (?token=) : lien envoyé par email (apprenant/RH) OU
+  // visualisation depuis le portail formateur. La page valide elle-même
+  // le token contre l'enrollment. Gilles 2026-06-05.
+  const isPublicConvocation =
+    /^\/sessions\/[^/]+\/convocations\/[^/]+\/print\/?$/.test(pathname) &&
+    request.nextUrl.searchParams.has("token");
+  const isPublic =
+    isPublicConvocation || PUBLIC_PATHS.some((p) => pathname.startsWith(p));
 
   if (!user && !isPublic && pathname !== "/") {
     const url = request.nextUrl.clone();

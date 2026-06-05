@@ -1461,6 +1461,35 @@ export async function getLearnerPortalLinkFromPortal(
 }
 
 /**
+ * Renvoie l'URL de VISUALISATION de la convocation d'un apprenant depuis
+ * le portail formateur (Gilles 2026-06-05 : icône œil sur la liste des
+ * participants). La page convocation est servie en mode public via le
+ * token portail de l'inscription (?token=), validé côté page contre
+ * l'enrollment. Le middleware autorise ce chemin quand ?token= est présent.
+ */
+export async function getConvocationLinkFromPortal(
+  token: string,
+  sessionId: string,
+  enrollmentId: string,
+): Promise<{ url: string } | { error: string }> {
+  const supabase = createAdminClient();
+  const ctx = await validateEnrollmentForTrainer(
+    supabase,
+    token,
+    sessionId,
+    enrollmentId,
+  );
+  if (!ctx) return { error: "Accès refusé." };
+
+  const portalToken = await ensureEnrollmentPortalToken(supabase, enrollmentId);
+  const base =
+    process.env.NEXT_PUBLIC_APP_URL ?? "https://app.capnumerique.com";
+  return {
+    url: `${base}/sessions/${sessionId}/convocations/${enrollmentId}/print?token=${portalToken}`,
+  };
+}
+
+/**
  * Supprime une tentative de quiz (pré ou post) d'un apprenant depuis
  * le portail formateur. Sert à "rejouer" un quiz : on supprime la
  * tentative, l'apprenant peut rejouer la phase en allant sur son

@@ -24,6 +24,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { geocodeAddressFR, haversineKm } from "@/lib/geo/geocode";
 import { RefreshButton } from "./_refresh-button";
 import { AutoRefresh } from "./_auto-refresh";
+import { ViewConvocationButton } from "./_view-convocation-button";
 import type { QuizAttempt } from "@/lib/quiz/types";
 import { labelLevel, type LevelValue } from "@/lib/positioning/types";
 import {
@@ -972,6 +973,13 @@ export default async function FormateurSessionDetailPage({
                     )}
                   </div>
                   <div className="flex items-start gap-0.5 shrink-0">
+                    {/* Œil : voir la convocation de l'apprenant (PDF servi
+                        en mode public via le token portail). Gilles 2026-06-05. */}
+                    <ViewConvocationButton
+                      token={token}
+                      sessionId={sessionId}
+                      enrollmentId={p.enrollmentId}
+                    />
                     {/* Lien personnel apprenant (QR + URL) : disponible
                         pour TOUS les apprenants — utile quand le formateur
                         a saisi l'apprenant lui-meme ou qu'un apprenant a
