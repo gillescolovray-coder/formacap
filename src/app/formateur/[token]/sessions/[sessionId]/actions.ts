@@ -38,6 +38,10 @@ const ALLOWED_TYPES = [
   "image/svg+xml",
   "text/plain",
   "text/csv",
+  // Archives ZIP (supports compressés). Le navigateur renvoie un type
+  // variable pour les .zip -> on tolère aussi via l'extension ci-dessous.
+  "application/zip",
+  "application/x-zip-compressed",
 ];
 
 function sanitizeFileName(name: string): string {
@@ -125,9 +129,13 @@ export async function uploadSupportAsTrainer(
       `/formateur/${token}/sessions/${sessionId}?error=${encodeURIComponent("Fichier trop volumineux (max 10 Mo)")}`,
     );
   }
-  if (!ALLOWED_TYPES.includes(file.type)) {
+  // ZIP : le type MIME renvoyé par le navigateur est incohérent
+  // (application/zip, x-zip-compressed, voire octet-stream/vide) → on
+  // accepte aussi sur l'extension .zip. Gilles 2026-06-05.
+  const isZipByName = file.name.toLowerCase().endsWith(".zip");
+  if (!ALLOWED_TYPES.includes(file.type) && !isZipByName) {
     redirect(
-      `/formateur/${token}/sessions/${sessionId}?error=${encodeURIComponent("Format non supporté (PDF, Word, Excel, image…)")}`,
+      `/formateur/${token}/sessions/${sessionId}?error=${encodeURIComponent("Format non supporté (PDF, Word, Excel, image, ZIP…)")}`,
     );
   }
 

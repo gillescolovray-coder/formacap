@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, Upload } from "lucide-react";
 import { useFormStatus } from "react-dom";
 
 type Props = {
@@ -31,6 +31,9 @@ type Props = {
  */
 export function UploadSupportForm({ action }: Props) {
   const formRef = useRef<HTMLFormElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
   // useState lazy : crypto.randomUUID() est appele une SEULE fois a
   // l'ouverture du composant. Re-renders n'invalident pas l'UUID.
   const [requestId, setRequestId] = useState<string>(() =>
@@ -49,6 +52,7 @@ export function UploadSupportForm({ action }: Props) {
         // securite : reset du form et nouvelle cle d'idempotence pour
         // qu'un upload suivant soit traite comme distinct.
         formRef.current?.reset();
+        setFileName(null);
         setRequestId(
           typeof crypto !== "undefined" && "randomUUID" in crypto
             ? crypto.randomUUID()
@@ -64,12 +68,55 @@ export function UploadSupportForm({ action }: Props) {
       <label className="text-xs font-medium text-zinc-700 block">
         Ajouter un support (partagé automatiquement avec les apprenants)
       </label>
+
+      {/* Zone glisser-déposer + clic pour choisir (Gilles 2026-06-05). */}
+      <div
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragging(false);
+          const dropped = e.dataTransfer.files?.[0];
+          if (!dropped || !fileInputRef.current) return;
+          const dt = new DataTransfer();
+          dt.items.add(dropped);
+          fileInputRef.current.files = dt.files;
+          setFileName(dropped.name);
+        }}
+        onClick={() => fileInputRef.current?.click()}
+        className={
+          "rounded-lg border-2 border-dashed p-3 text-center cursor-pointer transition-colors " +
+          (dragging
+            ? "border-indigo-500 bg-indigo-50"
+            : "border-zinc-300 bg-zinc-50 hover:border-indigo-400 hover:bg-indigo-50/40")
+        }
+      >
+        <Upload className="h-4 w-4 text-indigo-500 mx-auto mb-1" />
+        <p className="text-[11px] text-zinc-600 leading-tight">
+          <span className="font-semibold text-indigo-700">Glissez-déposez</span>{" "}
+          un fichier ici, ou{" "}
+          <span className="underline text-indigo-700">choisissez-en un</span>.
+        </p>
+        <p className="text-[10px] text-zinc-400 mt-0.5">
+          PDF, Word, Excel, PowerPoint, image, ZIP… · 10 Mo max
+        </p>
+        {fileName && (
+          <p className="text-[11px] font-semibold text-emerald-700 mt-1 break-all">
+            ✓ {fileName}
+          </p>
+        )}
+      </div>
       <input
+        ref={fileInputRef}
         type="file"
         name="file"
         required
-        accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.webp,.txt,.csv"
-        className="block w-full text-xs text-zinc-600 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:font-medium file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 cursor-pointer"
+        accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.webp,.txt,.csv,.zip"
+        onChange={(e) => setFileName(e.target.files?.[0]?.name ?? null)}
+        className="hidden"
       />
       <input
         type="text"
