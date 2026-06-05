@@ -21,6 +21,7 @@ import {
   Video,
 } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { geocodeAddressFR, haversineKm } from "@/lib/geo/geocode";
 import type { QuizAttempt } from "@/lib/quiz/types";
 import { labelLevel, type LevelValue } from "@/lib/positioning/types";
 import {
@@ -115,7 +116,7 @@ export default async function FormateurSessionDetailPage({
   const { data: session } = await supabase
     .from("sessions")
     .select(
-      "id, status, start_date, end_date, modality, location, video_link, video_app, trainer_id, quiz_template_id, is_inter, is_subcontracted, subcontractor_name, default_morning_start, default_morning_end, default_afternoon_start, default_afternoon_end, formation:formations(title, quiz_template_id), location_ref:formation_locations!location_id(name, address, postal_code, city), organization:organizations(name, phone, email)",
+      "id, status, start_date, end_date, modality, location, video_link, video_app, trainer_id, quiz_template_id, is_inter, is_subcontracted, subcontractor_name, default_morning_start, default_morning_end, default_afternoon_start, default_afternoon_end, formation:formations(title, quiz_template_id), location_ref:formation_locations!location_id(name, address, postal_code, city, latitude, longitude), organization:organizations(name, phone, email)",
     )
     .eq("id", sessionId)
     .maybeSingle<{
@@ -145,6 +146,8 @@ export default async function FormateurSessionDetailPage({
         address: string | null;
         postal_code: string | null;
         city: string | null;
+        latitude: number | null;
+        longitude: number | null;
       } | null;
       organization: {
         name: string;
@@ -508,15 +511,61 @@ export default async function FormateurSessionDetailPage({
     fullAddress = session.location;
   }
 
-  // Libellé visio (distanciel) : "Distanciel via Zoom" ou "Distanciel"
-  const remoteHeaderLabel = session.video_app
-    ? `Distanciel via ${session.video_app}`
-    : "Distanciel";
+  // Libellé visio (distanciel) : on n'affiche le nom de l'application QUE
+  // si un lien de connexion est réellement disponible (Gilles 2026-06-05).
+  const remoteHeaderLabel =
+    session.video_app && session.video_link
+      ? `Distanciel via ${session.video_app}`
+      : "Distanciel";
 
   // Lien Google Maps pour le présentiel — facilite l'itinéraire
   const mapsUrl = fullAddress
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddress)}`
     : null;
+
+  // Distance KM entre le lieu de formation et l'adresse du formateur.
+  // TEST (Gilles 2026-06-05) : activé uniquement pour Gilles Colovray ;
+  // on étendra aux autres formateurs ensuite.
+  let distanceKm: number | null = null;
+  if (
+    !isRemote &&
+    session.location_ref?.latitude != null &&
+    session.location_ref?.longitude != null &&
+    session.trainer_id
+  ) {
+    const { data: tr } = await supabase
+      .from("trainers")
+      .select(
+        "last_name, email, company_address, company_postal_code, company_city",
+      )
+      .eq("id", session.trainer_id)
+      .maybeSingle<{
+        last_name: string | null;
+        email: string | null;
+        company_address: string | null;
+        company_postal_code: string | null;
+        company_city: string | null;
+      }>();
+    const isGilles =
+      (tr?.last_name ?? "").toLowerCase().includes("colovray") ||
+      (tr?.email ?? "").toLowerCase().includes("colovray");
+    if (tr && isGilles) {
+      const trainerCoords = await geocodeAddressFR(
+        tr.company_address,
+        tr.company_postal_code,
+        tr.company_city,
+      );
+      if (trainerCoords) {
+        distanceKm = haversineKm(
+          {
+            lat: session.location_ref.latitude,
+            lng: session.location_ref.longitude,
+          },
+          trainerCoords,
+        );
+      }
+    }
+  }
 
   // Représentation string utilisée par les liens Google/Outlook + .ics.
   // - distanciel : on privilégie le lien direct (ouvrable depuis l'agenda),
@@ -623,7 +672,12 @@ export default async function FormateurSessionDetailPage({
         {/* En-tête session */}
         <header className="rounded-xl bg-white shadow-sm border border-zinc-200 p-4 space-y-2">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs uppercase tracking-widest text-zinc-500 font-bold">
+            <span
+              className={
+                "inline-block px-2.5 py-0.5 rounded-full text-[11px] uppercase tracking-wider font-bold border " +
+                (STATUS_BADGE[session.status ?? "draft"] ?? STATUS_BADGE.draft)
+              }
+            >
               {STATUS_LABEL[session.status ?? "draft"] ?? "Statut inconnu"}
             </span>
             <AudienceBadge
@@ -639,11 +693,11 @@ export default async function FormateurSessionDetailPage({
             <div className="flex items-start gap-1.5">
               <Calendar className="h-3.5 w-3.5 text-zinc-400 mt-0.5 shrink-0" />
               <div>
-                <div className="font-medium text-zinc-800">
+                <div className="font-bold text-sm text-zinc-900">
                   {formatDateRange(session.start_date, session.end_date)}
                 </div>
                 {scheduleLine && (
-                  <div className="text-[11px] text-zinc-500 tabular-nums">
+                  <div className="text-xs font-bold text-zinc-800 tabular-nums">
                     {scheduleLine}
                   </div>
                 )}
@@ -690,6 +744,11 @@ export default async function FormateurSessionDetailPage({
                       >
                         🗺 Itinéraire Google Maps
                       </a>
+                    )}
+                    {distanceKm != null && (
+                      <div className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-bold text-indigo-700">
+                        📍 ≈ {Math.round(distanceKm)} km de votre adresse
+                      </div>
                     )}
                   </>
                 ) : (
@@ -1520,6 +1579,18 @@ const STATUS_LABEL: Record<string, string> = {
   postponed: "Reportée",
   cancelled: "Annulée",
   archived: "Archivée",
+};
+
+// Pastille colorée par statut (lisibilité d'un coup d'œil).
+const STATUS_BADGE: Record<string, string> = {
+  draft: "bg-zinc-100 text-zinc-700 border-zinc-300",
+  planned: "bg-sky-100 text-sky-800 border-sky-300",
+  confirmed: "bg-emerald-100 text-emerald-800 border-emerald-300",
+  in_progress: "bg-cyan-100 text-cyan-800 border-cyan-300",
+  completed: "bg-zinc-100 text-zinc-600 border-zinc-300",
+  postponed: "bg-amber-100 text-amber-800 border-amber-400",
+  cancelled: "bg-rose-100 text-rose-800 border-rose-300",
+  archived: "bg-zinc-100 text-zinc-500 border-zinc-300",
 };
 
 type ModuleColor = "amber" | "cyan" | "indigo" | "violet";

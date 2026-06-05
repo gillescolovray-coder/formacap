@@ -267,10 +267,10 @@ export function SessionCard({
           <div className="mt-1 space-y-0.5 text-xs text-zinc-600">
             <div className="flex items-center gap-1.5">
               <Clock className="h-3 w-3 text-zinc-400" />
-              <span>
+              <span className="font-bold text-zinc-900">
                 {dateLabel}
                 {scheduleLabel && (
-                  <span className="text-zinc-500"> · {scheduleLabel}</span>
+                  <span className="text-zinc-800"> · {scheduleLabel}</span>
                 )}
               </span>
             </div>
