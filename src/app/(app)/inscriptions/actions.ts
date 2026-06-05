@@ -269,6 +269,18 @@ function buildPayload(formData: FormData) {
       if (ch !== "prescripteur" && ch !== "of") return null;
       return cid;
     })(),
+    // Synchronise referrer_company_id avec la société du canal (OF /
+    // prescripteur). Indispensable : le PORTAIL du partenaire filtre ses
+    // inscriptions sur referrer_company_id. Sans ça, une inscription saisie
+    // par CAP pour un prescripteur n'apparaissait pas sur son portail
+    // (bug Gilles 2026-06-05). Pour le partenaire qui s'inscrit lui-même,
+    // les deux champs sont déjà posés à la même valeur (cf. partenaire/actions).
+    referrer_company_id: ((): string | null => {
+      const ch = parseText(formData.get("inscription_channel"));
+      const cid = parseText(formData.get("inscription_channel_company_id"));
+      if (ch !== "prescripteur" && ch !== "of") return null;
+      return cid;
+    })(),
   };
 }
 
