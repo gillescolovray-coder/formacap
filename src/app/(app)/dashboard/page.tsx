@@ -40,6 +40,7 @@ import {
   type InscriptionOverviewRow,
 } from "./_inscriptions-overview-table";
 import { MonthlyStats, type MonthlyStats as MonthlyStatsType } from "./_monthly-stats";
+import { PortalAccessWidget } from "./_portal-access-widget";
 import { KpiCard } from "./_kpi-card";
 import { TrainerActivityTable } from "./_trainer-activity-table";
 import {
@@ -75,6 +76,18 @@ export default async function DashboardPage() {
     .maybeSingle();
 
   const firstName = profile?.first_name ?? "";
+
+  // Visites du portail apprenant (traçabilité des accès) — RLS scope l'org.
+  // Limité aux 5000 plus récentes (largement suffisant pour le widget).
+  const { data: portalVisitsRaw } = await supabase
+    .from("learner_portal_visits")
+    .select("visited_at, learner_id")
+    .order("visited_at", { ascending: false })
+    .limit(5000);
+  const portalVisits = ((portalVisitsRaw ?? []) as Array<{
+    visited_at: string;
+    learner_id: string;
+  }>).map((v) => ({ at: v.visited_at, learner: v.learner_id }));
 
   const [totalFormations, publishedFormations, drafts, archived] =
     await Promise.all([
@@ -1033,6 +1046,11 @@ export default async function DashboardPage() {
             + tableau récap mois par mois (annee en cours). */}
         <div className="mt-6">
           <MonthlyStats year={currentYear} monthly={monthlyStats} />
+        </div>
+
+        {/* Accès des apprenants à leur espace (traçabilité) */}
+        <div className="mt-6">
+          <PortalAccessWidget visits={portalVisits} />
         </div>
 
         {/* Tableau « Apprenants inscrits par session » : vue d'ensemble

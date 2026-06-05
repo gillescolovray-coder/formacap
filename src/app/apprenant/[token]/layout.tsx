@@ -10,6 +10,8 @@ import {
   User,
 } from "lucide-react";
 import { resolveLearnerContext } from "./_resolve";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { logLearnerVisit } from "@/lib/portal/log-visit";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +30,13 @@ export default async function LearnerLayout({
   const { token } = await params;
   const ctx = await resolveLearnerContext(token);
   if (!ctx) notFound();
+
+  // Traçabilité : enregistre la visite (throttle 30 min). Best-effort.
+  await logLearnerVisit(
+    createAdminClient(),
+    ctx.learner.organization_id,
+    ctx.learner.id,
+  );
 
   const base = `/apprenant/${token}`;
   const fullName =
