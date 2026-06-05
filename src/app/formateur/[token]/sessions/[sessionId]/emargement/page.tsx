@@ -8,6 +8,7 @@ import { trainerHasAccessToSession } from "@/lib/portal/trainer-session-access";
 import { SignaturesDashboard } from "@/app/(app)/sessions/[id]/emargement/_signatures-dashboard";
 import { EmargementTabs } from "./_emargement-tabs";
 import { TrainerSignatureGrid } from "./_trainer-signature-grid";
+import { AutoRefresh } from "../_auto-refresh";
 import { TrainerQrButton } from "./_trainer-qr-button";
 import { TrainerRemoteSignSection } from "./_trainer-remote-sign";
 import { TrainerAttendanceGrid } from "./_trainer-attendance-grid";
@@ -344,6 +345,11 @@ export default async function FormateurEmargementPage({
         <EmargementTabs
           electroniqueContent={
             <div className="space-y-4">
+              {/* Mise à jour auto : les signatures arrivées via le QR
+                  apparaissent dans la grille sans rafraîchir (Gilles 2026-06-05). */}
+              <div className="flex justify-end">
+                <AutoRefresh intervalMs={15000} />
+              </div>
               {/* Bandeau principal : QR code = methode privilegiee.
                   Gilles 2026-05-24 : il faut que le formateur comprenne
                   l'ordre d'utilisation et la solution de repli. */}
@@ -393,32 +399,37 @@ export default async function FormateurEmargementPage({
                 signaturesIndex={signaturesIndex}
               />
 
-              {/* Outils de secours (cachés derrière une case à cocher) :
-                  grille signature au doigt sur PC + envoi lien par email.
-                  Gilles 2026-05-24. */}
-              <SecondaryToolsToggle>
-                {periods.length === 0 ? (
-                  <div className="rounded-xl bg-white border border-zinc-200 p-12 text-center text-sm text-zinc-500">
-                    Aucun jour planifié pour cette session.
-                  </div>
-                ) : learnersForGrid.length === 0 ? (
-                  <div className="rounded-xl bg-white border border-zinc-200 p-12 text-center text-sm text-zinc-500">
-                    Aucun apprenant à émarger électroniquement (les apprenants
-                    OF partenaires sont gérés dans l&apos;onglet{" "}
-                    <strong>Pointage manuel</strong>).
-                  </div>
-                ) : (
-                  <TrainerSignatureGrid
-                    token={token}
-                    sessionId={sessionId}
-                    periods={periods}
-                    learners={learnersForGrid}
-                    initialSignatures={fullSignatures}
-                    trainerDisplayName={trainerName}
-                    modalityShortLabel={modalityShortLabel}
-                  />
-                )}
+              {/* Grille de signatures — VISIBLE PAR DÉFAUT (Gilles 2026-06-05).
+                  Le formateur affiche le QR et voit ici, en direct, qui a
+                  signé. La `key` basée sur le nb de signatures force la grille
+                  à se rafraîchir quand l'auto-refresh recharge les données. */}
+              {periods.length === 0 ? (
+                <div className="rounded-xl bg-white border border-zinc-200 p-12 text-center text-sm text-zinc-500">
+                  Aucun jour planifié pour cette session.
+                </div>
+              ) : learnersForGrid.length === 0 ? (
+                <div className="rounded-xl bg-white border border-zinc-200 p-12 text-center text-sm text-zinc-500">
+                  Aucun apprenant à émarger électroniquement (les apprenants
+                  OF partenaires sont gérés dans l&apos;onglet{" "}
+                  <strong>Pointage manuel</strong>).
+                </div>
+              ) : (
+                <TrainerSignatureGrid
+                  key={`grid-${fullSignatures.length}`}
+                  token={token}
+                  sessionId={sessionId}
+                  periods={periods}
+                  learners={learnersForGrid}
+                  initialSignatures={fullSignatures}
+                  trainerDisplayName={trainerName}
+                  modalityShortLabel={modalityShortLabel}
+                />
+              )}
 
+              {/* Repli (caché) : envoi du lien de signature par email
+                  (signature à distance). La grille au doigt sur PC est
+                  désormais directement la grille ci-dessus. */}
+              <SecondaryToolsToggle>
                 <TrainerRemoteSignSection
                   token={token}
                   sessionId={sessionId}
