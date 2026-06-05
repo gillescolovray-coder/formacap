@@ -982,12 +982,12 @@ export default async function FormateurSessionDetailPage({
             il accède immédiatement à <strong>son espace personnel</strong>.
             <div className="mt-2 flex items-center gap-1 overflow-x-auto pb-1">
               {[
-                "Positionnement",
+                "Test de positionnement",
                 "Émargement",
                 "Quiz",
-                "Évaluation",
-                "Supports",
-                "Certificat",
+                "Évaluation à chaud",
+                "Support de formation",
+                "Certificat de réalisation",
               ].map((step, i, arr) => (
                 <span
                   key={step}
