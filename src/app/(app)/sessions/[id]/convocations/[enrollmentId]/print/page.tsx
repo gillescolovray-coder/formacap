@@ -485,10 +485,31 @@ export default async function ConvocationPrintPage({
             bloc ne soit jamais coupe entre 2 pages.
             Masqué pour les apprenants inscrits via un OF partenaire —
             l'OF gère son propre suivi (Gilles 2026-05-22). */}
+        {/* Rappel test de positionnement À FAIRE AVANT la formation —
+            placé juste avant le bloc QR (Gilles 2026-06-05). Force le saut
+            de page pour rester collé au QR sur la même page. */}
+        {!isPartnerOfLearner && (
+          <div
+            className="rounded-lg ring-1 ring-amber-300 bg-amber-50 p-4 mb-4 avoid-break"
+            style={{ pageBreakBefore: "always", breakBefore: "page" }}
+          >
+            <div className="font-bold text-amber-900 text-sm mb-1">
+              📝 À faire AVANT le début de la formation
+            </div>
+            <p className="text-xs text-slate-700 leading-snug">
+              Merci de <strong>compléter votre test de positionnement</strong>{" "}
+              depuis votre espace apprenant <strong>avant le premier jour</strong>.
+              Il nous permet d&apos;adapter la formation à votre niveau et à vos
+              attentes (quelques minutes). Accès : scannez le QR code ci-dessous
+              (ou cliquez sur le lien) → rubrique «&nbsp;Test de
+              positionnement&nbsp;».
+            </p>
+          </div>
+        )}
+
         {!isPartnerOfLearner && (
         <div
           className="rounded-lg ring-1 ring-blue-200 bg-blue-50/60 p-4 mb-8 flex items-center gap-4 avoid-break"
-          style={{ pageBreakBefore: "always", breakBefore: "page" }}
         >
           <div className="shrink-0 bg-white p-2 rounded-md border border-blue-200">
             <QRCodeSVG value={portalUrl} size={96} level="M" marginSize={0} />
@@ -499,8 +520,10 @@ export default async function ConvocationPrintPage({
             </div>
             <p className="text-xs text-slate-700 leading-snug mb-2">
               Scannez ce QR code avec votre téléphone pour accéder à votre
-              espace personnel : test de positionnement, feuille d&apos;émargement,
-              supports de formation, évaluation à chaud et certificat de
+              espace personnel. <strong>Avant la formation</strong>, vous y
+              réalisez votre <strong>test de positionnement</strong>. Pendant et
+              après, vous y retrouvez votre feuille d&apos;émargement, les
+              supports, l&apos;évaluation à chaud et votre attestation de
               réalisation.
             </p>
             <p className="text-xs text-slate-700 leading-snug">
