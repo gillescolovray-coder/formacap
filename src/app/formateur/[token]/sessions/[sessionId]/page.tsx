@@ -980,7 +980,10 @@ export default async function FormateurSessionDetailPage({
             </span>{" "}
             à droite de son nom et faites-le scanner avec son téléphone —
             il accède immédiatement à <strong>son espace personnel</strong>.
-            <div className="mt-2 flex items-center gap-1 overflow-x-auto pb-1">
+            {/* Frise du parcours : chiffre au-dessus, libellé complet dessous.
+                6 colonnes de largeur égale sur UNE ligne, sans scroll — le
+                texte peut passer sur 2 lignes dans sa colonne (Gilles 2026-06-05). */}
+            <div className="mt-2 flex items-start gap-0.5">
               {[
                 "Test de positionnement",
                 "Émargement",
@@ -988,22 +991,31 @@ export default async function FormateurSessionDetailPage({
                 "Évaluation à chaud",
                 "Support de formation",
                 "Certificat de réalisation",
-              ].map((step, i, arr) => (
-                <span
-                  key={step}
-                  className="flex items-center gap-1 shrink-0"
-                >
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white border border-cyan-300 text-cyan-800 text-[10px] font-bold whitespace-nowrap">
-                    <span className="inline-flex items-center justify-center h-3.5 w-3.5 rounded-full bg-cyan-600 text-white text-[8px]">
+              ].flatMap((step, i, arr) => {
+                const col = (
+                  <div
+                    key={`step-${i}`}
+                    className="flex flex-col items-center text-center flex-1 min-w-0 px-0.5"
+                  >
+                    <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-cyan-600 text-white text-[10px] font-bold shrink-0">
                       {i + 1}
                     </span>
-                    {step}
-                  </span>
-                  {i < arr.length - 1 && (
-                    <span className="text-cyan-400 font-bold shrink-0">→</span>
-                  )}
-                </span>
-              ))}
+                    <span className="mt-1 text-[10px] font-semibold text-cyan-800 leading-tight">
+                      {step}
+                    </span>
+                  </div>
+                );
+                if (i === arr.length - 1) return [col];
+                return [
+                  col,
+                  <span
+                    key={`arr-${i}`}
+                    className="text-cyan-400 font-bold text-xs mt-1.5 shrink-0"
+                  >
+                    →
+                  </span>,
+                ];
+              })}
             </div>
           </div>
           {participants.length === 0 ? (
