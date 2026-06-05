@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { geocodeAddressFR, haversineKm } from "@/lib/geo/geocode";
+import { RefreshButton } from "./_refresh-button";
 import type { QuizAttempt } from "@/lib/quiz/types";
 import { labelLevel, type LevelValue } from "@/lib/positioning/types";
 import {
@@ -684,6 +685,9 @@ export default async function FormateurSessionDetailPage({
               modality={session.modality}
               isInter={session.is_inter}
             />
+            <div className="ml-auto">
+              <RefreshButton label="Rafraîchir" />
+            </div>
           </div>
           <h1 className="text-lg md:text-xl font-bold text-zinc-900">
             {formationTitle}

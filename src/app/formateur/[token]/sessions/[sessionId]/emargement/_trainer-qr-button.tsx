@@ -10,6 +10,7 @@ import {
   regenerateSessionQrTokenAsTrainer,
   type TrainerSessionQrTokenResult,
 } from "../actions";
+import { CopyLinkButton } from "../_copy-link-button";
 
 type Props = {
   token: string;
@@ -137,7 +138,8 @@ export function TrainerQrButton({ token, sessionId }: Props) {
                     )}
                   </div>
 
-                  <div className="flex gap-2 justify-center pt-2">
+                  <div className="flex gap-2 justify-center pt-2 flex-wrap">
+                    <CopyLinkButton url={data.publicUrl} />
                     <Button
                       variant="outline"
                       size="sm"

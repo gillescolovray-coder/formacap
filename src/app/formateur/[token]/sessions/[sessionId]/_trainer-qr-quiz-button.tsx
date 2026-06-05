@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { QRCodeSVG } from "qrcode.react";
 import { GraduationCap, Maximize2, RefreshCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { CopyLinkButton } from "./_copy-link-button";
 import {
   getOrCreateSessionQuizTokenAsTrainer,
   regenerateSessionQuizTokenAsTrainer,
@@ -146,7 +147,8 @@ export function TrainerQrQuizButton({ token, sessionId }: Props) {
                     )}
                   </div>
 
-                  <div className="flex gap-2 justify-center pt-2">
+                  <div className="flex gap-2 justify-center pt-2 flex-wrap">
+                    <CopyLinkButton url={data.publicUrl} />
                     <Button
                       variant="outline"
                       size="sm"
