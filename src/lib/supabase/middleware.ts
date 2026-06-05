@@ -27,7 +27,23 @@ const PUBLIC_PATHS = [
 ];
 
 export async function updateSession(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({ request });
+  const pathname = request.nextUrl.pathname;
+  // Convocation imprimable servie en mode public via le token portail de
+  // l'inscription (?token=) : lien envoyé par email (apprenant/RH) OU
+  // visualisation depuis le portail formateur. La page valide elle-même
+  // le token contre l'enrollment. Gilles 2026-06-05.
+  const isPublicConvocation =
+    /^\/sessions\/[^/]+\/convocations\/[^/]+\/print\/?$/.test(pathname) &&
+    request.nextUrl.searchParams.has("token");
+
+  // En-tête propagé au layout (app) : permet à AppShell de rendre la
+  // convocation publique SANS exiger de login (sinon page blanche /login).
+  const requestHeaders = new Headers(request.headers);
+  if (isPublicConvocation) requestHeaders.set("x-public-print", "1");
+
+  let supabaseResponse = NextResponse.next({
+    request: { headers: requestHeaders },
+  });
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -41,7 +57,9 @@ export async function updateSession(request: NextRequest) {
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value),
           );
-          supabaseResponse = NextResponse.next({ request });
+          supabaseResponse = NextResponse.next({
+            request: { headers: requestHeaders },
+          });
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options),
           );
@@ -54,14 +72,6 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const pathname = request.nextUrl.pathname;
-  // Convocation imprimable servie en mode public via le token portail de
-  // l'inscription (?token=) : lien envoyé par email (apprenant/RH) OU
-  // visualisation depuis le portail formateur. La page valide elle-même
-  // le token contre l'enrollment. Gilles 2026-06-05.
-  const isPublicConvocation =
-    /^\/sessions\/[^/]+\/convocations\/[^/]+\/print\/?$/.test(pathname) &&
-    request.nextUrl.searchParams.has("token");
   const isPublic =
     isPublicConvocation || PUBLIC_PATHS.some((p) => pathname.startsWith(p));
 

@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { AppShellClient } from "./app-shell-client";
 import { SidebarNav } from "./sidebar-nav";
@@ -6,6 +7,15 @@ import { SidebarShell } from "./sidebar-shell";
 import { UserMenu } from "./user-menu";
 
 export async function AppShell({ children }: { children: React.ReactNode }) {
+  // Accès public par token (ex. convocation imprimable via ?token=) :
+  // le middleware pose l'en-tête x-public-print. Dans ce cas on rend la
+  // page SANS exiger de login ni sidebar — la page valide elle-même le
+  // token. Évite la redirection /login (page blanche). Gilles 2026-06-05.
+  const h = await headers();
+  if (h.get("x-public-print") === "1") {
+    return <main className="min-h-screen bg-white">{children}</main>;
+  }
+
   const supabase = await createClient();
   const {
     data: { user },
