@@ -51,7 +51,6 @@ import {
   getLearnerPortalLinkFromPortal,
   toggleDocumentVisibilityAsTrainer,
   updateLearnerFromPortal,
-  uploadSupportAsTrainer,
 } from "./actions";
 import { ExpressLearnerActions } from "./_express-learner-actions";
 import { LearnerPortalLinkButton } from "./_learner-portal-link-button";
@@ -1630,9 +1629,7 @@ export default async function FormateurSessionDetailPage({
               d'idempotence, bouton desactive pendant l'upload et
               regeneration de cle apres succes (Gilles 2026-05-28
               fix double-upload). */}
-          <UploadSupportForm
-            action={uploadSupportAsTrainer.bind(null, token, sessionId)}
-          />
+          <UploadSupportForm token={token} sessionId={sessionId} />
         </Module>
 
         {/* Module 7 — Bilan formateur (Qualiopi 11/22/32) */}

@@ -1,75 +1,122 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Loader2, Upload } from "lucide-react";
-import { useFormStatus } from "react-dom";
+import { useRouter } from "next/navigation";
+import { Check, Loader2, Upload } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
+import {
+  createSupportUploadUrl,
+  registerSupportDocument,
+} from "./actions";
 
 type Props = {
-  action: (formData: FormData) => Promise<void> | void;
+  token: string;
+  sessionId: string;
 };
 
 /**
- * Formulaire client d'upload d'un support depuis le portail formateur.
+ * Upload d'un support depuis le portail formateur — version UPLOAD DIRECT.
  *
- * BUG FIX Gilles 2026-05-28 : avant, le bouton "Televerser" restait
- * actif pendant les 1-3 secondes d'upload -> double-clic possible ->
- * 2 INSERTs en BDD -> fichier en doublon dans la liste.
+ * Le fichier est envoyé DIRECTEMENT au stockage Supabase via une URL
+ * signée (généré côté serveur), SANS transiter par un Server Action.
+ * Évite la limite de corps de requête de Vercel (~4,5 Mo) qui faisait
+ * planter l'upload de fichiers volumineux (ZIP de supports) avec
+ * "This page couldn't load". Gilles 2026-06-05.
  *
- * Solution robuste type "industry standard" :
- *
- * 1) UX : bouton desactive + spinner + texte "Televersement..." pendant
- *    l'upload (via useFormStatus). Empeche le 2eme clic humain.
- *
- * 2) Cle d'idempotence (pattern Stripe / AWS) : un UUID est genere a
- *    l'ouverture du formulaire et envoye dans tous les submits qui
- *    suivent. Cote serveur, un unique index garantit qu'on n'insere
- *    qu'UNE ligne par UUID, peu importe combien de fois la requete
- *    arrive (double-clic, retry reseau, refresh, etc.).
- *
- * 3) Apres un succes, l'UUID est regenere via setRequestId pour que
- *    le prochain upload (autre fichier) soit traite comme distinct.
+ * Étapes : 1) URL signée  2) upload direct au stockage  3) enregistrement
+ * des métadonnées (petit payload). Glisser-déposer OU clic. Idempotence
+ * conservée via une clé client_request_id.
  */
-export function UploadSupportForm({ action }: Props) {
-  const formRef = useRef<HTMLFormElement>(null);
+function newRequestId(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+const MAX_SIZE = 50 * 1024 * 1024; // 50 Mo
+
+export function UploadSupportForm({ token, sessionId }: Props) {
+  const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [fileName, setFileName] = useState<string | null>(null);
+  const descRef = useRef<HTMLInputElement>(null);
+  const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
-  // useState lazy : crypto.randomUUID() est appele une SEULE fois a
-  // l'ouverture du composant. Re-renders n'invalident pas l'UUID.
-  const [requestId, setRequestId] = useState<string>(() =>
-    typeof crypto !== "undefined" && "randomUUID" in crypto
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-  );
+  const [pending, setPending] = useState(false);
+  const [msg, setMsg] = useState<{ t: "ok" | "err"; m: string } | null>(null);
+
+  function pickFile(f: File | null) {
+    setMsg(null);
+    if (f && f.size > MAX_SIZE) {
+      setMsg({ t: "err", m: "Fichier trop volumineux (max 50 Mo)." });
+      return;
+    }
+    setFile(f);
+  }
+
+  async function handleUpload() {
+    if (!file) {
+      setMsg({ t: "err", m: "Aucun fichier sélectionné." });
+      return;
+    }
+    setMsg(null);
+    setPending(true);
+    const requestId = newRequestId();
+    try {
+      // 1) URL signée
+      const urlRes = await createSupportUploadUrl(
+        token,
+        sessionId,
+        file.name,
+        file.type,
+      );
+      if (!urlRes.ok) {
+        setMsg({ t: "err", m: urlRes.error });
+        return;
+      }
+      // 2) Upload direct au stockage (le fichier ne passe pas par le serveur)
+      const supabase = createClient();
+      const { error: upErr } = await supabase.storage
+        .from("session-documents")
+        .uploadToSignedUrl(urlRes.path, urlRes.uploadToken, file, {
+          contentType: file.type || "application/octet-stream",
+        });
+      if (upErr) {
+        setMsg({ t: "err", m: `Échec de l'envoi : ${upErr.message}` });
+        return;
+      }
+      // 3) Enregistrement des métadonnées
+      const regRes = await registerSupportDocument(token, sessionId, {
+        path: urlRes.path,
+        fileName: file.name,
+        mimeType: file.type || null,
+        sizeBytes: file.size,
+        description: descRef.current?.value?.trim() || null,
+        clientRequestId: requestId,
+      });
+      if (!regRes.ok) {
+        setMsg({ t: "err", m: regRes.error ?? "Erreur d'enregistrement." });
+        return;
+      }
+      // Succès
+      setFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      if (descRef.current) descRef.current.value = "";
+      setMsg({ t: "ok", m: "Support ajouté et partagé avec les apprenants." });
+      router.refresh();
+    } catch (e) {
+      setMsg({ t: "err", m: (e as Error).message || "Erreur inattendue." });
+    } finally {
+      setPending(false);
+    }
+  }
 
   return (
-    <form
-      ref={formRef}
-      action={async (formData) => {
-        await action(formData);
-        // L'action a fait redirect() en cas de succes — ce code ne
-        // s'execute en pratique que si l'action a thrown. Mais par
-        // securite : reset du form et nouvelle cle d'idempotence pour
-        // qu'un upload suivant soit traite comme distinct.
-        formRef.current?.reset();
-        setFileName(null);
-        setRequestId(
-          typeof crypto !== "undefined" && "randomUUID" in crypto
-            ? crypto.randomUUID()
-            : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        );
-      }}
-      className="mt-4 pt-3 border-t border-zinc-100 space-y-2"
-    >
-      {/* Cle d'idempotence : envoyee a chaque submit. Le serveur skip
-          silencieusement si une ligne avec ce client_request_id existe
-          deja (unique index). */}
-      <input type="hidden" name="client_request_id" value={requestId} />
+    <div className="mt-4 pt-3 border-t border-zinc-100 space-y-2">
       <label className="text-xs font-medium text-zinc-700 block">
         Ajouter un support (partagé automatiquement avec les apprenants)
       </label>
 
-      {/* Zone glisser-déposer + clic pour choisir (Gilles 2026-06-05). */}
+      {/* Zone glisser-déposer + clic pour choisir */}
       <div
         onDragOver={(e) => {
           e.preventDefault();
@@ -79,14 +126,9 @@ export function UploadSupportForm({ action }: Props) {
         onDrop={(e) => {
           e.preventDefault();
           setDragging(false);
-          const dropped = e.dataTransfer.files?.[0];
-          if (!dropped || !fileInputRef.current) return;
-          const dt = new DataTransfer();
-          dt.items.add(dropped);
-          fileInputRef.current.files = dt.files;
-          setFileName(dropped.name);
+          pickFile(e.dataTransfer.files?.[0] ?? null);
         }}
-        onClick={() => fileInputRef.current?.click()}
+        onClick={() => !pending && fileInputRef.current?.click()}
         className={
           "rounded-lg border-2 border-dashed p-3 text-center cursor-pointer transition-colors " +
           (dragging
@@ -101,55 +143,63 @@ export function UploadSupportForm({ action }: Props) {
           <span className="underline text-indigo-700">choisissez-en un</span>.
         </p>
         <p className="text-[10px] text-zinc-400 mt-0.5">
-          PDF, Word, Excel, PowerPoint, image, ZIP… · 10 Mo max
+          PDF, Word, Excel, PowerPoint, image, ZIP… · 50 Mo max
         </p>
-        {fileName && (
+        {file && (
           <p className="text-[11px] font-semibold text-emerald-700 mt-1 break-all">
-            ✓ {fileName}
+            ✓ {file.name}
           </p>
         )}
       </div>
       <input
         ref={fileInputRef}
         type="file"
-        name="file"
-        required
-        accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.webp,.txt,.csv,.zip"
-        onChange={(e) => setFileName(e.target.files?.[0]?.name ?? null)}
+        accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.webp,.svg,.txt,.csv,.zip"
+        onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
         className="hidden"
       />
       <input
+        ref={descRef}
         type="text"
-        name="description"
         placeholder="Description (optionnel)"
         className="block w-full text-xs rounded border border-zinc-300 px-2 py-1"
       />
-      <UploadSubmitButton />
-    </form>
-  );
-}
 
-function UploadSubmitButton() {
-  const { pending } = useFormStatus();
-  return (
-    <button
-      type="submit"
-      disabled={pending}
-      className={
-        "text-xs px-3 py-1.5 rounded font-semibold inline-flex items-center gap-1.5 " +
-        (pending
-          ? "bg-indigo-300 text-white cursor-wait"
-          : "bg-indigo-600 hover:bg-indigo-700 text-white")
-      }
-    >
-      {pending ? (
-        <>
-          <Loader2 className="h-3 w-3 animate-spin" />
-          Téléversement…
-        </>
-      ) : (
-        "Téléverser"
+      {msg && (
+        <p
+          className={
+            msg.t === "ok"
+              ? "text-[11px] text-emerald-700"
+              : "text-[11px] text-rose-700"
+          }
+        >
+          {msg.m}
+        </p>
       )}
-    </button>
+
+      <button
+        type="button"
+        onClick={handleUpload}
+        disabled={pending || !file}
+        className={
+          "text-xs px-3 py-1.5 rounded font-semibold inline-flex items-center gap-1.5 " +
+          (pending || !file
+            ? "bg-indigo-300 text-white cursor-not-allowed"
+            : "bg-indigo-600 hover:bg-indigo-700 text-white")
+        }
+      >
+        {pending ? (
+          <>
+            <Loader2 className="h-3 w-3 animate-spin" />
+            Téléversement…
+          </>
+        ) : (
+          <>
+            <Check className="h-3 w-3" />
+            Téléverser
+          </>
+        )}
+      </button>
+    </div>
   );
 }

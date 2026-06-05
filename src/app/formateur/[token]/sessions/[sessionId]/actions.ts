@@ -239,6 +239,128 @@ export async function uploadSupportAsTrainer(
   );
 }
 
+// ───────────────────────────────────────────────────────────────────
+// Upload DIRECT vers le stockage (URL signée) — Gilles 2026-06-05.
+// Pourquoi : un fichier volumineux (ZIP de supports…) qui transite par
+// un Server Action dépasse la limite de corps de requête de Vercel
+// (~4,5 Mo) -> erreur "This page couldn't load". On génère donc une URL
+// d'upload signée côté serveur, le client envoie le fichier DIRECTEMENT
+// au stockage (sans passer par le Server Action), puis on enregistre
+// seulement les métadonnées (petit payload). Limite portée à 50 Mo.
+// ───────────────────────────────────────────────────────────────────
+const MAX_SUPPORT_SIZE = 50 * 1024 * 1024; // 50 Mo
+const ALLOWED_EXTENSIONS = [
+  ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+  ".png", ".jpg", ".jpeg", ".webp", ".svg", ".txt", ".csv", ".zip",
+];
+
+function isAllowedSupport(fileName: string, fileType: string): boolean {
+  const lower = fileName.toLowerCase();
+  if (ALLOWED_EXTENSIONS.some((ext) => lower.endsWith(ext))) return true;
+  return ALLOWED_TYPES.includes(fileType);
+}
+
+export async function createSupportUploadUrl(
+  token: string,
+  sessionId: string,
+  fileName: string,
+  fileType: string,
+): Promise<
+  { ok: true; path: string; uploadToken: string } | { ok: false; error: string }
+> {
+  const supabase = createAdminClient();
+  const ctx = await validateTrainerAccess(supabase, token, sessionId);
+  if (!ctx) return { ok: false, error: "Accès refusé." };
+  if (!fileName?.trim()) return { ok: false, error: "Nom de fichier manquant." };
+  if (!isAllowedSupport(fileName, fileType)) {
+    return {
+      ok: false,
+      error: "Format non supporté (PDF, Word, Excel, PowerPoint, image, ZIP…).",
+    };
+  }
+
+  const sanitized = sanitizeFileName(fileName);
+  const path = `${ctx.organizationId}/${sessionId}/${Date.now()}-${sanitized}`;
+  const { data, error } = await supabase.storage
+    .from("session-documents")
+    .createSignedUploadUrl(path);
+  if (error || !data) {
+    return { ok: false, error: error?.message ?? "Génération de l'URL impossible." };
+  }
+  return { ok: true, path: data.path, uploadToken: data.token };
+}
+
+export async function registerSupportDocument(
+  token: string,
+  sessionId: string,
+  input: {
+    path: string;
+    fileName: string;
+    mimeType: string | null;
+    sizeBytes: number;
+    description: string | null;
+    clientRequestId: string | null;
+  },
+): Promise<{ ok: boolean; error?: string }> {
+  const supabase = createAdminClient();
+  const ctx = await validateTrainerAccess(supabase, token, sessionId);
+  if (!ctx) return { ok: false, error: "Accès refusé." };
+
+  if (input.sizeBytes > MAX_SUPPORT_SIZE) {
+    await supabase.storage.from("session-documents").remove([input.path]);
+    return { ok: false, error: "Fichier trop volumineux (max 50 Mo)." };
+  }
+  // Sécurité : le chemin doit bien appartenir à cette org + session.
+  if (!input.path.startsWith(`${ctx.organizationId}/${sessionId}/`)) {
+    return { ok: false, error: "Chemin de fichier invalide." };
+  }
+
+  // Idempotence (double-clic / retry)
+  if (input.clientRequestId) {
+    const { data: existing } = await supabase
+      .from("session_documents")
+      .select("id")
+      .eq("client_request_id", input.clientRequestId)
+      .limit(1)
+      .maybeSingle<{ id: string }>();
+    if (existing) {
+      revalidatePath(`/formateur/${token}/sessions/${sessionId}`);
+      return { ok: true };
+    }
+  }
+
+  const { error: insertError } = await supabase
+    .from("session_documents")
+    .insert({
+      session_id: sessionId,
+      organization_id: ctx.organizationId,
+      file_name: input.fileName,
+      storage_path: input.path,
+      mime_type: input.mimeType,
+      size_bytes: input.sizeBytes,
+      description: input.description,
+      visibility: "shared_with_learners",
+      is_training_program: false,
+      uploaded_by: null,
+      client_request_id: input.clientRequestId,
+    });
+  if (insertError) {
+    const isDup =
+      insertError.code === "23505" ||
+      (insertError.message ?? "").toLowerCase().includes("duplicate key");
+    if (isDup) {
+      revalidatePath(`/formateur/${token}/sessions/${sessionId}`);
+      return { ok: true };
+    }
+    // Nettoie le fichier orphelin si l'insert échoue.
+    await supabase.storage.from("session-documents").remove([input.path]);
+    return { ok: false, error: insertError.message };
+  }
+
+  revalidatePath(`/formateur/${token}/sessions/${sessionId}`);
+  return { ok: true };
+}
+
 /**
  * Toggle de la visibilité d'un document depuis le portail formateur.
  * Le formateur ne peut modifier QUE ses propres uploads
