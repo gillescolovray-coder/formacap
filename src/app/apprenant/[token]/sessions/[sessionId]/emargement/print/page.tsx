@@ -159,15 +159,17 @@ export default async function LearnerEmargementPrintPage({
   // Organisation (logo + cachet)
   const { data: organization } = await supabase
     .from("organizations")
-    .select("name, logo_url, signature_stamp_path")
+    .select("name, logo_url, signature_stamp_path, legal_mentions")
     .eq("id", ctx.learner.organization_id)
     .maybeSingle<{
       name: string;
       logo_url: string | null;
       signature_stamp_path: string | null;
+      legal_mentions: string | null;
     }>();
   const orgName = organization?.name ?? "CAP NUMÉRIQUE";
   const orgLogo = organization?.logo_url ?? null;
+  const orgLegalMentions = organization?.legal_mentions ?? null;
 
   const fullName =
     [ctx.learner.civility, ctx.learner.first_name, ctx.learner.last_name]
@@ -358,6 +360,25 @@ export default async function LearnerEmargementPrintPage({
           la présence aux créneaux émargés. Document généré
           électroniquement par {orgName}.
         </p>
+
+        {orgLegalMentions && (
+          <footer
+            className="mt-10 pt-3 border-t border-slate-300 text-[10px] text-slate-600 leading-relaxed text-center legal-mentions-footer"
+            dangerouslySetInnerHTML={{ __html: orgLegalMentions }}
+          />
+        )}
+        <style
+          dangerouslySetInnerHTML={{
+            __html: `
+              .legal-mentions-footer p { margin: 0 0 4px 0; }
+              .legal-mentions-footer h2 { font-size: 11px; font-weight: bold; margin: 4px 0 2px 0; }
+              .legal-mentions-footer h3 { font-size: 10px; font-weight: 600; margin: 4px 0 2px 0; }
+              .legal-mentions-footer ul { list-style: disc; padding-left: 16px; margin: 2px 0; }
+              .legal-mentions-footer ol { list-style: decimal; padding-left: 16px; margin: 2px 0; }
+              .legal-mentions-footer a { color: #2563eb; text-decoration: underline; }
+            `,
+          }}
+        />
       </div>
     </>
   );
