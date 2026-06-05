@@ -23,6 +23,7 @@ import {
 import { createAdminClient } from "@/lib/supabase/admin";
 import { geocodeAddressFR, haversineKm } from "@/lib/geo/geocode";
 import { RefreshButton } from "./_refresh-button";
+import { AutoRefresh } from "./_auto-refresh";
 import type { QuizAttempt } from "@/lib/quiz/types";
 import { labelLevel, type LevelValue } from "@/lib/positioning/types";
 import {
@@ -685,7 +686,8 @@ export default async function FormateurSessionDetailPage({
               modality={session.modality}
               isInter={session.is_inter}
             />
-            <div className="ml-auto">
+            <div className="ml-auto flex items-center gap-2">
+              <AutoRefresh />
               <RefreshButton label="Rafraîchir" />
             </div>
           </div>
