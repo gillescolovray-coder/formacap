@@ -186,12 +186,13 @@ export default async function FormateurSessionDetailPage({
   const { data: enrollments } = await supabase
     .from("session_enrollments")
     .select(
-      "id, learner:learners(id, civility, first_name, last_name, email, phone, mobile, job_title, is_temporary, company_name_temp, company_siret_temp, company:companies(name))",
+      "id, inscription_request_id, learner:learners(id, civility, first_name, last_name, email, phone, mobile, job_title, is_temporary, company_name_temp, company_siret_temp, company:companies(name))",
     )
     .eq("session_id", sessionId);
 
   const participants = ((enrollments ?? []) as unknown as Array<{
     id: string;
+    inscription_request_id: string | null;
     learner: {
       id: string;
       civility: string | null;
@@ -208,6 +209,7 @@ export default async function FormateurSessionDetailPage({
     } | null;
   }>).map((e) => ({
     enrollmentId: e.id,
+    inscriptionRequestId: e.inscription_request_id ?? null,
     learnerId: e.learner?.id ?? null,
     fullName: [e.learner?.first_name, e.learner?.last_name]
       .filter(Boolean)
@@ -229,6 +231,45 @@ export default async function FormateurSessionDetailPage({
   }));
 
   const enrollmentIds = participants.map((p) => p.enrollmentId);
+
+  // Source d'inscription par apprenant (Gilles 2026-06-05) :
+  //   'cap'         = inscrit directement par CAP NUMÉRIQUE -> CAP gère la
+  //                   convocation (œil de visualisation disponible).
+  //   'of'          = inscrit via un OF partenaire -> l'OF gère la convocation.
+  //   'prescripteur'= inscrit via un prescripteur -> idem, géré en externe.
+  // On ne montre PAS le nom de l'OF/prescripteur (juste la nature de la source).
+  const sourceByEnrollment = new Map<
+    string,
+    "cap" | "of" | "prescripteur"
+  >();
+  const requestIds = Array.from(
+    new Set(
+      participants
+        .map((p) => p.inscriptionRequestId)
+        .filter((x): x is string => Boolean(x)),
+    ),
+  );
+  if (requestIds.length > 0) {
+    const { data: reqs } = await supabase
+      .from("inscription_requests")
+      .select("id, inscription_channel")
+      .in("id", requestIds);
+    const channelByReq = new Map<string, string | null>();
+    for (const r of (reqs ?? []) as Array<{
+      id: string;
+      inscription_channel: string | null;
+    }>) {
+      channelByReq.set(r.id, r.inscription_channel);
+    }
+    for (const p of participants) {
+      const ch = p.inscriptionRequestId
+        ? channelByReq.get(p.inscriptionRequestId)
+        : null;
+      const src =
+        ch === "of" ? "of" : ch === "prescripteur" ? "prescripteur" : "cap";
+      sourceByEnrollment.set(p.enrollmentId, src);
+    }
+  }
 
   // 3. Logs convocations envoyées
   const { data: convocationLogs } =
@@ -850,21 +891,66 @@ export default async function FormateurSessionDetailPage({
             <ul className="space-y-1 text-xs">
               {participants.map((p) => {
                 const log = convocationByEnrollment.get(p.enrollmentId);
+                const src = sourceByEnrollment.get(p.enrollmentId) ?? "cap";
+                const sourceLabel =
+                  src === "of"
+                    ? "OF"
+                    : src === "prescripteur"
+                      ? "Prescripteur"
+                      : "CAP NUMÉRIQUE";
+                const sourceCls =
+                  src === "of"
+                    ? "bg-violet-100 text-violet-800 border-violet-300"
+                    : src === "prescripteur"
+                      ? "bg-fuchsia-100 text-fuchsia-800 border-fuchsia-300"
+                      : "bg-cyan-100 text-cyan-800 border-cyan-300";
+                const capManaged = src === "cap";
                 return (
                   <li
                     key={p.enrollmentId}
-                    className="flex items-center justify-between py-1"
+                    className="flex items-center justify-between gap-2 py-1"
                   >
-                    <span className="text-zinc-700">{p.fullName}</span>
-                    {log ? (
-                      <span className="inline-flex items-center gap-1 text-emerald-700">
-                        <CheckCircle2 className="h-3 w-3" />
-                        Envoyée le{" "}
-                        {new Date(log.sent_at).toLocaleDateString("fr-FR")}
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-zinc-700 truncate">
+                        {p.fullName}
                       </span>
-                    ) : (
-                      <span className="text-amber-700">⏳ Non envoyée</span>
-                    )}
+                      <span
+                        className={
+                          "inline-block px-1.5 py-0.5 rounded-full text-[9px] font-bold border whitespace-nowrap " +
+                          sourceCls
+                        }
+                        title={`Source d'inscription : ${sourceLabel}`}
+                      >
+                        {sourceLabel}
+                      </span>
+                    </span>
+                    <span className="flex items-center gap-2 shrink-0">
+                      {capManaged ? (
+                        <>
+                          {log ? (
+                            <span className="inline-flex items-center gap-1 text-emerald-700">
+                              <CheckCircle2 className="h-3 w-3" />
+                              Envoyée le{" "}
+                              {new Date(log.sent_at).toLocaleDateString("fr-FR")}
+                            </span>
+                          ) : (
+                            <span className="text-amber-700">
+                              ⏳ Non envoyée
+                            </span>
+                          )}
+                          <ViewConvocationButton
+                            token={token}
+                            sessionId={sessionId}
+                            enrollmentId={p.enrollmentId}
+                          />
+                        </>
+                      ) : (
+                        <span className="text-zinc-500 italic">
+                          Convocation gérée par{" "}
+                          {src === "of" ? "l'OF" : "le prescripteur"}
+                        </span>
+                      )}
+                    </span>
                   </li>
                 );
               })}
@@ -973,13 +1059,8 @@ export default async function FormateurSessionDetailPage({
                     )}
                   </div>
                   <div className="flex items-start gap-0.5 shrink-0">
-                    {/* Œil : voir la convocation de l'apprenant (PDF servi
-                        en mode public via le token portail). Gilles 2026-06-05. */}
-                    <ViewConvocationButton
-                      token={token}
-                      sessionId={sessionId}
-                      enrollmentId={p.enrollmentId}
-                    />
+                    {/* (L'œil de visualisation de la convocation a été déplacé
+                        dans le bloc « Convocations envoyées » — Gilles 2026-06-05.) */}
                     {/* Lien personnel apprenant (QR + URL) : disponible
                         pour TOUS les apprenants — utile quand le formateur
                         a saisi l'apprenant lui-meme ou qu'un apprenant a
