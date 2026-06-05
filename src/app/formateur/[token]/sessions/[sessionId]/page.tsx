@@ -980,16 +980,19 @@ export default async function FormateurSessionDetailPage({
             </span>{" "}
             à droite de son nom et faites-le scanner avec son téléphone —
             il accède immédiatement à <strong>son espace personnel</strong>.
-            <div className="mt-2 flex flex-wrap items-center gap-1">
+            <div className="mt-2 flex items-center gap-1 overflow-x-auto pb-1">
               {[
-                "Test de positionnement",
+                "Positionnement",
                 "Émargement",
                 "Quiz",
-                "Évaluation à chaud",
-                "Support de formation",
-                "Certificat de réalisation",
+                "Évaluation",
+                "Supports",
+                "Certificat",
               ].map((step, i, arr) => (
-                <span key={step} className="flex items-center gap-1">
+                <span
+                  key={step}
+                  className="flex items-center gap-1 shrink-0"
+                >
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white border border-cyan-300 text-cyan-800 text-[10px] font-bold whitespace-nowrap">
                     <span className="inline-flex items-center justify-center h-3.5 w-3.5 rounded-full bg-cyan-600 text-white text-[8px]">
                       {i + 1}
@@ -997,7 +1000,7 @@ export default async function FormateurSessionDetailPage({
                     {step}
                   </span>
                   {i < arr.length - 1 && (
-                    <span className="text-cyan-400 font-bold">→</span>
+                    <span className="text-cyan-400 font-bold shrink-0">→</span>
                   )}
                 </span>
               ))}

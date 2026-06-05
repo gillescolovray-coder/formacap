@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { Pencil, Trash2, UserCheck, X } from "lucide-react";
+import { Pencil, Trash2, X } from "lucide-react";
 
 type Props = {
   learnerId: string;
@@ -51,16 +51,12 @@ export function ExpressLearnerActions({
     setMounted(true);
   }, []);
 
+  // Apprenant inscrit officiellement (non temporaire) : aucune action
+  // d'édition côté formateur (réservé admin). On n'affiche AUCUNE icône
+  // pour ne pas encombrer la ligne — le formateur n'en a pas besoin
+  // (Gilles 2026-06-05, l'ancien badge "UserCheck + OF" prêtait à confusion).
   if (!isTemporary) {
-    return (
-      <span
-        className="inline-flex items-center gap-1 text-[10px] text-zinc-400 italic"
-        title="Apprenant inscrit officiellement par l'organisme — édition réservée à l'admin."
-      >
-        <UserCheck className="h-3 w-3" />
-        OF
-      </span>
-    );
+    return null;
   }
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {

@@ -202,10 +202,11 @@ export function LearnerPortalLinkButton({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        title={`QR code personnel de ${learnerName} — à scanner s'il n'a pas sa convocation : lui donne accès à son espace personnel pour cette formation (quiz, émargement, supports, évaluation à chaud).`}
-        className="p-1 rounded-md text-cyan-700 hover:bg-cyan-50"
+        title={`Espace personnel de ${learnerName} : QR à faire scanner s'il n'a pas reçu sa convocation.`}
+        className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-cyan-300 bg-cyan-50 text-cyan-700 hover:bg-cyan-100 font-bold"
       >
-        <QrCode className="h-3.5 w-3.5" />
+        <QrCode className="h-4 w-4" />
+        <span className="text-[10px] uppercase tracking-wide">QR</span>
       </button>
       {mounted ? createPortal(overlays, document.body) : null}
     </>
