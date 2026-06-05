@@ -979,8 +979,29 @@ export default async function FormateurSessionDetailPage({
               QR
             </span>{" "}
             à droite de son nom et faites-le scanner avec son téléphone —
-            il accède immédiatement à son espace personnel (positionnement,
-            émargement, quiz, supports, évaluation, certificat).
+            il accède immédiatement à <strong>son espace personnel</strong>.
+            <div className="mt-2 flex flex-wrap items-center gap-1">
+              {[
+                "Test de positionnement",
+                "Émargement",
+                "Quiz",
+                "Évaluation à chaud",
+                "Support de formation",
+                "Certificat de réalisation",
+              ].map((step, i, arr) => (
+                <span key={step} className="flex items-center gap-1">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white border border-cyan-300 text-cyan-800 text-[10px] font-bold whitespace-nowrap">
+                    <span className="inline-flex items-center justify-center h-3.5 w-3.5 rounded-full bg-cyan-600 text-white text-[8px]">
+                      {i + 1}
+                    </span>
+                    {step}
+                  </span>
+                  {i < arr.length - 1 && (
+                    <span className="text-cyan-400 font-bold">→</span>
+                  )}
+                </span>
+              ))}
+            </div>
           </div>
           {participants.length === 0 ? (
             <p className="text-xs text-zinc-500 italic">
