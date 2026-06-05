@@ -2,12 +2,107 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
+import { sendPositioningInvite } from "@/lib/positioning/send";
 import {
   TRAINER_ADAPTATIONS,
   type PositioningTrainerObservation,
   type TrainerAdaptationValue,
 } from "@/lib/positioning/types";
+
+const POS_UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+async function getAppOrigin(): Promise<string> {
+  const h = await headers();
+  const host = h.get("host") ?? "localhost:3000";
+  const protocol = h.get("x-forwarded-proto") ?? "https";
+  return `${protocol}://${host}`;
+}
+
+/**
+ * (Re)envoie le test de positionnement par email à UN apprenant.
+ * Tracé via email_log (type 'positionnement'). Gilles 2026-06-05.
+ */
+export async function sendPositioningTest(
+  sessionId: string,
+  enrollmentId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!POS_UUID_REGEX.test(enrollmentId)) {
+    return { ok: false, error: "Identifiant invalide." };
+  }
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Non authentifié." };
+
+  const origin = await getAppOrigin();
+  const res = await sendPositioningInvite(supabase, enrollmentId, origin);
+  revalidatePath(`/sessions/${sessionId}/positionnement`);
+  if (!res.ok) return { ok: false, error: res.error };
+  return { ok: true };
+}
+
+/**
+ * Envoie le test à tous les inscrits "en attente" (pas encore rempli)
+ * qui ont un email. Renvoie un récapitulatif (envoyés / sans email / échecs).
+ */
+export async function sendPositioningToAllPending(
+  sessionId: string,
+): Promise<{
+  ok: boolean;
+  sent?: number;
+  skippedNoEmail?: number;
+  failed?: number;
+  error?: string;
+}> {
+  if (!POS_UUID_REGEX.test(sessionId)) {
+    return { ok: false, error: "Identifiant invalide." };
+  }
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Non authentifié." };
+
+  const { data: enrollments } = await supabase
+    .from("session_enrollments")
+    .select("id, learner:learners(email)")
+    .eq("session_id", sessionId)
+    .neq("status", "cancelled");
+
+  const { data: responses } = await supabase
+    .from("positioning_responses")
+    .select("enrollment_id");
+  const done = new Set(
+    (responses ?? []).map(
+      (r) => (r as { enrollment_id: string }).enrollment_id,
+    ),
+  );
+
+  const origin = await getAppOrigin();
+  let sent = 0;
+  let skippedNoEmail = 0;
+  let failed = 0;
+  for (const row of (enrollments ?? []) as unknown as Array<{
+    id: string;
+    learner: { email: string | null } | null;
+  }>) {
+    if (done.has(row.id)) continue;
+    if (!row.learner?.email?.trim()) {
+      skippedNoEmail++;
+      continue;
+    }
+    const res = await sendPositioningInvite(supabase, row.id, origin);
+    if (res.ok) sent++;
+    else failed++;
+  }
+
+  revalidatePath(`/sessions/${sessionId}/positionnement`);
+  return { ok: true, sent, skippedNoEmail, failed };
+}
 
 const VALID_ADAPTATION_VALUES = TRAINER_ADAPTATIONS.map((a) => a.value);
 

@@ -14,6 +14,10 @@ import { BackButton } from "@/components/back-button";
 import { SessionTabs } from "../_session-tabs";
 import { SessionHeaderMeta } from "../_session-header-meta";
 import {
+  SendPositioningButton,
+  SendPositioningAllButton,
+} from "./_send-positioning-buttons";
+import {
   ADEQUACY_OPTIONS,
   EXPECTATION_CHOICES,
   LEVEL_OPTIONS,
@@ -158,6 +162,31 @@ export default async function SessionPositionnementListPage({
     allData.push(row.data);
   }
 
+  // Traçabilité d'ENVOI du test (email_log type 'positionnement') :
+  // dernière date d'envoi par enrollment (Gilles 2026-06-05).
+  const sentByEnrollment = new Map<string, string>();
+  if (enrollmentIds.length > 0) {
+    const { data: sends } = await supabase
+      .from("email_log")
+      .select("enrollment_id, sent_at, status")
+      .in("enrollment_id", enrollmentIds)
+      .eq("type", "positionnement")
+      .order("sent_at", { ascending: false });
+    for (const row of (sends ?? []) as Array<{
+      enrollment_id: string | null;
+      sent_at: string | null;
+      status: string;
+    }>) {
+      if (
+        row.enrollment_id &&
+        row.sent_at &&
+        !sentByEnrollment.has(row.enrollment_id)
+      ) {
+        sentByEnrollment.set(row.enrollment_id, row.sent_at);
+      }
+    }
+  }
+
   // Agrégats pour le graphique de synthèse
   const aggregates = computeAggregates(allData);
 
@@ -214,6 +243,20 @@ export default async function SessionPositionnementListPage({
             icon={<Eye className="h-4 w-4" />}
           />
         </div>
+
+        {/* Envoi du test de positionnement (email) + traçabilité.
+            Les apprenants SANS email passent par le QR sur place /
+            la garde à l'émargement (cf. lib/positioning/send.ts). */}
+        {total - completed > 0 && (
+          <div className="rounded-xl bg-cyan-50/50 border border-cyan-200 p-3 sm:p-4 flex items-center justify-between gap-3 flex-wrap">
+            <p className="text-sm text-cyan-900">
+              <strong>{total - completed}</strong> apprenant
+              {total - completed > 1 ? "s" : ""} n&apos;ont pas encore rempli
+              leur test. Envoyez-leur le lien par email :
+            </p>
+            <SendPositioningAllButton sessionId={id} />
+          </div>
+        )}
 
         {/* Liste */}
         <div className="rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 overflow-hidden">
@@ -308,9 +351,16 @@ export default async function SessionPositionnementListPage({
                               "fr-FR",
                             )}
                           </span>
-                        ) : (
+                        ) : sentByEnrollment.get(p.enrollmentId) ? (
                           <span className="text-xs text-amber-700">
-                            ⏳ En attente
+                            ⏳ En attente · envoyé le{" "}
+                            {new Date(
+                              sentByEnrollment.get(p.enrollmentId)!,
+                            ).toLocaleDateString("fr-FR")}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-zinc-500">
+                            Non envoyé
                           </span>
                         )}
                       </td>
@@ -342,7 +392,14 @@ export default async function SessionPositionnementListPage({
                             Voir le détail →
                           </Link>
                         ) : (
-                          <span className="text-zinc-300 text-xs">—</span>
+                          <SendPositioningButton
+                            sessionId={id}
+                            enrollmentId={p.enrollmentId}
+                            hasEmail={Boolean(p.email)}
+                            alreadySent={Boolean(
+                              sentByEnrollment.get(p.enrollmentId),
+                            )}
+                          />
                         )}
                       </td>
                     </tr>
