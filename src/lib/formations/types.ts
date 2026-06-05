@@ -36,6 +36,7 @@ export type Formation = {
   technical_means: string | null;
   evaluation_methods: string | null;
   accessibility: string | null;
+  support_drive_url: string | null;
   duration_hours: number | null;
   duration_days: number | null;
   modality: FormationModality | null;

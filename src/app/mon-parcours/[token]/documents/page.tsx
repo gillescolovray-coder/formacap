@@ -41,17 +41,20 @@ export default async function PortailDocumentsPage({
   const { data: portalRow } = await supabase
     .from("enrollment_portal_tokens")
     .select(
-      "enrollment:session_enrollments(session_id, session:sessions(formation:formations(title, programme_pdf_url, programme_pdf_name), organization:organizations(name, logo_url)))",
+      "enrollment:session_enrollments(id, session_id, session:sessions(support_drive_url, formation:formations(title, programme_pdf_url, programme_pdf_name, support_drive_url), organization:organizations(name, logo_url)))",
     )
     .eq("token", token)
     .maybeSingle<{
       enrollment: {
+        id: string;
         session_id: string;
         session: {
+          support_drive_url: string | null;
           formation: {
             title: string;
             programme_pdf_url: string | null;
             programme_pdf_name: string | null;
+            support_drive_url: string | null;
           } | null;
           organization: { name: string; logo_url: string | null } | null;
         } | null;
@@ -63,6 +66,20 @@ export default async function PortailDocumentsPage({
   }
 
   const sessionId = portalRow.enrollment.session_id;
+  const enrollmentId = portalRow.enrollment.id;
+  // Accès supports réservé aux apprenants ayant émargé (≥1 créneau).
+  // Gilles 2026-06-05.
+  const { data: learnerSigs } = await supabase
+    .from("attendance_signatures")
+    .select("id")
+    .eq("enrollment_id", enrollmentId)
+    .eq("signer_role", "learner")
+    .limit(1);
+  const hasSignedEmargement = (learnerSigs ?? []).length > 0;
+  const supportDriveUrl =
+    portalRow.enrollment.session?.support_drive_url ??
+    portalRow.enrollment.session?.formation?.support_drive_url ??
+    null;
   const formationTitle =
     portalRow.enrollment.session?.formation?.title ?? "Formation";
   const orgName = portalRow.enrollment.session?.organization?.name ?? "";
@@ -170,7 +187,33 @@ export default async function PortailDocumentsPage({
           Retour à mon espace
         </Link>
 
-        {allItems.length === 0 ? (
+        {!hasSignedEmargement ? (
+          <div className="rounded-xl bg-white shadow-sm border border-zinc-200 p-8 text-center">
+            <FolderOpen className="h-10 w-10 text-zinc-300 mx-auto mb-2" />
+            <p className="text-sm font-bold text-zinc-700">
+              🔒 Supports verrouillés
+            </p>
+            <p className="text-xs text-zinc-500 mt-1 max-w-sm mx-auto">
+              Signez votre feuille d&apos;émargement pour accéder aux supports
+              de la formation.
+            </p>
+          </div>
+        ) : (
+          <>
+            {supportDriveUrl && (
+              <div className="rounded-xl bg-white shadow-sm border border-zinc-200 p-4 mb-3">
+                <a
+                  href={supportDriveUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-700 text-sm font-bold hover:bg-emerald-100"
+                >
+                  <FolderOpen className="h-4 w-4" />
+                  Ouvrir les supports (Google Drive)
+                </a>
+              </div>
+            )}
+            {allItems.length === 0 ? (
           <div className="rounded-xl bg-white shadow-sm border border-zinc-200 p-8 text-center">
             <FolderOpen className="h-10 w-10 text-zinc-300 mx-auto mb-2" />
             <p className="text-sm font-medium text-zinc-700">
@@ -244,6 +287,8 @@ export default async function PortailDocumentsPage({
               ))}
             </ul>
           </div>
+            )}
+          </>
         )}
 
         <footer className="text-center text-[11px] text-zinc-400 mt-6">

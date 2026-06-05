@@ -72,7 +72,7 @@ export default async function LearnerSessionDetailPage({
   const { data: session } = await supabase
     .from("sessions")
     .select(
-      "id, internal_code, start_date, end_date, is_inter, modality, status, location, video_app, video_link, location_obj:formation_locations!location_id(name, address, postal_code, city), formation:formations(id, title, subtitle, duration_hours, duration_days, programme_pdf_url), trainer:trainers!trainer_id(first_name, last_name)",
+      "id, internal_code, start_date, end_date, is_inter, modality, status, location, video_app, video_link, support_drive_url, location_obj:formation_locations!location_id(name, address, postal_code, city), formation:formations(id, title, subtitle, duration_hours, duration_days, programme_pdf_url, support_drive_url), trainer:trainers!trainer_id(first_name, last_name)",
     )
     .eq("id", sessionId)
     .eq("organization_id", ctx.learner.organization_id)
@@ -96,6 +96,7 @@ export default async function LearnerSessionDetailPage({
     location: string | null;
     video_app: string | null;
     video_link: string | null;
+    support_drive_url: string | null;
     location_obj: LocObj | LocObj[] | null;
     formation:
       | {
@@ -105,6 +106,7 @@ export default async function LearnerSessionDetailPage({
           duration_hours: number | null;
           duration_days: number | null;
           programme_pdf_url: string | null;
+          support_drive_url: string | null;
         }
       | Array<{
           id: string;
@@ -113,6 +115,7 @@ export default async function LearnerSessionDetailPage({
           duration_hours: number | null;
           duration_days: number | null;
           programme_pdf_url: string | null;
+          support_drive_url: string | null;
         }>
       | null;
     trainer:
@@ -205,6 +208,11 @@ export default async function LearnerSessionDetailPage({
     if (s.signer_role === "trainer") trainerSigned.add(key);
     else learnerSigned.add(key);
   }
+  // Accès aux supports réservé aux apprenants ayant émargé au moins 1
+  // créneau (Gilles 2026-06-05). Lien Drive effectif = session sinon formation.
+  const hasSignedEmargement = learnerSigned.size > 0;
+  const supportDriveUrl =
+    sess.support_drive_url ?? formation?.support_drive_url ?? null;
   // Liste des creneaux planifies (jour x moment) avec un horaire.
   type Slot = { date: string; moment: "morning" | "afternoon" };
   const slots: Slot[] = [];
@@ -441,7 +449,34 @@ export default async function LearnerSessionDetailPage({
           <FolderOpen className="h-4 w-4 text-indigo-600" />
           Documents partagés
         </h2>
-        {sharedDocsWithUrls.length === 0 ? (
+        {!hasSignedEmargement ? (
+          <div className="px-4 py-6 text-center">
+            <Lock className="h-8 w-8 text-zinc-300 mx-auto mb-2" />
+            <p className="text-sm font-bold text-zinc-700">
+              Supports verrouillés
+            </p>
+            <p className="text-xs text-zinc-500 mt-1 max-w-sm mx-auto">
+              Signez votre feuille d&apos;émargement pour accéder aux supports
+              de la formation.
+            </p>
+          </div>
+        ) : (
+          <>
+            {supportDriveUrl && (
+              <div className="px-4 py-3 border-b border-zinc-100">
+                <a
+                  href={supportDriveUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-700 text-sm font-bold hover:bg-emerald-100"
+                >
+                  <FolderOpen className="h-4 w-4" />
+                  Ouvrir les supports (Google Drive)
+                </a>
+              </div>
+            )}
+            {sharedDocsWithUrls.length === 0 ? (
+          !supportDriveUrl ? (
           <div className="px-4 py-6 text-center">
             <FolderOpen className="h-8 w-8 text-zinc-300 mx-auto mb-2" />
             <p className="text-sm font-medium text-zinc-600">
@@ -451,6 +486,7 @@ export default async function LearnerSessionDetailPage({
               Votre formateur déposera les supports ici pendant la formation.
             </p>
           </div>
+          ) : null
         ) : (
           <ul className="divide-y divide-zinc-100">
             {sharedDocsWithUrls.map((doc) => (
@@ -510,11 +546,13 @@ export default async function LearnerSessionDetailPage({
             ))}
           </ul>
         )}
-        {sharedDocsWithUrls.length > 0 && (
-          <p className="px-4 py-2 text-[11px] text-zinc-400 border-t border-zinc-100">
-            Les liens de téléchargement sont valables 1 heure. Rafraîchissez la
-            page si un lien ne fonctionne plus.
-          </p>
+            {sharedDocsWithUrls.length > 0 && (
+              <p className="px-4 py-2 text-[11px] text-zinc-400 border-t border-zinc-100">
+                Les liens de téléchargement sont valables 1 heure. Rafraîchissez
+                la page si un lien ne fonctionne plus.
+              </p>
+            )}
+          </>
         )}
       </div>
 

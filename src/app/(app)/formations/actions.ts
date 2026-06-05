@@ -91,6 +91,8 @@ function buildPayload(formData: FormData) {
     technical_means: parseText(formData.get("technical_means")),
     evaluation_methods: parseText(formData.get("evaluation_methods")),
     accessibility: parseText(formData.get("accessibility")),
+    // Lien Drive des supports (hérité par les sessions). Gilles 2026-06-05.
+    support_drive_url: parseText(formData.get("support_drive_url")),
     duration_hours: parseNumber(formData.get("duration_hours")),
     // duration_days : NUMERIC depuis migration 0103 (accepte 0.5, 1.5...).
     // On utilise parseNumber pour accepter les décimaux (multiples de 0.5

@@ -601,6 +601,27 @@ export function FormationForm({
               className="bg-white dark:bg-zinc-900"
             />
           </div>
+
+          {/* Lien Drive des supports — hérité par les sessions, accessible
+              aux apprenants APRÈS émargement. Gilles 2026-06-05. */}
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor="support_drive_url" className="font-semibold">
+              Lien des supports (Google Drive…)
+            </Label>
+            <input
+              id="support_drive_url"
+              name="support_drive_url"
+              type="url"
+              defaultValue={formation?.support_drive_url ?? ""}
+              placeholder="https://drive.google.com/…"
+              className="flex h-9 w-full rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500"
+            />
+            <p className="text-xs text-zinc-500">
+              Pour les supports volumineux (&gt; 50 Mo) ou partagés via Drive.
+              Repris automatiquement sur les sessions de cette formation et
+              mis à disposition des apprenants <strong>après leur émargement</strong>.
+            </p>
+          </div>
         </div>
       </CollapsibleSection>
 

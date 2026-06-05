@@ -41,7 +41,7 @@ export default async function LearnerDocumentsPage({
   const { data: enrollments } = await supabase
     .from("session_enrollments")
     .select(
-      "id, status, session:sessions(id, start_date, end_date, modality, formation:formations(id, title, programme_pdf_url))",
+      "id, status, session:sessions(id, start_date, end_date, modality, support_drive_url, formation:formations(id, title, programme_pdf_url, support_drive_url))",
     )
     .eq("learner_id", ctx.learner.id)
     .neq("status", "cancelled");
@@ -54,14 +54,17 @@ export default async function LearnerDocumentsPage({
       start_date: string | null;
       end_date: string | null;
       modality: string | null;
+      support_drive_url: string | null;
       formation: {
         id: string;
         title: string;
         programme_pdf_url: string | null;
+        support_drive_url: string | null;
       } | Array<{
         id: string;
         title: string;
         programme_pdf_url: string | null;
+        support_drive_url: string | null;
       }> | null;
     } | null;
   };
@@ -80,6 +83,7 @@ export default async function LearnerDocumentsPage({
         endDate: session.end_date,
         title: formation?.title ?? "(formation supprimée)",
         programmePdfUrl: formation?.programme_pdf_url ?? null,
+        driveUrl: session.support_drive_url ?? formation?.support_drive_url ?? null,
         isPast: session.end_date ? session.end_date < today : false,
       };
     })
@@ -174,15 +178,20 @@ export default async function LearnerDocumentsPage({
 
   // Émargement validé par le formateur (≥ 1 créneau signé trainer) par
   // enrollment → conditionne l'accès à la feuille de présence.
-  const emargeValidated = new Set<string>();
+  // + signatures APPRENANT (≥1 créneau) -> débloque l'accès aux supports.
+  const emargeValidated = new Set<string>(); // formateur (feuille de présence)
+  const learnerSignedEnrollments = new Set<string>(); // apprenant (supports)
   if (enrollmentIds.length > 0) {
-    const { data: trainerSigs } = await supabase
+    const { data: sigs } = await supabase
       .from("attendance_signatures")
-      .select("enrollment_id")
-      .in("enrollment_id", enrollmentIds)
-      .eq("signer_role", "trainer");
-    for (const s of (trainerSigs ?? []) as Array<{ enrollment_id: string }>) {
-      emargeValidated.add(s.enrollment_id);
+      .select("enrollment_id, signer_role")
+      .in("enrollment_id", enrollmentIds);
+    for (const s of (sigs ?? []) as Array<{
+      enrollment_id: string;
+      signer_role: string;
+    }>) {
+      if (s.signer_role === "trainer") emargeValidated.add(s.enrollment_id);
+      else learnerSignedEnrollments.add(s.enrollment_id);
     }
   }
 
@@ -221,6 +230,7 @@ export default async function LearnerDocumentsPage({
               hasProgramme ||
               hasConvention ||
               sharedDocs.length > 0 ||
+              !!item.driveUrl ||
               canEmargement;
 
             return (
@@ -307,13 +317,36 @@ export default async function LearnerDocumentsPage({
                   </div>
                 )}
 
-                {/* Documents partagés par le formateur / CAP */}
-                {sharedDocs.length > 0 && (
+                {/* Documents partagés (fichiers + lien Drive) — RÉSERVÉS
+                    aux apprenants ayant émargé. Gilles 2026-06-05. */}
+                {(sharedDocs.length > 0 || item.driveUrl) &&
+                !learnerSignedEnrollments.has(item.enrollmentId) ? (
+                  <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-center">
+                    <p className="text-xs font-bold text-zinc-700 inline-flex items-center gap-1.5">
+                      🔒 Supports verrouillés
+                    </p>
+                    <p className="text-[11px] text-zinc-500 mt-0.5">
+                      Signez votre feuille d&apos;émargement pour accéder aux
+                      supports de cette formation.
+                    </p>
+                  </div>
+                ) : (sharedDocs.length > 0 || item.driveUrl) ? (
                   <div className="rounded-lg border border-indigo-100 bg-indigo-50/40 p-3">
                     <p className="text-xs font-bold text-indigo-800 inline-flex items-center gap-1.5 mb-2">
                       <FolderOpen className="h-4 w-4" />
                       Documents partagés
                     </p>
+                    {item.driveUrl && (
+                      <a
+                        href={item.driveUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-2 mb-2 rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-700 text-xs font-bold hover:bg-emerald-100"
+                      >
+                        <FolderOpen className="h-3.5 w-3.5" />
+                        Ouvrir les supports (Google Drive)
+                      </a>
+                    )}
                     <ul className="space-y-1.5">
                       {sharedDocs.map((doc) => (
                         <li
@@ -347,7 +380,7 @@ export default async function LearnerDocumentsPage({
                       ))}
                     </ul>
                   </div>
-                )}
+                ) : null}
               </article>
             );
           })}
