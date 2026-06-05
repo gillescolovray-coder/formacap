@@ -72,6 +72,7 @@ export type TrainingSession = {
   video_app: string | null;
   video_link: string | null;
   video_instructions: string | null;
+  support_drive_url: string | null;
   trainer_id: string | null;
   trainer_name: string | null;
   trainer_notes: string | null;

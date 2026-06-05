@@ -395,6 +395,27 @@ export function LocationSection({ session, locations }: Props) {
             </div>
           </div>
         )}
+
+        {/* Lien Drive des supports — override du programme (toujours visible).
+            Vide = hérite de la formation. Accessible aux apprenants APRÈS
+            émargement. Gilles 2026-06-05. */}
+        <div className="space-y-1.5 mt-4">
+          <Label htmlFor="support_drive_url">
+            Lien des supports (Google Drive)
+          </Label>
+          <input
+            id="support_drive_url"
+            name="support_drive_url"
+            type="url"
+            defaultValue={session?.support_drive_url ?? ""}
+            placeholder="Laissez vide pour hériter du lien du programme"
+            className="flex h-9 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-zinc-900 px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500"
+          />
+          <p className="text-xs text-zinc-500">
+            Vide = utilise le lien du programme de formation. Accessible aux
+            apprenants <strong>après leur émargement</strong>.
+          </p>
+        </div>
       </div>
     </section>
   );

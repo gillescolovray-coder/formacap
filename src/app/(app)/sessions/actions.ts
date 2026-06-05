@@ -69,6 +69,8 @@ function buildPayload(formData: FormData) {
     video_app: parseText(formData.get("video_app")),
     video_link: parseText(formData.get("video_link")),
     video_instructions: parseText(formData.get("video_instructions")),
+    // Override du lien Drive des supports (NULL = hérite de la formation).
+    support_drive_url: parseText(formData.get("support_drive_url")),
     trainer_id: parseText(formData.get("trainer_id")),
     trainer_name: parseText(formData.get("trainer_name")),
     trainer_notes: parseText(formData.get("trainer_notes")),
