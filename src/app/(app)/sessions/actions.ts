@@ -1,6 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import {
+  loadAndComputeBillingForInscription,
+  persistComputedBilling,
+} from "@/lib/billing/compute-billing";
 import { redirect } from "next/navigation";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
@@ -424,6 +428,37 @@ export async function updateSession(id: string, formData: FormData) {
     },
     parseCustomDays(formData),
   );
+
+  // Recalcul AUTO des montants des inscriptions au prix actuel de la
+  // session (Gilles 2026-06-05). Évite que les montants stockés divergent
+  // du prix après un changement de tarif/durée. persistComputedBilling
+  // respecte les montants saisis MANUELLEMENT (billing_manually_overridden).
+  // Best-effort : un échec ne bloque pas l'enregistrement.
+  try {
+    const { data: reqs } = await supabase
+      .from("inscription_requests")
+      .select("id")
+      .eq("target_session_id", id);
+    for (const r of (reqs ?? []) as Array<{ id: string }>) {
+      try {
+        const billing = await loadAndComputeBillingForInscription(
+          supabase,
+          r.id,
+        );
+        await persistComputedBilling(supabase, r.id, billing);
+      } catch (e) {
+        console.warn(
+          "[updateSession] recalcul facturation inscription échoué",
+          { inscriptionId: r.id, error: (e as Error).message },
+        );
+      }
+    }
+  } catch (e) {
+    console.warn(
+      "[updateSession] recalcul facturation session échoué",
+      (e as Error).message,
+    );
+  }
 
   revalidatePath("/sessions");
   revalidatePath(`/sessions/${id}`);
