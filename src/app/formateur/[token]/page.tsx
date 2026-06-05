@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Calendar, Hourglass } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { geocodeAddressFR, haversineKm } from "@/lib/geo/geocode";
 import {
   SessionCard,
   type SessionRow,
@@ -44,7 +45,7 @@ export default async function FormateurAgendaPage({
   const { data: tokenRow } = await supabase
     .from("trainer_portal_tokens")
     .select(
-      "trainer_id, trainer:trainers(id, first_name, last_name, email, organization_id)",
+      "trainer_id, trainer:trainers(id, first_name, last_name, email, organization_id, company_address, company_postal_code, company_city)",
     )
     .eq("token", token)
     .maybeSingle<{
@@ -55,6 +56,9 @@ export default async function FormateurAgendaPage({
         last_name: string;
         email: string | null;
         organization_id: string;
+        company_address: string | null;
+        company_postal_code: string | null;
+        company_city: string | null;
       } | null;
     }>();
 
@@ -82,7 +86,7 @@ export default async function FormateurAgendaPage({
     supabase
       .from("sessions")
       .select(
-        "id, status, start_date, end_date, modality, location, is_inter, formation:formations(title), location_ref:formation_locations!location_id(name, city)",
+        "id, status, start_date, end_date, modality, location, is_inter, formation:formations(title), location_ref:formation_locations!location_id(name, city, address, postal_code, latitude, longitude)",
       )
       .eq("trainer_id", trainer.id),
     supabase
@@ -110,7 +114,7 @@ export default async function FormateurAgendaPage({
       ? await supabase
           .from("sessions")
           .select(
-            "id, status, start_date, end_date, modality, location, is_inter, formation:formations(title), location_ref:formation_locations!location_id(name, city)",
+            "id, status, start_date, end_date, modality, location, is_inter, formation:formations(title), location_ref:formation_locations!location_id(name, city, address, postal_code, latitude, longitude)",
           )
           .in("id", idsToFetch)
       : { data: [] };
@@ -182,6 +186,48 @@ export default async function FormateurAgendaPage({
   const past = pastAll.filter((s) => s.status === "confirmed");
   const pastHiddenCount = pastAll.length - past.length;
 
+  // Distance KM lieu <-> formateur sur les sessions présentielles à venir.
+  // TEST (Gilles 2026-06-05) : activé uniquement pour Gilles Colovray.
+  // Coordonnées du lieu = GPS stocké, sinon géocodage de secours (mis en
+  // cache 24h par l'API) dédupliqué par lieu.
+  const distanceBySession = new Map<string, number>();
+  const isGilles =
+    trainer.last_name.toLowerCase().includes("colovray") ||
+    (trainer.email ?? "").toLowerCase().includes("colovray");
+  if (isGilles) {
+    const gilles = await geocodeAddressFR(
+      trainer.company_address,
+      trainer.company_postal_code,
+      trainer.company_city,
+    );
+    if (gilles) {
+      const locCache = new Map<string, { lat: number; lng: number } | null>();
+      for (const s of future) {
+        const loc = s.location_ref;
+        if (!loc || s.modality === "distanciel") continue;
+        let coords: { lat: number; lng: number } | null = null;
+        if (loc.latitude != null && loc.longitude != null) {
+          coords = { lat: loc.latitude, lng: loc.longitude };
+        } else {
+          const key = `${loc.name}|${loc.address ?? ""}|${loc.postal_code ?? ""}|${loc.city ?? ""}`;
+          if (locCache.has(key)) {
+            coords = locCache.get(key) ?? null;
+          } else {
+            coords = await geocodeAddressFR(
+              loc.address,
+              loc.postal_code,
+              loc.city,
+            );
+            locCache.set(key, coords);
+          }
+        }
+        if (coords) {
+          distanceBySession.set(s.id, haversineKm(coords, gilles));
+        }
+      }
+    }
+  }
+
   // Données passées formatées pour le composant client
   const pastData = past.map((s) => ({
     session: s,
@@ -246,6 +292,7 @@ export default async function FormateurAgendaPage({
                   participantCount={counts.get(s.id) ?? 0}
                   schedule={scheduleBySession.get(s.id) ?? null}
                   prominence="high"
+                  distanceKm={distanceBySession.get(s.id) ?? null}
                 />
               ))}
             </div>

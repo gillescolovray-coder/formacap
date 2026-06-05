@@ -22,7 +22,14 @@ export type SessionRow = {
    *  null = non renseigné (session ancienne) → pas de badge affiché. */
   is_inter: boolean | null;
   formation: { title: string } | null;
-  location_ref: { name: string; city: string | null } | null;
+  location_ref: {
+    name: string;
+    city: string | null;
+    address?: string | null;
+    postal_code?: string | null;
+    latitude?: number | null;
+    longitude?: number | null;
+  } | null;
 };
 
 export type SessionScheduleSnapshot = {
@@ -44,15 +51,15 @@ const STATUS_STYLES: Record<
   },
   planned: {
     label: "Planifiée",
-    bg: "bg-amber-50",
-    text: "text-amber-700",
-    border: "border-amber-200",
+    bg: "bg-sky-100",
+    text: "text-sky-800",
+    border: "border-sky-300",
   },
   confirmed: {
     label: "Confirmée",
-    bg: "bg-emerald-50",
-    text: "text-emerald-700",
-    border: "border-emerald-200",
+    bg: "bg-emerald-100",
+    text: "text-emerald-800",
+    border: "border-emerald-300",
   },
   in_progress: {
     label: "En cours",
@@ -68,9 +75,9 @@ const STATUS_STYLES: Record<
   },
   postponed: {
     label: "Reportée",
-    bg: "bg-orange-50",
-    text: "text-orange-700",
-    border: "border-orange-200",
+    bg: "bg-orange-100",
+    text: "text-orange-900",
+    border: "border-orange-400",
   },
   cancelled: {
     label: "Annulée",
@@ -195,6 +202,8 @@ type Props = {
   schedule?: SessionScheduleSnapshot | null;
   /** "high" = à venir (accent cyan), "low" = passée (atténué). */
   prominence?: "high" | "low";
+  /** Distance km lieu <-> formateur (présentiel, test Gilles). */
+  distanceKm?: number | null;
 };
 
 export function SessionCard({
@@ -203,6 +212,7 @@ export function SessionCard({
   participantCount,
   schedule = null,
   prominence = "high",
+  distanceKm = null,
 }: Props) {
   const statusStyle =
     STATUS_STYLES[session.status ?? "draft"] ?? STATUS_STYLES.draft!;
@@ -274,9 +284,14 @@ export function SessionCard({
                 )}
               </span>
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 flex-wrap">
               <ModalityIcon className="h-3 w-3 text-zinc-400" />
               <span>{locationLabel}</span>
+              {distanceKm != null && (
+                <span className="inline-flex items-center gap-0.5 font-bold text-indigo-700">
+                  · 📍 ≈ {Math.round(distanceKm)} km
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-1.5">
               <Users className="h-3 w-3 text-zinc-400" />
