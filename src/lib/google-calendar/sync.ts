@@ -19,19 +19,28 @@ import {
   isCalendarConfigured,
 } from "./client";
 
-// Statuts dont la session doit figurer sur l'agenda.
+// Statuts dont la session doit figurer sur l'agenda. Gilles veut TOUTES les
+// sessions visibles (brouillons, annulées, reportées comprises), le statut
+// étant indiqué dans le titre. Seules les sessions ARCHIVÉES sont exclues
+// (elles sont volontairement masquées partout).
 const SYNCABLE_STATUSES = new Set([
+  "draft",
   "planned",
   "confirmed",
   "in_progress",
   "completed",
+  "cancelled",
+  "postponed",
 ]);
 
 const STATUS_META: Record<string, { emoji: string; label: string }> = {
+  draft: { emoji: "📝", label: "Brouillon" },
   planned: { emoji: "🗓️", label: "Planifiée" },
   confirmed: { emoji: "✅", label: "Confirmée" },
   in_progress: { emoji: "▶️", label: "En cours" },
   completed: { emoji: "✔️", label: "Terminée" },
+  cancelled: { emoji: "❌", label: "ANNULÉE" },
+  postponed: { emoji: "⏸️", label: "REPORTÉE" },
 };
 
 const MODALITY_LABELS: Record<string, string> = {
