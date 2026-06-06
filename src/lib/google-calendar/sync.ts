@@ -223,7 +223,7 @@ function buildEvent(
       ? `👤 <b>Espace formateur :</b> <a href="${portalUrl}">ouvrir le portail</a>`
       : null,
     "",
-    `Statut : ${esc(meta.label)}`,
+    `<b>Statut : ${esc(meta.label)}</b>`,
     `Modalité : ${interLabel} · ${esc(modalityLabel)}`,
     "",
     "Horaires :",
