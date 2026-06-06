@@ -14,6 +14,10 @@
 import type { calendar_v3 } from "googleapis";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
+  getTrainerPortalToken,
+  buildTrainerPortalUrl,
+} from "@/lib/portal/trainer-token";
+import {
   getCalendarClient,
   getCalendarId,
   isCalendarConfigured,
@@ -99,6 +103,7 @@ type SessionRow = {
   default_morning_start: string | null;
   default_afternoon_end: string | null;
   trainer_name: string | null;
+  trainer_id: string | null;
   max_participants: number | null;
   google_calendar_event_id: string | null;
   formation?: { title: string | null; internal_code: string | null } | null;
@@ -138,15 +143,25 @@ function buildLocationString(s: SessionRow): string {
   return s.location?.trim() || "Lieu à préciser";
 }
 
+/** Échappe le texte inséré dans la description HTML de l'événement. */
+function esc(t: string): string {
+  return t
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 function buildEvent(
   s: SessionRow,
   days: DayRow[],
   participantCount: number,
+  portalUrl: string | null,
 ): calendar_v3.Schema$Event {
   const meta = STATUS_META[s.status] ?? { emoji: "🗓️", label: s.status };
-  const ref = s.formation?.internal_code?.trim();
   const title = s.formation?.title?.trim() || "Session de formation";
-  const summary = `${meta.emoji} ${ref ? `${ref} — ` : ""}${title}`;
+  // Dans le titre : nombre de participants (à la place du code formation).
+  const maxPart = s.max_participants ? `/${s.max_participants}` : "";
+  const summary = `${meta.emoji} 👥${participantCount}${maxPart} — ${title}`;
 
   // Horaires : première heure de début, dernière heure de fin.
   const firstDay = days[0];
@@ -195,30 +210,37 @@ function buildEvent(
 
   const lieuLine =
     s.modality === "distanciel"
-      ? `Distanciel : ${locationStr}`
-      : `Lieu : ${locationStr}`;
+      ? `Distanciel : ${esc(locationStr)}`
+      : `Lieu : ${esc(locationStr)}`;
 
+  const ficheUrl = `${appOrigin()}/sessions/${s.id}`;
+
+  // Description en HTML (Google Agenda gère le gras et les liens).
+  // Les liens utiles sont placés TOUT EN HAUT.
   const descriptionLines = [
-    `Statut : ${meta.label}`,
-    `Modalité : ${interLabel} · ${modalityLabel}`,
-    "",
-    "Horaires :",
-    ...horairesLines,
-    "",
-    `Formateur : ${trainerName}${trainerPhone ? ` (${trainerPhone})` : ""}`,
-    `Participants : ${participantCount}${s.max_participants ? ` / ${s.max_participants}` : ""}`,
-    lieuLine,
-    s.modality !== "distanciel" && s.video_link
-      ? `Visio : ${s.video_link}`
+    `🔗 <b>Fiche session :</b> <a href="${ficheUrl}">ouvrir la fiche</a>`,
+    portalUrl
+      ? `👤 <b>Espace formateur :</b> <a href="${portalUrl}">ouvrir le portail</a>`
       : null,
     "",
-    `Fiche session : ${appOrigin()}/sessions/${s.id}`,
+    `Statut : ${esc(meta.label)}`,
+    `Modalité : ${interLabel} · ${esc(modalityLabel)}`,
+    "",
+    "Horaires :",
+    ...horairesLines.map((l) => esc(l)),
+    "",
+    `Formateur : ${esc(trainerName)}${trainerPhone ? ` (${esc(trainerPhone)})` : ""}`,
+    `<b>Participants : ${participantCount}${s.max_participants ? ` / ${s.max_participants}` : ""}</b>`,
+    lieuLine,
+    s.modality !== "distanciel" && s.video_link
+      ? `Visio : <a href="${esc(s.video_link)}">${esc(s.video_link)}</a>`
+      : null,
   ].filter((l): l is string => l !== null);
 
   return {
     summary,
     location: locationStr,
-    description: descriptionLines.join("\n"),
+    description: descriptionLines.join("<br>"),
     start: {
       dateTime: `${s.start_date.slice(0, 10)}T${startTime}`,
       timeZone: "Europe/Paris",
@@ -300,7 +322,7 @@ export async function syncSessionCalendar(
     const { data: s } = await admin
       .from("sessions")
       .select(
-        "id, start_date, end_date, status, modality, is_inter, location, video_app, video_link, default_morning_start, default_afternoon_end, trainer_name, max_participants, google_calendar_event_id, formation:formations(title, internal_code), trainer:trainers(first_name, last_name, phone, mobile), location_full:formation_locations(name, address, postal_code, city)",
+        "id, start_date, end_date, status, modality, is_inter, location, video_app, video_link, default_morning_start, default_afternoon_end, trainer_name, trainer_id, max_participants, google_calendar_event_id, formation:formations(title, internal_code), trainer:trainers(first_name, last_name, phone, mobile), location_full:formation_locations(name, address, postal_code, city)",
       )
       .eq("id", sessionId)
       .maybeSingle<SessionRow>();
@@ -344,7 +366,19 @@ export async function syncSessionCalendar(
         .neq("status", "cancelled"),
     ]);
 
-    const event = buildEvent(s, (days ?? []) as DayRow[], count ?? 0);
+    // Lien du portail formateur (si le portail est activé pour ce formateur).
+    let portalUrl: string | null = null;
+    if (s.trainer_id) {
+      const portal = await getTrainerPortalToken(admin, s.trainer_id);
+      if (portal) portalUrl = buildTrainerPortalUrl(appOrigin(), portal.token);
+    }
+
+    const event = buildEvent(
+      s,
+      (days ?? []) as DayRow[],
+      count ?? 0,
+      portalUrl,
+    );
 
     // 1) Mise à jour de l'événement existant.
     if (eventId) {
