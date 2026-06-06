@@ -645,11 +645,21 @@ export async function syncAllSessionsToCalendar(): Promise<{
   lastSyncAt?: string;
 }> {
   if (!isCalendarConfigured()) {
+    const hasServiceAccount = Boolean(
+      process.env.GOOGLE_SERVICE_ACCOUNT_JSON ||
+        process.env.GOOGLE_SERVICE_ACCOUNT_JSON_B64,
+    );
+    const hasCalendarId = Boolean(process.env.GOOGLE_CALENDAR_ID);
+    const missing = [
+      !hasServiceAccount && "compte de service Google (GOOGLE_SERVICE_ACCOUNT_JSON)",
+      !hasCalendarId && "GOOGLE_CALENDAR_ID",
+    ]
+      .filter(Boolean)
+      .join(" + ");
     return {
       ok: false,
       count: 0,
-      error:
-        "Google Agenda non configuré (variable GOOGLE_CALENDAR_ID manquante sur Vercel).",
+      error: `Configuration Google manquante sur Vercel : ${missing}. (Vérifiez la variable puis redéployez.)`,
     };
   }
   const { organizationId } = await getCurrentOrganizationId();
