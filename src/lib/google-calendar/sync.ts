@@ -230,11 +230,20 @@ function buildEvent(
   };
 }
 
+export type CalendarSyncResult = {
+  ok: boolean;
+  skipped?: boolean;
+  error?: string;
+};
+
 /**
- * Synchronise une session avec l'agenda Google. Best-effort.
+ * Synchronise une session avec l'agenda Google. Best-effort : ne lève jamais,
+ * mais RENVOIE le résultat réel (ok / erreur Google) pour pouvoir l'afficher.
  */
-export async function syncSessionCalendar(sessionId: string): Promise<void> {
-  if (!isCalendarConfigured()) return;
+export async function syncSessionCalendar(
+  sessionId: string,
+): Promise<CalendarSyncResult> {
+  if (!isCalendarConfigured()) return { ok: false, skipped: true };
   try {
     const admin = createAdminClient();
     const { data: s } = await admin
@@ -244,7 +253,7 @@ export async function syncSessionCalendar(sessionId: string): Promise<void> {
       )
       .eq("id", sessionId)
       .maybeSingle<SessionRow>();
-    if (!s) return;
+    if (!s) return { ok: false, error: "Session introuvable." };
 
     const calendar = getCalendarClient();
     const calendarId = getCalendarId();
@@ -263,7 +272,7 @@ export async function syncSessionCalendar(sessionId: string): Promise<void> {
           .update({ google_calendar_event_id: null })
           .eq("id", sessionId);
       }
-      return;
+      return { ok: true, skipped: true };
     }
 
     // Détails (jours + nb participants)
@@ -291,7 +300,7 @@ export async function syncSessionCalendar(sessionId: string): Promise<void> {
           eventId,
           requestBody: event,
         });
-        return;
+        return { ok: true };
       } catch {
         // l'événement a pu être supprimé manuellement côté agenda -> on recrée
       }
@@ -308,10 +317,10 @@ export async function syncSessionCalendar(sessionId: string): Promise<void> {
         .update({ google_calendar_event_id: newId })
         .eq("id", sessionId);
     }
+    return { ok: true };
   } catch (e) {
-    console.warn("[google-calendar] synchro échouée", {
-      sessionId,
-      error: (e as Error).message,
-    });
+    const error = (e as Error).message;
+    console.warn("[google-calendar] synchro échouée", { sessionId, error });
+    return { ok: false, error };
   }
 }

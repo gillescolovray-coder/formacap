@@ -43,9 +43,12 @@ export function SyncCalendarButton({
     startTransition(async () => {
       const res = await syncAllSessionsToCalendar();
       if (res.ok) {
+        // Succès (éventuellement partiel : res.error signale des échecs).
         setMsg({
-          ok: true,
-          text: `${res.count} session${res.count > 1 ? "s" : ""} synchronisée${res.count > 1 ? "s" : ""}.`,
+          ok: !res.error,
+          text: res.error
+            ? `${res.count} synchronisée(s). ⚠️ ${res.error}`
+            : `${res.count} session${res.count > 1 ? "s" : ""} synchronisée${res.count > 1 ? "s" : ""}.`,
         });
         if (res.lastSyncAt) setLastSync(res.lastSyncAt);
       } else {

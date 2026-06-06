@@ -673,21 +673,35 @@ export async function syncAllSessionsToCalendar(): Promise<{
   }
   const ids = (sessions ?? []).map((s) => s.id as string);
   let count = 0;
+  let failed = 0;
+  let firstError: string | undefined;
   // Traitement par petits lots pour ne pas saturer l'API Google.
   const BATCH = 5;
   for (let i = 0; i < ids.length; i += BATCH) {
     const slice = ids.slice(i, i + BATCH);
-    await Promise.all(
-      slice.map(async (id) => {
-        try {
-          await syncSessionCalendar(id);
-          count++;
-        } catch {
-          // best-effort : on continue les autres
-        }
-      }),
+    const results = await Promise.all(
+      slice.map((id) => syncSessionCalendar(id)),
     );
+    for (const r of results) {
+      if (r.ok) count++;
+      else {
+        failed++;
+        if (!firstError && r.error) firstError = r.error;
+      }
+    }
   }
+
+  // Si TOUTES les sessions ont échoué -> on remonte l'erreur Google réelle
+  // (souvent : agenda non partagé avec le compte de service, ou API non
+  // activée). Sans ça, l'utilisateur croit que c'est synchronisé.
+  if (count === 0 && failed > 0) {
+    return {
+      ok: false,
+      count: 0,
+      error: `Aucune session synchronisée (${failed} échec${failed > 1 ? "s" : ""}). Erreur Google : ${firstError ?? "inconnue"}`,
+    };
+  }
+
   // Mémorise l'horodatage de cette synchro complète.
   const lastSyncAt = new Date().toISOString();
   await supabase
@@ -695,5 +709,13 @@ export async function syncAllSessionsToCalendar(): Promise<{
     .update({ calendar_last_sync_at: lastSyncAt })
     .eq("id", organizationId);
   revalidatePath("/sessions");
-  return { ok: true, count, lastSyncAt };
+  return {
+    ok: true,
+    count,
+    lastSyncAt,
+    error:
+      failed > 0
+        ? `${failed} session(s) en échec. Erreur : ${firstError ?? "inconnue"}`
+        : undefined,
+  };
 }
