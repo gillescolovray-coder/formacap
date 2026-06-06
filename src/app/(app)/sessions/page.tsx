@@ -19,6 +19,7 @@ import { createClient } from "@/lib/supabase/server";
 import { DuplicateSessionButton } from "./_duplicate-button";
 import { InscriptionsCounterCell } from "./_inscriptions-tooltip";
 import { PageHeader } from "@/components/page-header";
+import { SyncCalendarButton } from "./_sync-calendar-button";
 import {
   computeInscriptionDisplayAmount,
   type DisplayAmountSessionContext,
@@ -890,10 +891,13 @@ export default async function SessionsListPage({
           { label: "Sessions" },
         ]}
         actions={
-          <Button nativeButton={false} render={<Link href="/sessions/new" />}>
-            <Plus className="h-4 w-4" />
-            Nouvelle session
-          </Button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <SyncCalendarButton />
+            <Button nativeButton={false} render={<Link href="/sessions/new" />}>
+              <Plus className="h-4 w-4" />
+              Nouvelle session
+            </Button>
+          </div>
         }
       />
 

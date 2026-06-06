@@ -632,3 +632,51 @@ export async function duplicateSession(id: string) {
   revalidatePath("/sessions");
   redirect(`/sessions/${created.id}?duplicated=1`);
 }
+
+/**
+ * Pousse en une fois TOUTES les sessions de l'organisation vers Google
+ * Agenda (utile pour la 1re synchro / rattrapage des sessions existantes).
+ * Les sessions archivées sont ignorées (et leur éventuel événement retiré).
+ */
+export async function syncAllSessionsToCalendar(): Promise<{
+  ok: boolean;
+  count: number;
+  error?: string;
+}> {
+  if (!isCalendarConfigured()) {
+    return {
+      ok: false,
+      count: 0,
+      error:
+        "Google Agenda non configuré (variable GOOGLE_CALENDAR_ID manquante sur Vercel).",
+    };
+  }
+  const { organizationId } = await getCurrentOrganizationId();
+  const supabase = await createClient();
+  const { data: sessions, error } = await supabase
+    .from("sessions")
+    .select("id")
+    .eq("organization_id", organizationId);
+  if (error) {
+    return { ok: false, count: 0, error: error.message };
+  }
+  const ids = (sessions ?? []).map((s) => s.id as string);
+  let count = 0;
+  // Traitement par petits lots pour ne pas saturer l'API Google.
+  const BATCH = 5;
+  for (let i = 0; i < ids.length; i += BATCH) {
+    const slice = ids.slice(i, i + BATCH);
+    await Promise.all(
+      slice.map(async (id) => {
+        try {
+          await syncSessionCalendar(id);
+          count++;
+        } catch {
+          // best-effort : on continue les autres
+        }
+      }),
+    );
+  }
+  revalidatePath("/sessions");
+  return { ok: true, count };
+}
