@@ -1,8 +1,11 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { CalendarCheck, Loader2, Info } from "lucide-react";
-import { syncAllSessionsToCalendar } from "./actions";
+import { CalendarCheck, Loader2, Info, RotateCcw } from "lucide-react";
+import {
+  syncAllSessionsToCalendar,
+  resetAndResyncCalendar,
+} from "./actions";
 
 /**
  * Bouton "Synchroniser l'agenda" (Gilles 2026-06-06).
@@ -57,24 +60,63 @@ export function SyncCalendarButton({
     });
   }
 
+  function handleReset() {
+    const ok = window.confirm(
+      "Réinitialiser l'agenda « Session FORMACAP » ?\n\n" +
+        "⚠️ Cela SUPPRIME tous les événements de cet agenda (pour effacer les doublons), puis recrée proprement toutes les sessions.\n\n" +
+        "À utiliser uniquement sur l'agenda dédié aux sessions. Continuer ?",
+    );
+    if (!ok) return;
+    setMsg(null);
+    startTransition(async () => {
+      const res = await resetAndResyncCalendar();
+      if (res.ok) {
+        setMsg({
+          ok: !res.error,
+          text: res.error
+            ? `Agenda vidé (${res.deleted} supprimé(s)), ${res.count} recréée(s). ⚠️ ${res.error}`
+            : `Agenda réinitialisé : ${res.deleted} ancien(s) événement(s) supprimé(s), ${res.count} session(s) recréée(s) sans doublon.`,
+        });
+        if (res.lastSyncAt) setLastSync(res.lastSyncAt);
+      } else {
+        setMsg({
+          ok: false,
+          text: res.error ?? "Échec de la réinitialisation.",
+        });
+      }
+    });
+  }
+
   const lastSyncLabel = formatDateTime(lastSync);
 
   return (
     <div className="flex flex-col items-stretch sm:items-end gap-1 max-w-xs">
-      <button
-        type="button"
-        onClick={handleClick}
-        disabled={pending}
-        className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs sm:text-sm font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-60 transition-colors min-h-[44px]"
-        title="Pousser toutes les sessions vers l'agenda Google « Sessions CAP »"
-      >
-        {pending ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
-          <CalendarCheck className="h-4 w-4" />
-        )}
-        {pending ? "Synchronisation…" : "Synchroniser l'agenda"}
-      </button>
+      <div className="flex items-center gap-2 flex-wrap justify-end">
+        <button
+          type="button"
+          onClick={handleClick}
+          disabled={pending}
+          className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs sm:text-sm font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-60 transition-colors min-h-[44px]"
+          title="Pousser toutes les sessions vers l'agenda Google « Session FORMACAP »"
+        >
+          {pending ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <CalendarCheck className="h-4 w-4" />
+          )}
+          {pending ? "Synchronisation…" : "Synchroniser l'agenda"}
+        </button>
+        <button
+          type="button"
+          onClick={handleReset}
+          disabled={pending}
+          className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs sm:text-sm font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-60 transition-colors min-h-[44px]"
+          title="Vider l'agenda (supprimer les doublons) et tout reconstruire proprement"
+        >
+          <RotateCcw className="h-4 w-4" />
+          Réinitialiser
+        </button>
+      </div>
 
       {/* Explication de la fonctionnalité */}
       <p className="text-[11px] leading-tight text-zinc-500 inline-flex items-start gap-1">

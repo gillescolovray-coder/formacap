@@ -29,6 +29,9 @@ import {
 // statuts soient toujours à jour (synchronisation bidirectionnelle entre
 // la liste des sessions et la fiche détail).
 export const dynamic = "force-dynamic";
+// La synchro/réinitialisation Google Agenda peut traiter plusieurs dizaines
+// de sessions (avec throttling) -> on laisse jusqu'à 60s (max plan Hobby).
+export const maxDuration = 60;
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";

@@ -10,7 +10,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import type { FormationModality } from "@/lib/formations/types";
 import type { SessionActionType, SessionStatus } from "@/lib/sessions/types";
-import { syncSessionCalendar } from "@/lib/google-calendar/sync";
+import {
+  syncSessionCalendar,
+  purgeAllCalendarEvents,
+} from "@/lib/google-calendar/sync";
 import {
   getCalendarClient,
   getCalendarId,
@@ -675,8 +678,9 @@ export async function syncAllSessionsToCalendar(): Promise<{
   let count = 0;
   let failed = 0;
   let firstError: string | undefined;
-  // Traitement par petits lots pour ne pas saturer l'API Google.
-  const BATCH = 5;
+  // Traitement par petits lots + pause entre lots pour ne pas saturer
+  // l'API Google (évite "Rate Limit Exceeded").
+  const BATCH = 4;
   for (let i = 0; i < ids.length; i += BATCH) {
     const slice = ids.slice(i, i + BATCH);
     const results = await Promise.all(
@@ -689,6 +693,7 @@ export async function syncAllSessionsToCalendar(): Promise<{
         if (!firstError && r.error) firstError = r.error;
       }
     }
+    if (i + BATCH < ids.length) await new Promise((r) => setTimeout(r, 300));
   }
 
   // Si TOUTES les sessions ont échoué -> on remonte l'erreur Google réelle
@@ -712,6 +717,91 @@ export async function syncAllSessionsToCalendar(): Promise<{
   return {
     ok: true,
     count,
+    lastSyncAt,
+    error:
+      failed > 0
+        ? `${failed} session(s) en échec. Erreur : ${firstError ?? "inconnue"}`
+        : undefined,
+  };
+}
+
+/**
+ * Réinitialise l'agenda Google : SUPPRIME tous les événements existants
+ * (l'agenda est dédié aux sessions) puis reconstruit proprement à partir
+ * de zéro. Corrige les doublons. À utiliser via le bouton dédié.
+ */
+export async function resetAndResyncCalendar(): Promise<{
+  ok: boolean;
+  count: number;
+  deleted: number;
+  error?: string;
+  lastSyncAt?: string;
+}> {
+  if (!isCalendarConfigured()) {
+    return {
+      ok: false,
+      count: 0,
+      deleted: 0,
+      error:
+        "Google Agenda non configuré (variables manquantes sur Vercel).",
+    };
+  }
+  const { organizationId } = await getCurrentOrganizationId();
+  const supabase = await createClient();
+
+  // 1) Vider l'agenda (supprime tout, y compris les doublons).
+  const purge = await purgeAllCalendarEvents();
+  if (!purge.ok) {
+    return {
+      ok: false,
+      count: 0,
+      deleted: 0,
+      error: `Échec du vidage de l'agenda : ${purge.error ?? "inconnu"}`,
+    };
+  }
+
+  // 2) Oublier les anciens identifiants d'événements (ils n'existent plus).
+  await supabase
+    .from("sessions")
+    .update({ google_calendar_event_id: null })
+    .eq("organization_id", organizationId)
+    .not("google_calendar_event_id", "is", null);
+
+  // 3) Reconstruire proprement.
+  const { data: sessions } = await supabase
+    .from("sessions")
+    .select("id")
+    .eq("organization_id", organizationId);
+  const ids = (sessions ?? []).map((s) => s.id as string);
+  let count = 0;
+  let failed = 0;
+  let firstError: string | undefined;
+  const BATCH = 4;
+  for (let i = 0; i < ids.length; i += BATCH) {
+    const slice = ids.slice(i, i + BATCH);
+    const results = await Promise.all(
+      slice.map((id) => syncSessionCalendar(id)),
+    );
+    for (const r of results) {
+      if (r.ok) count++;
+      else {
+        failed++;
+        if (!firstError && r.error) firstError = r.error;
+      }
+    }
+    if (i + BATCH < ids.length) await new Promise((r) => setTimeout(r, 300));
+  }
+
+  const lastSyncAt = new Date().toISOString();
+  await supabase
+    .from("organizations")
+    .update({ calendar_last_sync_at: lastSyncAt })
+    .eq("id", organizationId);
+  revalidatePath("/sessions");
+  return {
+    ok: true,
+    count,
+    deleted: purge.deleted,
     lastSyncAt,
     error:
       failed > 0

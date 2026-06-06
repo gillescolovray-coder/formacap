@@ -236,9 +236,60 @@ export type CalendarSyncResult = {
   error?: string;
 };
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Statut HTTP d'une erreur googleapis (gaxios). */
+function httpStatus(e: unknown): number | undefined {
+  const a = e as { response?: { status?: number }; code?: unknown };
+  if (a?.response?.status) return a.response.status;
+  if (typeof a?.code === "number") return a.code;
+  return undefined;
+}
+
+/** Erreur "l'événement n'existe plus" (404/410) -> recréation légitime. */
+function isGoneError(e: unknown): boolean {
+  const s = httpStatus(e);
+  return s === 404 || s === 410;
+}
+
+/** Erreur de quota / cadence Google -> on réessaie avec backoff. */
+function isRateLimitError(e: unknown): boolean {
+  const s = httpStatus(e);
+  const msg = String((e as Error)?.message ?? "").toLowerCase();
+  return (
+    s === 429 ||
+    msg.includes("rate limit") ||
+    msg.includes("ratelimitexceeded") ||
+    msg.includes("user rate limit") ||
+    msg.includes("quota")
+  );
+}
+
+/** Exécute un appel Google avec réessais sur dépassement de cadence. */
+async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastErr = e;
+      if (isRateLimitError(e)) {
+        await sleep(700 * (attempt + 1)); // 0.7s, 1.4s, 2.1s…
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw lastErr;
+}
+
 /**
  * Synchronise une session avec l'agenda Google. Best-effort : ne lève jamais,
  * mais RENVOIE le résultat réel (ok / erreur Google) pour pouvoir l'afficher.
+ *
+ * Anti-doublon : si la MISE À JOUR (patch) d'un événement existant échoue pour
+ * une raison AUTRE que "événement supprimé" (ex. rate limit), on NE recrée PAS
+ * d'événement (sinon doublon) — on remonte l'erreur pour réessayer plus tard.
  */
 export async function syncSessionCalendar(
   sessionId: string,
@@ -263,9 +314,11 @@ export async function syncSessionCalendar(
     if (!SYNCABLE_STATUSES.has(s.status)) {
       if (eventId) {
         try {
-          await calendar.events.delete({ calendarId, eventId });
-        } catch {
-          // déjà supprimé côté agenda : on ignore
+          await withRetry(() =>
+            calendar.events.delete({ calendarId, eventId }),
+          );
+        } catch (e) {
+          if (!isGoneError(e)) throw e; // déjà supprimé : on ignore
         }
         await admin
           .from("sessions")
@@ -293,23 +346,28 @@ export async function syncSessionCalendar(
 
     const event = buildEvent(s, (days ?? []) as DayRow[], count ?? 0);
 
+    // 1) Mise à jour de l'événement existant.
     if (eventId) {
       try {
-        await calendar.events.patch({
-          calendarId,
-          eventId,
-          requestBody: event,
-        });
+        await withRetry(() =>
+          calendar.events.patch({ calendarId, eventId, requestBody: event }),
+        );
         return { ok: true };
-      } catch {
-        // l'événement a pu être supprimé manuellement côté agenda -> on recrée
+      } catch (e) {
+        // On ne recrée QUE si l'événement n'existe vraiment plus (404/410).
+        // Sinon (rate limit, réseau…) on remonte l'erreur -> PAS de doublon.
+        if (!isGoneError(e)) {
+          const error = (e as Error).message;
+          return { ok: false, error };
+        }
+        // event supprimé côté agenda -> on tombe sur la création ci-dessous
       }
     }
 
-    const res = await calendar.events.insert({
-      calendarId,
-      requestBody: event,
-    });
+    // 2) Création d'un nouvel événement.
+    const res = await withRetry(() =>
+      calendar.events.insert({ calendarId, requestBody: event }),
+    );
     const newId = res.data.id;
     if (newId) {
       await admin
@@ -322,5 +380,63 @@ export async function syncSessionCalendar(
     const error = (e as Error).message;
     console.warn("[google-calendar] synchro échouée", { sessionId, error });
     return { ok: false, error };
+  }
+}
+
+/**
+ * Vide TOUS les événements de l'agenda partagé (l'agenda est dédié aux
+ * sessions, on peut donc tout supprimer) puis renvoie le nombre supprimé.
+ * Sert au bouton "Réinitialiser l'agenda" pour repartir sans doublon.
+ */
+export async function purgeAllCalendarEvents(): Promise<{
+  ok: boolean;
+  deleted: number;
+  error?: string;
+}> {
+  if (!isCalendarConfigured()) return { ok: false, deleted: 0 };
+  try {
+    const calendar = getCalendarClient();
+    const calendarId = getCalendarId();
+    let deleted = 0;
+    let pageToken: string | undefined = undefined;
+    // 1) Collecte de tous les IDs d'événements (pagination).
+    const ids: string[] = [];
+    do {
+      const resp = await withRetry(() =>
+        calendar.events.list({
+          calendarId,
+          maxResults: 2500,
+          showDeleted: false,
+          singleEvents: false,
+          pageToken,
+        }),
+      );
+      for (const ev of resp.data.items ?? []) {
+        if (ev.id) ids.push(ev.id);
+      }
+      pageToken = resp.data.nextPageToken ?? undefined;
+    } while (pageToken);
+
+    // 2) Suppression par petits lots (anti rate-limit).
+    const BATCH = 4;
+    for (let i = 0; i < ids.length; i += BATCH) {
+      const slice = ids.slice(i, i + BATCH);
+      await Promise.all(
+        slice.map(async (id) => {
+          try {
+            await withRetry(() =>
+              calendar.events.delete({ calendarId, eventId: id }),
+            );
+            deleted++;
+          } catch (e) {
+            if (isGoneError(e)) deleted++; // déjà supprimé : OK
+          }
+        }),
+      );
+      await sleep(250);
+    }
+    return { ok: true, deleted };
+  } catch (e) {
+    return { ok: false, deleted: 0, error: (e as Error).message };
   }
 }
