@@ -133,6 +133,15 @@ export default async function SessionsListPage({
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
+  // Horodatage de la dernière synchro complète Google Agenda (affiché
+  // sous le bouton "Synchroniser l'agenda"). RLS -> org de l'utilisateur.
+  const { data: orgRows } = await supabase
+    .from("organizations")
+    .select("calendar_last_sync_at")
+    .limit(1);
+  const calendarLastSyncAt =
+    (orgRows?.[0]?.calendar_last_sync_at as string | null) ?? null;
+
   // Construction de la requête sessions avec les filtres avant de la
   // lancer en parallèle des autres requêtes indépendantes. Le tri
   // "upcoming_first" est fait en JS plus bas (pas de .order ici).
@@ -892,7 +901,7 @@ export default async function SessionsListPage({
         ]}
         actions={
           <div className="flex items-center gap-2 flex-wrap">
-            <SyncCalendarButton />
+            <SyncCalendarButton lastSyncAt={calendarLastSyncAt} />
             <Button nativeButton={false} render={<Link href="/sessions/new" />}>
               <Plus className="h-4 w-4" />
               Nouvelle session

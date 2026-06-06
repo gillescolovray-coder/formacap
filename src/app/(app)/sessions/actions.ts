@@ -642,6 +642,7 @@ export async function syncAllSessionsToCalendar(): Promise<{
   ok: boolean;
   count: number;
   error?: string;
+  lastSyncAt?: string;
 }> {
   if (!isCalendarConfigured()) {
     return {
@@ -677,6 +678,12 @@ export async function syncAllSessionsToCalendar(): Promise<{
       }),
     );
   }
+  // Mémorise l'horodatage de cette synchro complète.
+  const lastSyncAt = new Date().toISOString();
+  await supabase
+    .from("organizations")
+    .update({ calendar_last_sync_at: lastSyncAt })
+    .eq("id", organizationId);
   revalidatePath("/sessions");
-  return { ok: true, count };
+  return { ok: true, count, lastSyncAt };
 }
