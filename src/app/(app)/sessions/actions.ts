@@ -10,6 +10,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import type { FormationModality } from "@/lib/formations/types";
 import type { SessionActionType, SessionStatus } from "@/lib/sessions/types";
+import { syncSessionCalendar } from "@/lib/google-calendar/sync";
+import {
+  getCalendarClient,
+  getCalendarId,
+  isCalendarConfigured,
+} from "@/lib/google-calendar/client";
 
 async function getCurrentOrganizationId() {
   const supabase = await createClient();
@@ -389,6 +395,9 @@ export async function createSession(formData: FormData) {
     parseCustomDays(formData),
   );
 
+  // Synchro Google Agenda (best-effort, ne bloque pas la création).
+  await syncSessionCalendar(data.id);
+
   revalidatePath("/sessions");
   redirect(`/sessions/${data.id}?created=1`);
 }
@@ -460,6 +469,9 @@ export async function updateSession(id: string, formData: FormData) {
     );
   }
 
+  // Synchro Google Agenda (horaires, lieu, statut… mis à jour en temps réel).
+  await syncSessionCalendar(id);
+
   revalidatePath("/sessions");
   revalidatePath(`/sessions/${id}`);
   redirect(`/sessions/${id}?updated=1`);
@@ -467,9 +479,29 @@ export async function updateSession(id: string, formData: FormData) {
 
 export async function deleteSession(id: string) {
   const supabase = await createClient();
+  // On récupère l'événement agenda AVANT suppression de la session.
+  const { data: sess } = await supabase
+    .from("sessions")
+    .select("google_calendar_event_id")
+    .eq("id", id)
+    .maybeSingle<{ google_calendar_event_id: string | null }>();
   const { error } = await supabase.from("sessions").delete().eq("id", id);
   if (error) {
     redirect(`/sessions/${id}?error=${encodeURIComponent(error.message)}`);
+  }
+  // Suppression de l'événement Google Agenda associé (best-effort).
+  if (sess?.google_calendar_event_id && isCalendarConfigured()) {
+    try {
+      await getCalendarClient().events.delete({
+        calendarId: getCalendarId(),
+        eventId: sess.google_calendar_event_id,
+      });
+    } catch (e) {
+      console.warn("[deleteSession] suppression événement agenda échouée", {
+        id,
+        error: (e as Error).message,
+      });
+    }
   }
   revalidatePath("/sessions");
   redirect("/sessions");
@@ -500,6 +532,9 @@ export async function toggleArchiveSession(id: string) {
   if (error) {
     redirect(`/sessions/${id}?error=${encodeURIComponent(error.message)}`);
   }
+  // Synchro Google Agenda : archivage -> retire l'événement ;
+  // désarchivage (-> completed) -> le recrée.
+  await syncSessionCalendar(id);
   revalidatePath("/sessions");
   revalidatePath(`/sessions/${id}`);
   revalidatePath("/inscriptions");

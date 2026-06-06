@@ -10,6 +10,7 @@ import {
   buildTrainerPortalUrl,
   getTrainerPortalToken,
 } from "@/lib/portal/trainer-token";
+import { syncSessionCalendar } from "@/lib/google-calendar/sync";
 
 async function getAppOrigin(): Promise<string> {
   if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL;
@@ -136,6 +137,9 @@ export async function confirmSession(
       return { ok: false, error: updateError.message };
     }
   }
+
+  // Synchro Google Agenda (la session confirmée apparaît / se met à jour).
+  await syncSessionCalendar(sessionId);
 
   // 3. Token portail formateur — lecture seule (Gilles 2026-05-23).
   // Si l'admin n'a pas encore activé le portail pour ce formateur,

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { syncSessionCalendar } from "@/lib/google-calendar/sync";
 import type {
   EnrollmentStatus,
   InscriptionChannel,
@@ -418,6 +419,9 @@ export async function startSession(
     if (updateError) {
       return { ok: false, error: updateError.message };
     }
+
+    // Synchro Google Agenda (statut « En cours »).
+    await syncSessionCalendar(sessionId);
 
     revalidatePath(`/sessions/${sessionId}`);
     revalidatePath("/sessions");

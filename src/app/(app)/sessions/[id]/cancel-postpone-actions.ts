@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { isResendConfigured, sendEmail } from "@/lib/email/resend";
+import { syncSessionCalendar } from "@/lib/google-calendar/sync";
 
 /**
  * Annulation ou report d'une session : envoie une notification
@@ -342,6 +343,11 @@ export async function cancelOrPostponeSession(
     .from("sessions")
     .update({ status: newStatus })
     .eq("id", sessionId);
+
+  // Synchro Google Agenda : annulée/reportée -> l'événement est retiré de
+  // l'agenda. Si un report crée/cible une nouvelle session, on la synchronise.
+  await syncSessionCalendar(sessionId);
+  if (targetSession?.id) await syncSessionCalendar(targetSession.id);
 
   // 8. Si annulation : marquer les conventions de cette session comme
   //    cancelled (preserve l'historique mais signale qu'elles sont
