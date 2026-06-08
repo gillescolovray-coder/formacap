@@ -62,7 +62,12 @@ import {
   listTrainersWithoutPortal,
 } from "./_kpi-queries";
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ year?: string }>;
+}) {
+  const sp = searchParams ? await searchParams : {};
   const supabase = await createClient();
   const {
     data: { user },
@@ -471,15 +476,28 @@ export default async function DashboardPage() {
   // par mois de l'annee en cours. Query separee SANS limite, sur toutes
   // les sessions de l'annee.
   const currentYear = new Date().getFullYear();
-  const yearStart = `${currentYear}-01-01`;
-  const yearEnd = `${currentYear + 1}-01-01`;
+  // Année sélectionnée (bouton). Bornée pour éviter les valeurs absurdes.
+  const parsedYear = Number(sp?.year);
+  const selectedYear =
+    Number.isInteger(parsedYear) &&
+    parsedYear >= currentYear - 5 &&
+    parsedYear <= currentYear + 5
+      ? parsedYear
+      : currentYear;
+  // Années proposées dans le sélecteur.
+  const yearChoices: number[] = [];
+  for (let y = currentYear + 2; y >= currentYear - 3; y--) yearChoices.push(y);
+  const todayIso = new Date().toISOString().slice(0, 10);
+
+  const yearStart = `${selectedYear}-01-01`;
+  const yearEnd = `${selectedYear + 1}-01-01`;
   const { data: yearEnrollments } = await supabase
     .from("session_enrollments")
     .select(
       `
       id, learner_id,
       learner:learners(company_id, first_name, last_name, company_name_temp),
-      session:sessions!inner(id, start_date, end_date, modality, is_inter,
+      session:sessions!inner(id, start_date, end_date, status, modality, is_inter,
         formation:formations(title, duration_hours, duration_days)
       ),
       inscription_request:inscription_requests(quote_amount_ht, billing_total_ht)
@@ -500,6 +518,10 @@ export default async function DashboardPage() {
       companies: Set<string>;
       hours: number;
       amountHt: number;
+      // CA réalisé = sessions dont la date de fin est passée.
+      amountHtRealise: number;
+      // Prévisionnel = sessions à venir / en cours (fin non dépassée).
+      amountHtPrevi: number;
     }
   > = {};
   for (let m = 0; m < 12; m++) {
@@ -508,6 +530,8 @@ export default async function DashboardPage() {
       companies: new Set(),
       hours: 0,
       amountHt: 0,
+      amountHtRealise: 0,
+      amountHtPrevi: 0,
     };
   }
 
@@ -526,6 +550,7 @@ export default async function DashboardPage() {
     id: string;
     start_date: string | null;
     end_date: string | null;
+    status: string | null;
     modality: string | null;
     is_inter: boolean | null;
     formation: FormationJoin | FormationJoin[] | null;
@@ -552,6 +577,7 @@ export default async function DashboardPage() {
         date: string;
         modality: string | null;
         isInter: boolean;
+        isRealise: boolean;
         days: number;
         amountHt: number;
         learners: { name: string; amountHt: number; perDayHt: number }[];
@@ -567,6 +593,11 @@ export default async function DashboardPage() {
     const bucket = monthlyAcc[monthIdx];
     if (!bucket) return;
     bucket.participants.add(e.id);
+    // Réalisé vs prévisionnel : une session est "réalisée" quand sa date de
+    // FIN est dépassée (terminée). Sinon (à venir / en cours) -> prévisionnel.
+    const sessEnd =
+      (sess as { end_date?: string | null }).end_date ?? sess.start_date;
+    const isRealise = sessEnd ? sessEnd.slice(0, 10) < todayIso : false;
     const learner = Array.isArray(e.learner) ? e.learner[0] : e.learner;
     if (learner?.company_id) bucket.companies.add(learner.company_id);
     const form = sess.formation
@@ -588,6 +619,8 @@ export default async function DashboardPage() {
       const n = Number(amt);
       if (Number.isFinite(n)) {
         bucket.amountHt += n;
+        if (isRealise) bucket.amountHtRealise += n;
+        else bucket.amountHtPrevi += n;
         enrAmount = n;
       }
     }
@@ -618,6 +651,7 @@ export default async function DashboardPage() {
           date: sess.start_date as string,
           modality: (sess as { modality?: string | null }).modality ?? null,
           isInter: (sess as { is_inter?: boolean | null }).is_inter === true,
+          isRealise,
           days,
           amountHt: 0,
           learners: [],
@@ -646,13 +680,14 @@ export default async function DashboardPage() {
       date: string;
       modality: string | null;
       isInter: boolean;
+      isRealise: boolean;
       days: number;
       amountHt: number;
       learners: { name: string; amountHt: number; perDayHt: number }[];
     }>
   > = {};
   for (let m = 0; m < 12; m++) {
-    const key = `${currentYear}-${String(m + 1).padStart(2, "0")}`;
+    const key = `${selectedYear}-${String(m + 1).padStart(2, "0")}`;
     monthlyDetail[key] = Array.from(monthlyDetailAcc[m].values()).sort((a, b) =>
       a.date.localeCompare(b.date),
     );
@@ -660,12 +695,14 @@ export default async function DashboardPage() {
 
   const VAT_RATE = 0.2;
   const monthlyStats: MonthlyStatsType[] = MONTH_LABELS.map((label, i) => ({
-    month: `${currentYear}-${String(i + 1).padStart(2, "0")}`,
+    month: `${selectedYear}-${String(i + 1).padStart(2, "0")}`,
     monthLabel: label,
     participantsCount: monthlyAcc[i].participants.size,
     hoursCount: monthlyAcc[i].hours,
     companiesCount: monthlyAcc[i].companies.size,
     amountHt: Math.round(monthlyAcc[i].amountHt * 100) / 100,
+    amountHtRealise: Math.round(monthlyAcc[i].amountHtRealise * 100) / 100,
+    amountHtPrevi: Math.round(monthlyAcc[i].amountHtPrevi * 100) / 100,
     amountTtc: Math.round(monthlyAcc[i].amountHt * (1 + VAT_RATE) * 100) / 100,
   }));
 
@@ -1138,9 +1175,11 @@ export default async function DashboardPage() {
             + tableau récap mois par mois (annee en cours). */}
         <div className="mt-6">
           <MonthlyStats
-            year={currentYear}
+            year={selectedYear}
             monthly={monthlyStats}
             detail={monthlyDetail}
+            yearChoices={yearChoices}
+            currentYear={currentYear}
           />
         </div>
 

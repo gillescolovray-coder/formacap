@@ -2,10 +2,12 @@
 
 import { Fragment, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Briefcase,
   Building2,
   Calendar,
+  CalendarRange,
   ChevronRight,
   Clock,
   Euro,
@@ -20,6 +22,10 @@ export type MonthlyStats = {
   hoursCount: number;
   companiesCount: number;
   amountHt: number;
+  /** CA réalisé HT = sessions dont la date de fin est passée. */
+  amountHtRealise: number;
+  /** Prévisionnel HT = sessions à venir / en cours (fin non dépassée). */
+  amountHtPrevi: number;
   amountTtc: number;
 };
 
@@ -29,6 +35,7 @@ export type MonthlyDetailSession = {
   date: string; // "YYYY-MM-DD"
   modality: string | null;
   isInter: boolean;
+  isRealise: boolean;
   days: number;
   amountHt: number;
   learners: { name: string; amountHt: number; perDayHt: number }[];
@@ -55,11 +62,16 @@ export function MonthlyStats({
   year,
   monthly,
   detail,
+  yearChoices = [],
+  currentYear,
 }: {
   year: number;
   monthly: MonthlyStats[];
   detail?: Record<string, MonthlyDetailSession[]>;
+  yearChoices?: number[];
+  currentYear?: number;
 }) {
+  const router = useRouter();
   const [openMonths, setOpenMonths] = useState<Set<string>>(new Set());
   const [openSessions, setOpenSessions] = useState<Set<string>>(new Set());
   const toggleMonth = (k: string) =>
@@ -89,6 +101,8 @@ export function MonthlyStats({
   );
   const totalHt = monthly.reduce((acc, m) => acc + m.amountHt, 0);
   const totalTtc = monthly.reduce((acc, m) => acc + m.amountTtc, 0);
+  const totalRealise = monthly.reduce((acc, m) => acc + m.amountHtRealise, 0);
+  const totalPrevi = monthly.reduce((acc, m) => acc + m.amountHtPrevi, 0);
 
   // Echelle pour le graphique : on prend le max participants/mois
   const maxParticipants = Math.max(
@@ -104,10 +118,36 @@ export function MonthlyStats({
           <TrendingUp className="h-4 w-4 text-cyan-600" />
           Statistiques mensuelles {year}
         </h2>
+        {/* Sélecteur d'année */}
+        {yearChoices.length > 0 && (
+          <div className="inline-flex items-center gap-2">
+            <label className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">
+              Année
+            </label>
+            <select
+              value={year}
+              onChange={(e) => {
+                const y = Number(e.target.value);
+                router.push(
+                  currentYear && y === currentYear
+                    ? "/dashboard"
+                    : `/dashboard?year=${y}`,
+                );
+              }}
+              className="h-8 rounded-lg border border-zinc-300 text-sm px-2 font-semibold"
+            >
+              {yearChoices.map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
-      {/* === 5 KPI annuels === */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-2 p-4 border-b border-zinc-200 dark:border-zinc-800">
+      {/* === KPI annuels === */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 p-4 border-b border-zinc-200 dark:border-zinc-800">
         <KpiCard
           icon={Users}
           label="Participants (an)"
@@ -128,8 +168,14 @@ export function MonthlyStats({
         />
         <KpiCard
           icon={Euro}
-          label="Total HT (an)"
-          value={currencyFormatter.format(totalHt)}
+          label="CA réalisé HT"
+          value={currencyFormatter.format(totalRealise)}
+          color="emerald"
+        />
+        <KpiCard
+          icon={CalendarRange}
+          label="Prévisionnel HT"
+          value={currencyFormatter.format(totalPrevi)}
           color="amber"
         />
         <KpiCard
@@ -138,6 +184,10 @@ export function MonthlyStats({
           value={currencyFormatter.format(totalTtc)}
           color="violet"
         />
+      </div>
+      <div className="px-4 pt-2 -mb-1 text-[10px] text-zinc-400">
+        CA réalisé = sessions terminées (date de fin dépassée) · Prévisionnel =
+        sessions à venir / en cours.
       </div>
 
       {/* === Graphique en barres : participants + montant HT par mois === */}
@@ -270,9 +320,30 @@ export function MonthlyStats({
                       {m.companiesCount}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">
-                      {m.amountHt > 0
-                        ? currencyFormatterPrecise.format(m.amountHt)
-                        : "—"}
+                      {m.amountHt > 0 ? (
+                        <>
+                          <div>{currencyFormatterPrecise.format(m.amountHt)}</div>
+                          {(m.amountHtRealise > 0 || m.amountHtPrevi > 0) && (
+                            <div className="text-[10px] font-normal leading-tight mt-0.5">
+                              {m.amountHtRealise > 0 && (
+                                <span className="text-emerald-600">
+                                  ✓ {currencyFormatter.format(m.amountHtRealise)}
+                                </span>
+                              )}
+                              {m.amountHtRealise > 0 && m.amountHtPrevi > 0 && (
+                                <span className="text-zinc-300"> · </span>
+                              )}
+                              {m.amountHtPrevi > 0 && (
+                                <span className="text-amber-600">
+                                  ⏳ {currencyFormatter.format(m.amountHtPrevi)}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        "—"
+                      )}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums font-medium text-emerald-700 dark:text-emerald-400">
                       {m.amountTtc > 0
@@ -303,6 +374,15 @@ export function MonthlyStats({
                                 </span>
                                 <span className="font-medium text-zinc-700">
                                   {s.title}
+                                </span>
+                                <span
+                                  className={`text-[9px] uppercase font-bold px-1.5 py-0.5 rounded ${
+                                    s.isRealise
+                                      ? "bg-emerald-100 text-emerald-700"
+                                      : "bg-amber-100 text-amber-700"
+                                  }`}
+                                >
+                                  {s.isRealise ? "✓ réalisé" : "⏳ prévi"}
                                 </span>
                                 <span className="text-[10px] uppercase text-zinc-400">
                                   {s.isInter ? "INTER" : "INTRA"}
@@ -379,7 +459,18 @@ export function MonthlyStats({
                 {totalCompanies}
               </td>
               <td className="px-3 py-2 text-right tabular-nums">
-                {currencyFormatterPrecise.format(totalHt)}
+                <div>{currencyFormatterPrecise.format(totalHt)}</div>
+                {(totalRealise > 0 || totalPrevi > 0) && (
+                  <div className="text-[10px] font-normal leading-tight mt-0.5">
+                    <span className="text-emerald-600">
+                      ✓ {currencyFormatter.format(totalRealise)}
+                    </span>
+                    <span className="text-zinc-300"> · </span>
+                    <span className="text-amber-600">
+                      ⏳ {currencyFormatter.format(totalPrevi)}
+                    </span>
+                  </div>
+                )}
               </td>
               <td className="px-3 py-2 text-right tabular-nums text-emerald-700 dark:text-emerald-400">
                 {currencyFormatterPrecise.format(totalTtc)}
