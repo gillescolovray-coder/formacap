@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   Loader2,
@@ -21,6 +21,8 @@ import {
   saveBlueprint,
   submitForReview,
   generateObjectivesAction,
+  generateGeneralObjectiveAction,
+  listThemesAction,
   type BlueprintFields,
 } from "./actions";
 
@@ -69,9 +71,16 @@ export function BlueprintEditor({
   );
   const [status, setStatus] = useState<string>(initial.status ?? "draft");
   const [generating, startGen] = useTransition();
+  const [generatingObj, startGenObj] = useTransition();
   const [saving, startSave] = useTransition();
   const [submitting, startSubmit] = useTransition();
   const [msg, setMsg] = useState<{ t: "ok" | "err"; m: string } | null>(null);
+  const [themeOptions, setThemeOptions] = useState<string[]>([]);
+
+  // Charge la liste des thèmes déjà utilisés (pour le menu déroulant).
+  useEffect(() => {
+    listThemesAction().then(setThemeOptions).catch(() => {});
+  }, []);
 
   function setField<K extends keyof BlueprintFields>(
     k: K,
@@ -93,6 +102,26 @@ export function BlueprintEditor({
       if (res.ok) {
         setObjectives((prev) => [...prev, ...res.objectives]);
         setMsg({ t: "ok", m: `${res.objectives.length} objectif(s) proposé(s) par l'IA.` });
+      } else {
+        setMsg({ t: "err", m: res.error });
+      }
+    });
+  }
+
+  function generateGeneral() {
+    setMsg(null);
+    startGenObj(async () => {
+      const res = await generateGeneralObjectiveAction({
+        title: fields.title,
+        theme: fields.theme,
+        targetAudience: fields.target_audience,
+        durationHours: fields.duration_hours,
+        // On s'appuie sur les objectifs opérationnels (programme réadapté).
+        existingObjectives: objectives.map((o) => o.text).filter(Boolean),
+      });
+      if (res.ok) {
+        setField("general_objective", res.objective);
+        setMsg({ t: "ok", m: "Objectif général proposé par l'IA." });
       } else {
         setMsg({ t: "err", m: res.error });
       }
@@ -211,11 +240,24 @@ export function BlueprintEditor({
           <Field label="Thème">
             <input
               className={inputCls}
+              list="blueprint-theme-options"
               value={fields.theme ?? ""}
               disabled={locked}
               onChange={(e) => setField("theme", e.target.value || null)}
-              placeholder="Ex. Marchés publics"
+              placeholder="Choisissez ou saisissez un thème…"
             />
+            <datalist id="blueprint-theme-options">
+              {themeOptions.map((t) => (
+                <option key={t} value={t} />
+              ))}
+            </datalist>
+            {!locked && (
+              <p className="text-[11px] text-zinc-500 mt-1">
+                Choisissez un thème existant dans la liste, ou{" "}
+                <strong>tapez un nouveau thème</strong> : il sera ajouté
+                automatiquement et proposé pour les prochains programmes.
+              </p>
+            )}
           </Field>
           <Field label="Public visé">
             <input
@@ -262,6 +304,24 @@ export function BlueprintEditor({
           </Field>
         </div>
         <Field label="Objectif général">
+          {!locked && (
+            <div className="flex justify-end mb-1.5">
+              <button
+                type="button"
+                onClick={generateGeneral}
+                disabled={generatingObj}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold disabled:opacity-50"
+                title="Proposer un objectif général à partir du titre, du thème et des objectifs opérationnels"
+              >
+                {generatingObj ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Wand2 className="h-3.5 w-3.5" />
+                )}
+                Proposer (IA)
+              </button>
+            </div>
+          )}
           <textarea
             className={inputCls + " min-h-[70px]"}
             value={fields.general_objective ?? ""}

@@ -9,6 +9,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import {
   generateBloomObjectives,
+  generateGeneralObjective,
   type BloomGenerationInput,
 } from "@/lib/bloom/generate";
 import type { BloomObjective } from "@/lib/bloom/types";
@@ -124,6 +125,54 @@ export async function generateObjectivesAction(
         "Génération IA indisponible (vérifiez la configuration Gemini / LM Studio).",
     };
   }
+}
+
+export async function generateGeneralObjectiveAction(
+  input: BloomGenerationInput,
+): Promise<{ ok: true; objective: string } | { ok: false; error: string }> {
+  const ctx = await getCtx();
+  if (!ctx) return { ok: false, error: "Non authentifié." };
+  if (!input.title?.trim()) {
+    return { ok: false, error: "Renseignez au moins le titre avant de générer." };
+  }
+  try {
+    const objective = await generateGeneralObjective(input);
+    if (!objective) {
+      return { ok: false, error: "L'IA n'a renvoyé aucune proposition. Réessayez." };
+    }
+    return { ok: true, objective };
+  } catch (e) {
+    return {
+      ok: false,
+      error:
+        (e as Error).message ||
+        "Génération IA indisponible (vérifiez la configuration Gemini / LM Studio).",
+    };
+  }
+}
+
+/** Liste des thèmes déjà utilisés (programmes + formations) pour le menu. */
+export async function listThemesAction(): Promise<string[]> {
+  const ctx = await getCtx();
+  if (!ctx?.orgId) return [];
+  const set = new Set<string>();
+  const [{ data: bp }, { data: fo }] = await Promise.all([
+    ctx.supabase
+      .from("program_blueprints")
+      .select("theme")
+      .eq("organization_id", ctx.orgId),
+    ctx.supabase
+      .from("formations")
+      .select("theme")
+      .eq("organization_id", ctx.orgId),
+  ]);
+  for (const r of [...(bp ?? []), ...(fo ?? [])] as Array<{
+    theme: string | null;
+  }>) {
+    const t = (r.theme ?? "").trim();
+    if (t) set.add(t);
+  }
+  return Array.from(set).sort((a, b) => a.localeCompare(b, "fr"));
 }
 
 export async function submitForReview(

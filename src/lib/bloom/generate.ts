@@ -176,3 +176,38 @@ export async function generateBloomObjectives(
     : await generateWithLmStudio(prompt);
   return parseObjectives(raw);
 }
+
+/**
+ * Propose UNE phrase d'objectif général, à partir du titre/thème/public et
+ * surtout des objectifs opérationnels déjà définis (programme réadapté).
+ * Gilles 2026-06-08.
+ */
+export async function generateGeneralObjective(
+  input: BloomGenerationInput,
+): Promise<string> {
+  const prompt = [
+    "Tu es ingénieur pédagogique en formation professionnelle (référentiel Qualiopi).",
+    "Rédige UNE SEULE phrase d'objectif général de formation, claire et professionnelle (commence par un verbe à l'infinitif ou par « Permettre de … »).",
+    "Pas de liste, pas de guillemets, pas de préambule : réponds UNIQUEMENT par la phrase.",
+    "",
+    `Titre : ${input.title}`,
+    input.theme ? `Thème : ${input.theme}` : "",
+    input.targetAudience ? `Public visé : ${input.targetAudience}` : "",
+    input.durationHours ? `Durée : ${input.durationHours} h` : "",
+    input.existingObjectives && input.existingObjectives.length > 0
+      ? `Objectifs opérationnels du programme :\n- ${input.existingObjectives.join("\n- ")}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const raw = process.env.GEMINI_API_KEY
+    ? await generateWithGemini(prompt)
+    : await generateWithLmStudio(prompt);
+  // Nettoyage : 1re ligne non vide, sans guillemets encadrants.
+  const line =
+    raw
+      .split("\n")
+      .map((l) => l.trim())
+      .find((l) => l.length > 0) ?? "";
+  return line.replace(/^["'«»]+|["'«»]+$/g, "").trim();
+}
