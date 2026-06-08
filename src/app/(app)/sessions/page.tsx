@@ -24,6 +24,7 @@ import {
   computeInscriptionDisplayAmount,
   type DisplayAmountSessionContext,
 } from "@/lib/billing/display-amount";
+import { computeSessionPrice } from "@/lib/pricing/compute";
 
 // Force le rechargement à chaque accès pour que les compteurs d'inscrits /
 // statuts soient toujours à jour (synchronisation bidirectionnelle entre
@@ -251,6 +252,9 @@ export default async function SessionsListPage({
   // priorité, sinon formation.public_price_excl_tax). Déclarée ici (hors
   // du if hasSessions) pour rester accessible dans le rendu JSX du total.
   const publicUnitBySession = new Map<string, number>();
+  // Contexte tarification R7 par session (hors du if hasSessions pour rester
+  // accessible dans le helper r7SessionAmount et le rendu JSX).
+  const sessionCtxById = new Map<string, DisplayAmountSessionContext>();
   // Formateurs déduits des jours (session_days.trainer_id) — un seul
   // par id, fusionnés au cas où plusieurs jours partagent un formateur.
   const dayTrainersBySession = new Map<
@@ -427,7 +431,7 @@ export default async function SessionsListPage({
     // Remplit la map tarif public déclarée plus haut (Gilles 2026-05-22).
     // Et construit en meme temps la map sessionId -> contexte pour le
     // helper partage computeInscriptionDisplayAmount (refonte 2026-05-31).
-    const sessionCtxById = new Map<string, DisplayAmountSessionContext>();
+    // (sessionCtxById est déclaré au scope externe ci-dessus)
     for (const s of sessionsRaw ?? []) {
       const f = (
         s as {
@@ -652,6 +656,52 @@ export default async function SessionsListPage({
     }
   }
   const stageById = new Map(stagesList.map((s) => [s.id, s]));
+
+  // Montant calculé depuis la tarification R7 propre à la session (forfait
+  // INTRA / per_learner INTER) — Gilles 2026-06-08. Permet d'afficher le
+  // montant d'une session dont le prix est saisi (ex. forfait 2490 €/jour)
+  // MÊME sans inscrit. Le forfait/jour est dû quel que soit le nb
+  // d'apprenants -> calcul avec max(nbInscrits, 1) en mode forfait.
+  const r7SessionAmount = (s: TrainingSession): number | null => {
+    const sCtx = sessionCtxById.get(s.id);
+    if (!sCtx?.pricing_mode) return null;
+    const nbInscrits =
+      totalPersons.get(s.id) ??
+      enrollmentCount.get(s.id) ??
+      inscriptionCount.get(s.id) ??
+      0;
+    const days =
+      sCtx.duration_days && Number(sCtx.duration_days) > 0
+        ? Number(sCtx.duration_days)
+        : Math.max(
+            1,
+            Math.round(
+              (new Date(s.end_date).getTime() -
+                new Date(s.start_date).getTime()) /
+                86_400_000,
+            ) + 1,
+          );
+    const nbForPrice =
+      sCtx.pricing_mode === "forfait" ? Math.max(nbInscrits, 1) : nbInscrits;
+    const breakdown = computeSessionPrice(
+      {
+        mode: sCtx.pricing_mode,
+        pricePerDayHt:
+          sCtx.price_per_day_ht != null ? Number(sCtx.price_per_day_ht) : null,
+        priceForfaitHt:
+          sCtx.price_forfait_ht != null ? Number(sCtx.price_forfait_ht) : null,
+        priceExtraPerDayHt:
+          sCtx.price_extra_per_day_ht != null
+            ? Number(sCtx.price_extra_per_day_ht)
+            : null,
+        threshold:
+          sCtx.pricing_threshold != null ? Number(sCtx.pricing_threshold) : null,
+      },
+      nbForPrice,
+      days,
+    );
+    return breakdown.totalHt > 0 ? breakdown.totalHt : null;
+  };
 
   // ============================================================
   // Refonte UI synthese Inscriptions/Conventions 2026-05-31 (Gilles
@@ -1210,16 +1260,23 @@ export default async function SessionsListPage({
                   if (fromInscriptions > 0) {
                     amount = fromInscriptions;
                   } else {
-                    const pub = publicUnitBySession.get(s.id);
-                    if (pub && pub > 0) {
-                      const nb =
-                        totalPersons.get(s.id) ??
-                        enrollmentCount.get(s.id) ??
-                        inscriptionCount.get(s.id) ??
-                        0;
-                      const effectiveNb =
-                        nb > 0 ? nb : Number(s.max_participants ?? 0);
-                      if (effectiveNb > 0) amount = pub * effectiveNb;
+                    // Tarification R7 propre à la session (forfait/jour…),
+                    // comptée même sans inscrit. Gilles 2026-06-08.
+                    const r7 = r7SessionAmount(s);
+                    if (r7 !== null) {
+                      amount = r7;
+                    } else {
+                      const pub = publicUnitBySession.get(s.id);
+                      if (pub && pub > 0) {
+                        const nb =
+                          totalPersons.get(s.id) ??
+                          enrollmentCount.get(s.id) ??
+                          inscriptionCount.get(s.id) ??
+                          0;
+                        const effectiveNb =
+                          nb > 0 ? nb : Number(s.max_participants ?? 0);
+                        if (effectiveNb > 0) amount = pub * effectiveNb;
+                      }
                     }
                   }
                 }
@@ -1351,14 +1408,20 @@ export default async function SessionsListPage({
                       0;
                     const inscriptionTotal =
                       inscriptionAmounts.get(s.id) ?? 0;
+                    // Tarification R7 propre à la session (forfait/jour…),
+                    // affichée même sans inscrit. Gilles 2026-06-08.
+                    const sessionConfigAmount = r7SessionAmount(s);
+
                     const displayedAmount =
                       s.amount_ht !== null && s.amount_ht !== undefined
                         ? Number(s.amount_ht)
                         : inscriptionTotal > 0
                           ? inscriptionTotal
-                          : pubUnit && pubUnit > 0 && nbInscrits > 0
-                            ? pubUnit * nbInscrits
-                            : null;
+                          : sessionConfigAmount !== null
+                            ? sessionConfigAmount
+                            : pubUnit && pubUnit > 0 && nbInscrits > 0
+                              ? pubUnit * nbInscrits
+                              : null;
                     const amountFromInscriptions =
                       (s.amount_ht === null || s.amount_ht === undefined) &&
                       inscriptionTotal > 0;
