@@ -1451,7 +1451,10 @@ export default async function FormateurSessionDetailPage({
               ? `Note de recommandation moyenne : ${npsAvg}/10`
               : "Évaluations remplies par les apprenants en fin de session."
           }
-          subcontractedManagedByOf={session.is_subcontracted === true}
+          /* Évaluation à chaud TOUJOURS accessible, même en sous-traitance OF
+             (Gilles 2026-06-08) : permet de mesurer la performance du formateur
+             et la satisfaction des apprenants, y compris quand CAP NUMERIQUE est
+             sous-traitant d'un OF donneur d'ordre. */
           collapsible
           defaultOpen
         >
