@@ -1,7 +1,12 @@
+"use client";
+
+import { Fragment, useState } from "react";
+import Link from "next/link";
 import {
   Briefcase,
   Building2,
   Calendar,
+  ChevronRight,
   Clock,
   Euro,
   TrendingUp,
@@ -18,6 +23,17 @@ export type MonthlyStats = {
   amountTtc: number;
 };
 
+export type MonthlyDetailSession = {
+  id: string;
+  title: string;
+  date: string; // "YYYY-MM-DD"
+  modality: string | null;
+  isInter: boolean;
+  days: number;
+  amountHt: number;
+  learners: { name: string; amountHt: number; perDayHt: number }[];
+};
+
 const currencyFormatter = new Intl.NumberFormat("fr-FR", {
   style: "currency",
   currency: "EUR",
@@ -29,13 +45,38 @@ const currencyFormatterPrecise = new Intl.NumberFormat("fr-FR", {
   maximumFractionDigits: 2,
 });
 
+/** "YYYY-MM-DD" -> "DD/MM". */
+function frDay(iso: string): string {
+  const [, m, d] = iso.slice(0, 10).split("-");
+  return d && m ? `${d}/${m}` : iso;
+}
+
 export function MonthlyStats({
   year,
   monthly,
+  detail,
 }: {
   year: number;
   monthly: MonthlyStats[];
+  detail?: Record<string, MonthlyDetailSession[]>;
 }) {
+  const [openMonths, setOpenMonths] = useState<Set<string>>(new Set());
+  const [openSessions, setOpenSessions] = useState<Set<string>>(new Set());
+  const toggleMonth = (k: string) =>
+    setOpenMonths((prev) => {
+      const n = new Set(prev);
+      if (n.has(k)) n.delete(k);
+      else n.add(k);
+      return n;
+    });
+  const toggleSession = (k: string) =>
+    setOpenSessions((prev) => {
+      const n = new Set(prev);
+      if (n.has(k)) n.delete(k);
+      else n.add(k);
+      return n;
+    });
+
   // Total annuel
   const totalParticipants = monthly.reduce(
     (acc, m) => acc + m.participantsCount,
@@ -187,35 +228,142 @@ export function MonthlyStats({
             </tr>
           </thead>
           <tbody>
-            {monthly.map((m) => (
-              <tr
-                key={m.month}
-                className="border-t border-zinc-100 dark:border-zinc-800/40 hover:bg-zinc-50 dark:hover:bg-zinc-900/40"
-              >
-                <td className="px-3 py-2 font-medium text-zinc-800 dark:text-zinc-200">
-                  {m.monthLabel} {year}
-                </td>
-                <td className="px-3 py-2 text-right tabular-nums">
-                  {m.participantsCount}
-                </td>
-                <td className="px-3 py-2 text-right tabular-nums">
-                  {Math.round(m.hoursCount)}
-                </td>
-                <td className="px-3 py-2 text-right tabular-nums">
-                  {m.companiesCount}
-                </td>
-                <td className="px-3 py-2 text-right tabular-nums">
-                  {m.amountHt > 0
-                    ? currencyFormatterPrecise.format(m.amountHt)
-                    : "—"}
-                </td>
-                <td className="px-3 py-2 text-right tabular-nums font-medium text-emerald-700 dark:text-emerald-400">
-                  {m.amountTtc > 0
-                    ? currencyFormatterPrecise.format(m.amountTtc)
-                    : "—"}
-                </td>
-              </tr>
-            ))}
+            {monthly.map((m) => {
+              const sessions = detail?.[m.month] ?? [];
+              const canExpand = sessions.length > 0;
+              const isOpen = openMonths.has(m.month);
+              return (
+                <Fragment key={m.month}>
+                  <tr
+                    className={`border-t border-zinc-100 dark:border-zinc-800/40 ${
+                      canExpand
+                        ? "cursor-pointer hover:bg-cyan-50/50"
+                        : "hover:bg-zinc-50 dark:hover:bg-zinc-900/40"
+                    }`}
+                    onClick={() => canExpand && toggleMonth(m.month)}
+                  >
+                    <td className="px-3 py-2 font-medium text-zinc-800 dark:text-zinc-200">
+                      <span className="inline-flex items-center gap-1">
+                        {canExpand && (
+                          <ChevronRight
+                            className={`h-3.5 w-3.5 text-zinc-400 transition-transform ${
+                              isOpen ? "rotate-90" : ""
+                            }`}
+                          />
+                        )}
+                        {m.monthLabel} {year}
+                        {canExpand && (
+                          <span className="text-[10px] text-zinc-400 font-normal ml-1">
+                            ({sessions.length} session
+                            {sessions.length > 1 ? "s" : ""})
+                          </span>
+                        )}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {m.participantsCount}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {Math.round(m.hoursCount)}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {m.companiesCount}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {m.amountHt > 0
+                        ? currencyFormatterPrecise.format(m.amountHt)
+                        : "—"}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums font-medium text-emerald-700 dark:text-emerald-400">
+                      {m.amountTtc > 0
+                        ? currencyFormatterPrecise.format(m.amountTtc)
+                        : "—"}
+                    </td>
+                  </tr>
+
+                  {/* Détail : une ligne par session du mois */}
+                  {isOpen &&
+                    sessions.map((s) => {
+                      const sOpen = openSessions.has(s.id);
+                      return (
+                        <Fragment key={s.id}>
+                          <tr
+                            className="bg-zinc-50/70 dark:bg-zinc-900/30 border-t border-zinc-100 cursor-pointer hover:bg-cyan-50/60"
+                            onClick={() => toggleSession(s.id)}
+                          >
+                            <td className="px-3 py-1.5 pl-8" colSpan={3}>
+                              <span className="inline-flex items-center gap-1.5 text-xs">
+                                <ChevronRight
+                                  className={`h-3 w-3 text-zinc-400 transition-transform ${
+                                    sOpen ? "rotate-90" : ""
+                                  }`}
+                                />
+                                <span className="font-mono text-[11px] text-zinc-500">
+                                  {frDay(s.date)}
+                                </span>
+                                <span className="font-medium text-zinc-700">
+                                  {s.title}
+                                </span>
+                                <span className="text-[10px] uppercase text-zinc-400">
+                                  {s.isInter ? "INTER" : "INTRA"}
+                                  {s.modality ? ` · ${s.modality}` : ""} ·{" "}
+                                  {s.days} j
+                                </span>
+                              </span>
+                            </td>
+                            <td className="px-3 py-1.5 text-right tabular-nums text-xs text-zinc-500">
+                              {s.learners.length}
+                            </td>
+                            <td className="px-3 py-1.5 text-right tabular-nums text-xs">
+                              {s.amountHt > 0
+                                ? currencyFormatterPrecise.format(s.amountHt)
+                                : "—"}
+                            </td>
+                            <td className="px-3 py-1.5 text-right">
+                              <Link
+                                href={`/sessions/${s.id}`}
+                                onClick={(e) => e.stopPropagation()}
+                                className="text-[11px] text-cyan-700 hover:underline"
+                              >
+                                Ouvrir →
+                              </Link>
+                            </td>
+                          </tr>
+
+                          {/* Détail journée : coût par apprenant / jour */}
+                          {sOpen &&
+                            s.learners.map((l, i) => (
+                              <tr
+                                key={`${s.id}-${i}`}
+                                className="bg-white dark:bg-zinc-950/40 border-t border-zinc-50"
+                              >
+                                <td
+                                  className="px-3 py-1 pl-14 text-xs text-zinc-600"
+                                  colSpan={3}
+                                >
+                                  {l.name}
+                                </td>
+                                <td className="px-3 py-1 text-right text-[11px] text-zinc-400">
+                                  {s.days} j
+                                </td>
+                                <td className="px-3 py-1 text-right tabular-nums text-xs">
+                                  {l.amountHt > 0
+                                    ? currencyFormatterPrecise.format(l.amountHt)
+                                    : "—"}
+                                </td>
+                                <td className="px-3 py-1 text-right tabular-nums text-[11px] text-zinc-500">
+                                  {l.perDayHt > 0
+                                    ? `${currencyFormatterPrecise.format(l.perDayHt)}/j`
+                                    : "—"}
+                                </td>
+                              </tr>
+                            ))}
+                        </Fragment>
+                      );
+                    })}
+                </Fragment>
+              );
+            })}
             {/* Ligne TOTAL */}
             <tr className="border-t-2 border-zinc-300 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-900/60 font-bold">
               <td className="px-3 py-2 uppercase text-[11px] tracking-wider">

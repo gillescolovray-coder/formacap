@@ -478,9 +478,9 @@ export default async function DashboardPage() {
     .select(
       `
       id, learner_id,
-      learner:learners(company_id),
-      session:sessions!inner(start_date,
-        formation:formations(duration_hours)
+      learner:learners(company_id, first_name, last_name, company_name_temp),
+      session:sessions!inner(id, start_date, end_date, modality, is_inter,
+        formation:formations(title, duration_hours, duration_days)
       ),
       inscription_request:inscription_requests(quote_amount_ht, billing_total_ht)
     `,
@@ -511,31 +511,54 @@ export default async function DashboardPage() {
     };
   }
 
+  type LearnerJoin = {
+    company_id: string | null;
+    first_name: string | null;
+    last_name: string | null;
+    company_name_temp: string | null;
+  };
+  type FormationJoin = {
+    title: string | null;
+    duration_hours: number | null;
+    duration_days: number | null;
+  };
+  type SessionJoin = {
+    id: string;
+    start_date: string | null;
+    end_date: string | null;
+    modality: string | null;
+    is_inter: boolean | null;
+    formation: FormationJoin | FormationJoin[] | null;
+  };
   type YearEnr = {
     id: string;
     learner_id: string | null;
-    learner: { company_id: string | null } | Array<{ company_id: string | null }> | null;
-    session:
-      | {
-          start_date: string | null;
-          formation:
-            | { duration_hours: number | null }
-            | Array<{ duration_hours: number | null }>
-            | null;
-        }
-      | Array<{
-          start_date: string | null;
-          formation:
-            | { duration_hours: number | null }
-            | Array<{ duration_hours: number | null }>
-            | null;
-        }>
-      | null;
+    learner: LearnerJoin | LearnerJoin[] | null;
+    session: SessionJoin | SessionJoin[] | null;
     inscription_request:
       | { quote_amount_ht: number | string | null; billing_total_ht: number | string | null }
       | Array<{ quote_amount_ht: number | string | null; billing_total_ht: number | string | null }>
       | null;
   };
+
+  // Détail pour le dépliage (mois -> sessions -> apprenants + coût/jour).
+  const monthlyDetailAcc: Record<
+    number,
+    Map<
+      string,
+      {
+        id: string;
+        title: string;
+        date: string;
+        modality: string | null;
+        isInter: boolean;
+        days: number;
+        amountHt: number;
+        learners: { name: string; amountHt: number; perDayHt: number }[];
+      }
+    >
+  > = {};
+  for (let m = 0; m < 12; m++) monthlyDetailAcc[m] = new Map();
 
   ((yearEnrollments ?? []) as unknown as YearEnr[]).forEach((e) => {
     const sess = Array.isArray(e.session) ? e.session[0] : e.session;
@@ -560,11 +583,80 @@ export default async function DashboardPage() {
     const billing = req?.billing_total_ht;
     const amt =
       billing !== null && billing !== undefined ? billing : req?.quote_amount_ht;
+    let enrAmount = 0;
     if (amt !== null && amt !== undefined) {
       const n = Number(amt);
-      if (Number.isFinite(n)) bucket.amountHt += n;
+      if (Number.isFinite(n)) {
+        bucket.amountHt += n;
+        enrAmount = n;
+      }
+    }
+
+    // --- Détail dépliage ---
+    const sid = (sess as { id?: string }).id;
+    if (sid) {
+      const end = (sess as { end_date?: string | null }).end_date ?? null;
+      const days =
+        form?.duration_days && Number(form.duration_days) > 0
+          ? Number(form.duration_days)
+          : end && sess.start_date
+            ? Math.max(
+                1,
+                Math.round(
+                  (new Date(end).getTime() -
+                    new Date(sess.start_date).getTime()) /
+                    86_400_000,
+                ) + 1,
+              )
+            : 1;
+      const dmap = monthlyDetailAcc[monthIdx];
+      let entry = dmap.get(sid);
+      if (!entry) {
+        entry = {
+          id: sid,
+          title: (form?.title as string | null)?.trim() || "Session",
+          date: sess.start_date as string,
+          modality: (sess as { modality?: string | null }).modality ?? null,
+          isInter: (sess as { is_inter?: boolean | null }).is_inter === true,
+          days,
+          amountHt: 0,
+          learners: [],
+        };
+        dmap.set(sid, entry);
+      }
+      const ln = Array.isArray(e.learner) ? e.learner[0] : e.learner;
+      const name =
+        [ln?.first_name, ln?.last_name].filter(Boolean).join(" ").trim() ||
+        "Apprenant";
+      entry.amountHt += enrAmount;
+      entry.learners.push({
+        name,
+        amountHt: enrAmount,
+        perDayHt: days > 0 ? Math.round((enrAmount / days) * 100) / 100 : enrAmount,
+      });
     }
   });
+
+  // Conversion du détail en tableaux triés par date, prêts pour le client.
+  const monthlyDetail: Record<
+    string,
+    Array<{
+      id: string;
+      title: string;
+      date: string;
+      modality: string | null;
+      isInter: boolean;
+      days: number;
+      amountHt: number;
+      learners: { name: string; amountHt: number; perDayHt: number }[];
+    }>
+  > = {};
+  for (let m = 0; m < 12; m++) {
+    const key = `${currentYear}-${String(m + 1).padStart(2, "0")}`;
+    monthlyDetail[key] = Array.from(monthlyDetailAcc[m].values()).sort((a, b) =>
+      a.date.localeCompare(b.date),
+    );
+  }
 
   const VAT_RATE = 0.2;
   const monthlyStats: MonthlyStatsType[] = MONTH_LABELS.map((label, i) => ({
@@ -1045,7 +1137,11 @@ export default async function DashboardPage() {
         {/* Statistiques mensuelles : 5 KPI annuels + graphique en barres
             + tableau récap mois par mois (annee en cours). */}
         <div className="mt-6">
-          <MonthlyStats year={currentYear} monthly={monthlyStats} />
+          <MonthlyStats
+            year={currentYear}
+            monthly={monthlyStats}
+            detail={monthlyDetail}
+          />
         </div>
 
         {/* Accès des apprenants à leur espace (traçabilité) */}
