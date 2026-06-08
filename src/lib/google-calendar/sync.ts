@@ -151,29 +151,47 @@ function esc(t: string): string {
     .replace(/>/g, "&gt;");
 }
 
-function buildEvent(
+/** Un jour de session à projeter dans l'agenda (date + plage horaire). */
+type EventDay = { date: string; start: string; end: string };
+
+/**
+ * Construit la liste des jours d'événement (1 bloc par jour, Gilles 2026-06-08).
+ * Pour chaque jour de session : bloc unique morning_start -> afternoon_end.
+ * Fallback si pas de session_days : 1 bloc sur start_date (horaires par défaut).
+ */
+function buildEventDays(s: SessionRow, days: DayRow[]): EventDay[] {
+  if (days.length > 0) {
+    return days.map((d) => ({
+      date: d.day_date.slice(0, 10),
+      start: toFullTime(d.morning_start ?? s.default_morning_start, "09:00:00"),
+      end: toFullTime(d.afternoon_end ?? s.default_afternoon_end, "17:00:00"),
+    }));
+  }
+  return [
+    {
+      date: s.start_date.slice(0, 10),
+      start: toFullTime(s.default_morning_start, "09:00:00"),
+      end: toFullTime(s.default_afternoon_end, "17:00:00"),
+    },
+  ];
+}
+
+function buildDayEvent(
   s: SessionRow,
   days: DayRow[],
   participantCount: number,
   portalUrl: string | null,
+  day: EventDay,
+  dayIndex: number,
+  totalDays: number,
 ): calendar_v3.Schema$Event {
   const meta = STATUS_META[s.status] ?? { emoji: "🗓️", label: s.status };
   const title = s.formation?.title?.trim() || "Session de formation";
-  // Dans le titre : nombre de participants (à la place du code formation).
+  // Dans le titre : nombre de participants (à la place du code formation)
+  // + le jour si la session s'étale sur plusieurs jours.
   const maxPart = s.max_participants ? `/${s.max_participants}` : "";
-  const summary = `${meta.emoji} 👥${participantCount}${maxPart} — ${title}`;
-
-  // Horaires : première heure de début, dernière heure de fin.
-  const firstDay = days[0];
-  const lastDay = days[days.length - 1];
-  const startTime = toFullTime(
-    firstDay?.morning_start ?? s.default_morning_start,
-    "09:00:00",
-  );
-  const endTime = toFullTime(
-    lastDay?.afternoon_end ?? s.default_afternoon_end,
-    "17:00:00",
-  );
+  const dayLabel = totalDays > 1 ? ` (Jour ${dayIndex + 1}/${totalDays})` : "";
+  const summary = `${meta.emoji} 👥${participantCount}${maxPart} — ${title}${dayLabel}`;
 
   const modalityLabel = s.modality
     ? MODALITY_LABELS[s.modality] ?? s.modality
@@ -242,14 +260,31 @@ function buildEvent(
     location: locationStr,
     description: descriptionLines.join("<br>"),
     start: {
-      dateTime: `${s.start_date.slice(0, 10)}T${startTime}`,
+      dateTime: `${day.date}T${day.start}`,
       timeZone: "Europe/Paris",
     },
     end: {
-      dateTime: `${s.end_date.slice(0, 10)}T${endTime}`,
+      dateTime: `${day.date}T${day.end}`,
       timeZone: "Europe/Paris",
     },
   };
+}
+
+/** Parse la valeur stockée en base (liste JSON d'IDs, ou ancien ID unique). */
+function parseEventIds(v: string | null): string[] {
+  if (!v) return [];
+  const t = v.trim();
+  if (t.startsWith("[")) {
+    try {
+      const arr = JSON.parse(t);
+      return Array.isArray(arr)
+        ? arr.filter((x): x is string => typeof x === "string")
+        : [];
+    } catch {
+      return [];
+    }
+  }
+  return [t]; // ancien format : un seul ID
 }
 
 export type CalendarSyncResult = {
@@ -330,17 +365,19 @@ export async function syncSessionCalendar(
 
     const calendar = getCalendarClient();
     const calendarId = getCalendarId();
-    const eventId = s.google_calendar_event_id;
+    const existingIds = parseEventIds(s.google_calendar_event_id);
 
-    // Session non synchronisable -> on retire l'événement s'il existe.
+    // Session non synchronisable -> on retire TOUS les événements existants.
     if (!SYNCABLE_STATUSES.has(s.status)) {
-      if (eventId) {
-        try {
-          await withRetry(() =>
-            calendar.events.delete({ calendarId, eventId }),
-          );
-        } catch (e) {
-          if (!isGoneError(e)) throw e; // déjà supprimé : on ignore
+      if (existingIds.length > 0) {
+        for (const id of existingIds) {
+          try {
+            await withRetry(() =>
+              calendar.events.delete({ calendarId, eventId: id }),
+            );
+          } catch (e) {
+            if (!isGoneError(e)) throw e; // déjà supprimé : on ignore
+          }
         }
         await admin
           .from("sessions")
@@ -373,47 +410,116 @@ export async function syncSessionCalendar(
       if (portal) portalUrl = buildTrainerPortalUrl(appOrigin(), portal.token);
     }
 
-    const event = buildEvent(
-      s,
-      (days ?? []) as DayRow[],
-      count ?? 0,
-      portalUrl,
-    );
+    // 1 BLOC PAR JOUR (Gilles 2026-06-08) : on construit un événement par jour
+    // de session et on réconcilie avec les événements déjà stockés (réutilise
+    // les IDs existants par position -> mise à jour ; crée les jours en plus ;
+    // supprime les jours en trop). Anti-doublon : une MAJ qui échoue pour autre
+    // chose qu'un 404/410 ne déclenche PAS de recréation.
+    const eventDays = buildEventDays(s, (days ?? []) as DayRow[]);
+    const totalDays = eventDays.length;
+    const resultIds: string[] = [];
+    let errored = false;
+    let errMsg: string | undefined;
 
-    // 1) Mise à jour de l'événement existant.
-    if (eventId) {
-      try {
-        await withRetry(() =>
-          calendar.events.patch({ calendarId, eventId, requestBody: event }),
-        );
-        return { ok: true };
-      } catch (e) {
-        // On ne recrée QUE si l'événement n'existe vraiment plus (404/410).
-        // Sinon (rate limit, réseau…) on remonte l'erreur -> PAS de doublon.
-        if (!isGoneError(e)) {
-          const error = (e as Error).message;
-          return { ok: false, error };
+    for (let i = 0; i < eventDays.length; i++) {
+      const ev = buildDayEvent(
+        s,
+        (days ?? []) as DayRow[],
+        count ?? 0,
+        portalUrl,
+        eventDays[i],
+        i,
+        totalDays,
+      );
+      const existing = existingIds[i];
+      if (existing) {
+        try {
+          await withRetry(() =>
+            calendar.events.patch({
+              calendarId,
+              eventId: existing,
+              requestBody: ev,
+            }),
+          );
+          resultIds.push(existing);
+          continue;
+        } catch (e) {
+          if (!isGoneError(e)) {
+            // rate limit / réseau : on garde l'ID, pas de recréation (doublon).
+            errored = true;
+            errMsg = (e as Error).message;
+            resultIds.push(existing);
+            continue;
+          }
+          // 404/410 : l'événement n'existe plus -> on le recrée ci-dessous.
         }
-        // event supprimé côté agenda -> on tombe sur la création ci-dessous
+      }
+      try {
+        const res = await withRetry(() =>
+          calendar.events.insert({ calendarId, requestBody: ev }),
+        );
+        if (res.data.id) resultIds.push(res.data.id);
+      } catch (e) {
+        errored = true;
+        errMsg = (e as Error).message;
       }
     }
 
-    // 2) Création d'un nouvel événement.
-    const res = await withRetry(() =>
-      calendar.events.insert({ calendarId, requestBody: event }),
-    );
-    const newId = res.data.id;
-    if (newId) {
-      await admin
-        .from("sessions")
-        .update({ google_calendar_event_id: newId })
-        .eq("id", sessionId);
+    // Supprime les jours en trop (session raccourcie depuis la dernière synchro).
+    for (let i = eventDays.length; i < existingIds.length; i++) {
+      try {
+        await withRetry(() =>
+          calendar.events.delete({ calendarId, eventId: existingIds[i] }),
+        );
+      } catch (e) {
+        if (!isGoneError(e)) {
+          errored = true;
+          errMsg = (e as Error).message;
+        }
+      }
     }
-    return { ok: true };
+
+    // Mémorise la liste d'IDs (format JSON).
+    await admin
+      .from("sessions")
+      .update({ google_calendar_event_id: JSON.stringify(resultIds) })
+      .eq("id", sessionId);
+
+    return errored ? { ok: false, error: errMsg } : { ok: true };
   } catch (e) {
     const error = (e as Error).message;
     console.warn("[google-calendar] synchro échouée", { sessionId, error });
     return { ok: false, error };
+  }
+}
+
+/**
+ * Supprime tous les événements agenda d'une session (gère le format liste
+ * JSON et l'ancien ID unique). Best-effort. À appeler AVANT de supprimer la
+ * session en base (l'ID est alors perdu).
+ */
+export async function deleteSessionCalendarEvents(
+  storedValue: string | null,
+): Promise<void> {
+  if (!isCalendarConfigured()) return;
+  const ids = parseEventIds(storedValue);
+  if (ids.length === 0) return;
+  try {
+    const calendar = getCalendarClient();
+    const calendarId = getCalendarId();
+    for (const id of ids) {
+      try {
+        await withRetry(() =>
+          calendar.events.delete({ calendarId, eventId: id }),
+        );
+      } catch {
+        // déjà supprimé / inaccessible : on ignore
+      }
+    }
+  } catch (e) {
+    console.warn("[google-calendar] suppression événements session échouée", {
+      error: (e as Error).message,
+    });
   }
 }
 

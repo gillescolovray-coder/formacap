@@ -13,12 +13,9 @@ import type { SessionActionType, SessionStatus } from "@/lib/sessions/types";
 import {
   syncSessionCalendar,
   purgeAllCalendarEvents,
+  deleteSessionCalendarEvents,
 } from "@/lib/google-calendar/sync";
-import {
-  getCalendarClient,
-  getCalendarId,
-  isCalendarConfigured,
-} from "@/lib/google-calendar/client";
+import { isCalendarConfigured } from "@/lib/google-calendar/client";
 
 async function getCurrentOrganizationId() {
   const supabase = await createClient();
@@ -492,20 +489,9 @@ export async function deleteSession(id: string) {
   if (error) {
     redirect(`/sessions/${id}?error=${encodeURIComponent(error.message)}`);
   }
-  // Suppression de l'événement Google Agenda associé (best-effort).
-  if (sess?.google_calendar_event_id && isCalendarConfigured()) {
-    try {
-      await getCalendarClient().events.delete({
-        calendarId: getCalendarId(),
-        eventId: sess.google_calendar_event_id,
-      });
-    } catch (e) {
-      console.warn("[deleteSession] suppression événement agenda échouée", {
-        id,
-        error: (e as Error).message,
-      });
-    }
-  }
+  // Suppression des événements Google Agenda associés (best-effort, gère la
+  // liste de jours).
+  await deleteSessionCalendarEvents(sess?.google_calendar_event_id ?? null);
   revalidatePath("/sessions");
   redirect("/sessions");
 }
