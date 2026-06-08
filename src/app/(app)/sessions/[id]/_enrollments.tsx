@@ -399,22 +399,30 @@ export function EnrollmentsSection({
                   </p>
                   {/* Ligne 2 — Société (ou Particulier) · Fonction · Partenaire */}
                   <p className="text-xs text-slate-500 truncate flex items-center gap-2 mt-0.5 flex-wrap">
-                    {(learner as { company?: { name?: string } | null } | null)
-                      ?.company?.name ? (
-                      <span className="inline-flex items-center gap-0.5">
-                        <Building2 className="h-3 w-3" />
-                        {
-                          (learner as {
-                            company: { name: string };
-                          }).company.name
-                        }
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-0.5 text-slate-400">
-                        <UserCircle2 className="h-3 w-3" />
-                        Particulier
-                      </span>
-                    )}
+                    {(() => {
+                      // Société : fiche entreprise officielle, sinon nom saisi
+                      // en texte libre (apprenant express) — Gilles 2026-06-08.
+                      const compName =
+                        (learner as { company?: { name?: string } | null } | null)
+                          ?.company?.name ??
+                        (
+                          learner as unknown as {
+                            company_name_temp?: string | null;
+                          } | null
+                        )?.company_name_temp ??
+                        null;
+                      return compName ? (
+                        <span className="inline-flex items-center gap-0.5">
+                          <Building2 className="h-3 w-3" />
+                          {compName}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-0.5 text-slate-400">
+                          <UserCircle2 className="h-3 w-3" />
+                          Particulier
+                        </span>
+                      );
+                    })()}
                     {(learner as unknown as { job_title?: string | null } | null)
                       ?.job_title && (
                       <span className="inline-flex items-center gap-0.5 text-slate-500">

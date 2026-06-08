@@ -13,6 +13,30 @@
 import { randomBytes } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createMirroredRequestForEnrollment } from "@/lib/inscriptions/sync";
+import { normalizeCompanyName } from "@/lib/companies/dedup";
+
+/**
+ * Rapproche un nom d'entreprise saisi (texte libre) d'une fiche existante
+ * par nom NORMALISÉ exact (Gilles 2026-06-08). On ne crée PAS de fiche ici
+ * (risque de doublons sur les franchises type "AVIPUR …") : si aucune
+ * correspondance exacte, on renvoie null et le nom reste en texte libre.
+ */
+async function findExistingCompanyId(
+  supabase: SupabaseClient,
+  organizationId: string,
+  companyName: string,
+): Promise<string | null> {
+  const target = normalizeCompanyName(companyName);
+  if (!target) return null;
+  const { data } = await supabase
+    .from("companies")
+    .select("id, name")
+    .eq("organization_id", organizationId);
+  for (const c of (data ?? []) as Array<{ id: string; name: string | null }>) {
+    if (normalizeCompanyName(c.name) === target) return c.id;
+  }
+  return null;
+}
 
 export type ExpressLearnerInput = {
   /** Optionnel : Mme / M. */
@@ -193,6 +217,31 @@ export async function createExpressLearnerForSession(
         .from("session_enrollments")
         .update({ inscription_request_id: requestId })
         .eq("id", newEnrollment.id);
+
+      // Entreprise (Gilles 2026-06-08) : on reprend le nom saisi sur la
+      // request (company_name_freetext) pour qu'il s'affiche dans le module
+      // Inscriptions au lieu de "Particulier". Si une fiche entreprise existe
+      // déjà (nom normalisé exact), on rattache aussi company_id (apprenant +
+      // request) pour un lien cliquable.
+      const matchedCompanyId = await findExistingCompanyId(
+        supabase,
+        organizationId,
+        companyName,
+      );
+      const reqUpdate: Record<string, string | null> = {
+        company_name_freetext: companyName,
+      };
+      if (matchedCompanyId) reqUpdate.company_id = matchedCompanyId;
+      await supabase
+        .from("inscription_requests")
+        .update(reqUpdate)
+        .eq("id", requestId);
+      if (matchedCompanyId) {
+        await supabase
+          .from("learners")
+          .update({ company_id: matchedCompanyId })
+          .eq("id", newLearner.id);
+      }
     }
   } catch (e) {
     // Best-effort : si la creation de la request miroir echoue,

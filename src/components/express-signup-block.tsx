@@ -4,6 +4,8 @@ import { useEffect, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { QRCodeSVG } from "qrcode.react";
 import {
+  Check,
+  Copy,
   Maximize2,
   QrCode,
   RefreshCw,
@@ -55,6 +57,7 @@ export function ExpressSignupBlock({
   const [qrData, setQrData] = useState<QuickSignupResult | null>(null);
   const [qrLoading, setQrLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const [formOpen, setFormOpen] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -177,7 +180,28 @@ export function ExpressSignupBlock({
                     </a>
                   </div>
 
-                  <div className="flex gap-2 justify-center pt-2">
+                  <div className="flex gap-2 justify-center pt-2 flex-wrap">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(qrUrl);
+                          setCopied(true);
+                          setTimeout(() => setCopied(false), 2000);
+                        } catch {
+                          // clipboard indisponible : on ignore
+                        }
+                      }}
+                      title="Copier le lien d'inscription (à coller dans le chat de la visio)"
+                    >
+                      {copied ? (
+                        <Check className="h-4 w-4 text-emerald-600" />
+                      ) : (
+                        <Copy className="h-4 w-4" />
+                      )}
+                      {copied ? "Lien copié !" : "Copier le lien"}
+                    </Button>
                     <Button
                       variant="outline"
                       size="sm"

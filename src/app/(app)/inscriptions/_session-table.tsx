@@ -238,6 +238,7 @@ export function SessionInscriptionsTable({
                 civility: string | null;
                 postal_code: string | null;
                 city: string | null;
+                company_name_temp?: string | null;
                 company?: {
                   id: string;
                   name: string;
@@ -274,6 +275,9 @@ export function SessionInscriptionsTable({
               joined.company?.name ??
               joined.learner?.company?.name ??
               r.company_name_freetext ??
+              // Apprenant express : entreprise saisie en texte libre sur la
+              // fiche apprenant (company_name_temp) — Gilles 2026-06-08.
+              joined.learner?.company_name_temp ??
               null;
             // Cascade : adresse perso de l'apprenant, sinon adresse de
             // l'entreprise rattachée à l'apprenant, sinon adresse de

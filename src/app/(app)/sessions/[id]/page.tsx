@@ -127,7 +127,7 @@ export default async function SessionDetailPage({
     supabase
       .from("session_enrollments")
       .select(
-        "*, learner:learners(id, first_name, last_name, email, company:companies(name))",
+        "*, learner:learners(id, first_name, last_name, email, company_name_temp, company:companies(name))",
       )
       .eq("session_id", id)
       .order("enrolled_at", { ascending: true }),
