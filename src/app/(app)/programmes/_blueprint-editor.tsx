@@ -3,6 +3,7 @@
 import { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
+  Eye,
   Loader2,
   Plus,
   Send,
@@ -477,6 +478,27 @@ export function BlueprintEditor({
               )}
               Soumettre au référent
             </button>
+          )}
+        </div>
+      )}
+
+      {/* Aperçu du rendu final (programme imprimable / PDF) */}
+      {id && (
+        <div className="flex flex-col gap-1">
+          <a
+            href={`/programmes/${id}/apercu`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-indigo-300 bg-indigo-50 text-indigo-800 text-sm font-bold hover:bg-indigo-100 w-fit"
+          >
+            <Eye className="h-4 w-4" />
+            Visualiser le rendu (PDF)
+          </a>
+          {!locked && (
+            <p className="text-[11px] text-zinc-500">
+              Enregistrez d&apos;abord pour voir vos dernières modifications
+              dans l&apos;aperçu.
+            </p>
           )}
         </div>
       )}
