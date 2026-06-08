@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/page-header";
 import { BackButton } from "@/components/back-button";
 import { BlueprintEditor } from "../_blueprint-editor";
 import { ReviewForm } from "../_review-form";
+import { PublishToCatalogButton } from "../_publish-to-catalog-button";
 import { BLUEPRINT_STATUS_LABELS, type BloomObjective } from "@/lib/bloom/types";
 
 export const dynamic = "force-dynamic";
@@ -52,6 +53,7 @@ export default async function ProgrammeDetailPage({
     general_objective: string | null;
     bloom_objectives: BloomObjective[] | null;
     status: string;
+    formation_id: string | null;
   };
 
   const { data: memberships } = await supabase
@@ -141,6 +143,29 @@ export default async function ProgrammeDetailPage({
         {/* Porte 1 : validation par le référent */}
         {blueprint.status === "pending_review" && canValidate && (
           <ReviewForm blueprintId={blueprint.id} />
+        )}
+
+        {/* Porte 2 : bascule au catalogue (programme validé) */}
+        {(blueprint.status === "objectives_approved" ||
+          blueprint.formation_id) && (
+          <section className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-bold text-emerald-900">
+                {blueprint.formation_id
+                  ? "Programme basculé au catalogue"
+                  : "Prêt pour le catalogue"}
+              </h2>
+              <p className="text-xs text-emerald-800/80 mt-0.5">
+                {blueprint.formation_id
+                  ? "Une fiche formation a été créée à partir de ce programme."
+                  : "Les objectifs sont validés. Créez la fiche formation pour planifier des sessions."}
+              </p>
+            </div>
+            <PublishToCatalogButton
+              blueprintId={blueprint.id}
+              formationId={blueprint.formation_id}
+            />
+          </section>
         )}
 
         <BlueprintEditor

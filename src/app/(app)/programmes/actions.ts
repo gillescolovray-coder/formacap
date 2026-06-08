@@ -224,6 +224,85 @@ export async function reviewBlueprint(
   return { ok: true };
 }
 
+/**
+ * Bascule un programme VALIDÉ vers le Catalogue : crée une fiche formation
+ * (statut brouillon) à partir du programme, puis lie les deux. Gilles 2026-06-08.
+ */
+export async function publishBlueprintToCatalog(
+  id: string,
+): Promise<{ ok: boolean; error?: string; formationId?: string }> {
+  if (!UUID_REGEX.test(id)) return { ok: false, error: "Identifiant invalide." };
+  const ctx = await getCtx();
+  if (!ctx) return { ok: false, error: "Non authentifié." };
+
+  const { data: bp } = await ctx.supabase
+    .from("program_blueprints")
+    .select(
+      "id, organization_id, status, formation_id, internal_code, title, theme, target_audience, duration_hours, duration_days, general_objective, bloom_objectives",
+    )
+    .eq("id", id)
+    .maybeSingle<{
+      id: string;
+      organization_id: string;
+      status: string;
+      formation_id: string | null;
+      internal_code: string | null;
+      title: string;
+      theme: string | null;
+      target_audience: string | null;
+      duration_hours: number | null;
+      duration_days: number | null;
+      general_objective: string | null;
+      bloom_objectives: BloomObjective[] | null;
+    }>();
+  if (!bp) return { ok: false, error: "Programme introuvable." };
+  if (bp.status !== "objectives_approved") {
+    return {
+      ok: false,
+      error: "Le programme doit être « Objectifs validés » avant la bascule.",
+    };
+  }
+  if (bp.formation_id) {
+    // Déjà basculé : on renvoie la fiche existante (idempotent).
+    return { ok: true, formationId: bp.formation_id };
+  }
+
+  const objectives = (bp.bloom_objectives ?? [])
+    .map((o) => o.text?.trim())
+    .filter((t): t is string => Boolean(t));
+
+  const { data: created, error } = await ctx.supabase
+    .from("formations")
+    .insert({
+      organization_id: bp.organization_id,
+      created_by: ctx.user.id,
+      title: bp.title,
+      internal_code: bp.internal_code,
+      theme: bp.theme,
+      target_audience: bp.target_audience,
+      duration_hours: bp.duration_hours,
+      duration_days: bp.duration_days,
+      general_objective: bp.general_objective,
+      operational_objectives: objectives,
+      status: "draft",
+    })
+    .select("id")
+    .maybeSingle<{ id: string }>();
+  if (error || !created) {
+    return { ok: false, error: error?.message ?? "Création de la formation impossible." };
+  }
+
+  await ctx.supabase
+    .from("program_blueprints")
+    .update({ formation_id: created.id, updated_at: new Date().toISOString() })
+    .eq("id", id);
+
+  revalidatePath(`/programmes/${id}`);
+  revalidatePath("/programmes");
+  revalidatePath("/formations");
+  return { ok: true, formationId: created.id };
+}
+
 export async function deleteBlueprint(
   id: string,
 ): Promise<{ ok: boolean; error?: string }> {
