@@ -1388,3 +1388,106 @@ export async function convertToEnrollment(id: string) {
   revalidatePath("/dashboard");
   redirect(`/inscriptions/${id}?converted=1`);
 }
+
+// ============================================================
+// Rattachement manuel d'une inscription "express" à une entreprise
+// (Gilles 2026-06-08). Choix validé : on garde le nom saisi en texte
+// libre et l'utilisateur rattache lui-même à une fiche existante OU en
+// crée une. Évite les doublons de franchises (AVIPUR, Avipur…).
+// ============================================================
+
+export type AttachCompanyCandidate = {
+  id: string;
+  name: string;
+  postal_code: string | null;
+  city: string | null;
+};
+
+/** Recherche des entreprises de l'organisation par nom (rattachement). */
+export async function searchCompaniesForAttach(
+  query: string,
+): Promise<AttachCompanyCandidate[]> {
+  const { organizationId } = await getOrgId();
+  const supabase = await createClient();
+  let req = supabase
+    .from("companies")
+    .select("id, name, postal_code, city")
+    .eq("organization_id", organizationId)
+    .order("name", { ascending: true })
+    .limit(20);
+  const q = query.trim();
+  if (q.length > 0) {
+    const safe = q.replace(/[%_,()]/g, " ").trim();
+    req = req.or(`name.ilike.%${safe}%,siret.ilike.%${safe}%`);
+  }
+  const { data } = await req;
+  return (data ?? []) as AttachCompanyCandidate[];
+}
+
+/** Rattache l'inscription (et l'apprenant) à une entreprise existante. */
+export async function attachInscriptionToCompany(
+  inscriptionId: string,
+  companyId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const { organizationId } = await getOrgId();
+  const supabase = await createClient();
+  // Vérifie que l'entreprise appartient bien à l'organisation.
+  const { data: comp } = await supabase
+    .from("companies")
+    .select("id")
+    .eq("id", companyId)
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+  if (!comp) return { ok: false, error: "Entreprise introuvable." };
+
+  const { data: req } = await supabase
+    .from("inscription_requests")
+    .select("id, learner_id, target_session_id")
+    .eq("id", inscriptionId)
+    .maybeSingle<{
+      id: string;
+      learner_id: string | null;
+      target_session_id: string | null;
+    }>();
+  if (!req) return { ok: false, error: "Inscription introuvable." };
+
+  await supabase
+    .from("inscription_requests")
+    .update({ company_id: companyId })
+    .eq("id", inscriptionId);
+  if (req.learner_id) {
+    await supabase
+      .from("learners")
+      .update({ company_id: companyId })
+      .eq("id", req.learner_id);
+  }
+  revalidatePath(`/inscriptions/${inscriptionId}`);
+  revalidatePath("/inscriptions");
+  if (req.target_session_id)
+    revalidatePath(`/sessions/${req.target_session_id}`);
+  return { ok: true };
+}
+
+/** Crée une entreprise (au nom donné) puis rattache l'inscription. */
+export async function createCompanyAndAttach(
+  inscriptionId: string,
+  name: string,
+): Promise<{ ok: boolean; error?: string; companyId?: string }> {
+  const { organizationId } = await getOrgId();
+  const supabase = await createClient();
+  const cleanName = name.trim();
+  if (!cleanName) return { ok: false, error: "Nom d'entreprise vide." };
+
+  const { data: created, error } = await supabase
+    .from("companies")
+    .insert({ organization_id: organizationId, name: cleanName, type: "client" })
+    .select("id")
+    .maybeSingle<{ id: string }>();
+  if (error || !created) {
+    return { ok: false, error: error?.message ?? "Création impossible." };
+  }
+  const res = await attachInscriptionToCompany(inscriptionId, created.id);
+  return res.ok
+    ? { ok: true, companyId: created.id }
+    : { ok: false, error: res.error };
+}

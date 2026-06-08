@@ -7,6 +7,7 @@ import {
   User,
 } from "lucide-react";
 import { StageQuickChanger } from "./_stage-quick-changer";
+import { AttachCompanyButton } from "./_attach-company-button";
 import { useInscriptionColumns } from "./_columns-context";
 import { cn } from "@/lib/utils";
 import {
@@ -399,6 +400,16 @@ export function SessionInscriptionsTable({
                       )
                     ) : (
                       <span className="text-slate-400">Particulier</span>
+                    )}
+                    {/* Pas de fiche entreprise liée -> proposer le rattachement
+                        manuel (apprenant express). Gilles 2026-06-08. */}
+                    {!companyId && (
+                      <div className="mt-1 ml-4">
+                        <AttachCompanyButton
+                          inscriptionId={r.id}
+                          currentName={companyName}
+                        />
+                      </div>
                     )}
                     {/* CP + Ville stackés sous le nom (Gilles 2026-05-21 :
                         regroupement visuel pour réduire la largeur). */}
