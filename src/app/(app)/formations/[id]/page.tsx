@@ -1,4 +1,4 @@
-import { Archive, CalendarDays, Clock, Copy, Save, Trash2 } from "lucide-react";
+import { Archive, CalendarDays, Clock, Copy, FileText, Save, Trash2 } from "lucide-react";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { FormationForm } from "../_form";
@@ -147,6 +147,22 @@ export default async function FormationDetailPage({
         actions={
           <>
             <BackButton fallbackHref="/formations" />
+            <Button
+              nativeButton={false}
+              variant="outline"
+              size="sm"
+              render={
+                <a
+                  href={`/formations/${formation.id}/programme`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                />
+              }
+              title="Aperçu du programme à la charte (impression / PDF)"
+            >
+              <FileText className="h-4 w-4" />
+              Programme (PDF)
+            </Button>
             <form action={duplicate}>
               <Button type="submit" variant="outline" size="sm">
                 <Copy className="h-4 w-4" />
