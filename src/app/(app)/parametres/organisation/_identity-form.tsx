@@ -8,6 +8,11 @@ type Identity = {
   name: string;
   siret: string | null;
   nda: string | null;
+  nda_authority: string | null;
+  legal_form: string | null;
+  share_capital: string | null;
+  rcs_number: string | null;
+  vat_number: string | null;
   address: string | null;
   postal_code: string | null;
   city: string | null;
@@ -39,9 +44,38 @@ export function OrgIdentityForm({
           label="N° de Déclaration d'Activité (NDA)"
           name="nda"
           defaultValue={initial.nda}
-          placeholder="ex. 82 38 04928 38"
+          placeholder="ex. 93 84 05461 84"
           help="Numéro Qualiopi délivré par la DREETS, repris dans les conventions et attestations."
-          spanFull
+        />
+        <Field
+          label="Autorité du NDA (DREETS)"
+          name="nda_authority"
+          defaultValue={initial.nda_authority}
+          placeholder="ex. DREETS Provence-Alpes-Côte d'Azur"
+        />
+        <Field
+          label="Forme juridique"
+          name="legal_form"
+          defaultValue={initial.legal_form}
+          placeholder="ex. SARL"
+        />
+        <Field
+          label="Capital social"
+          name="share_capital"
+          defaultValue={initial.share_capital}
+          placeholder="ex. 2 000 €"
+        />
+        <Field
+          label="RCS"
+          name="rcs_number"
+          defaultValue={initial.rcs_number}
+          placeholder="ex. 522 316 884 00025"
+        />
+        <Field
+          label="N° TVA intracommunautaire"
+          name="vat_number"
+          defaultValue={initial.vat_number}
+          placeholder="ex. FR54 522 316 884"
         />
         <Field
           label="Adresse"

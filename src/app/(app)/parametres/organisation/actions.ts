@@ -21,6 +21,12 @@ export async function updateOrgIdentity(orgId: string, formData: FormData) {
     name: parseText(formData.get("name")) ?? undefined,
     siret: parseText(formData.get("siret")),
     nda: parseText(formData.get("nda")),
+    // Champs légaux structurés (pied de page programme — Gilles 2026-06-08)
+    nda_authority: parseText(formData.get("nda_authority")),
+    legal_form: parseText(formData.get("legal_form")),
+    share_capital: parseText(formData.get("share_capital")),
+    rcs_number: parseText(formData.get("rcs_number")),
+    vat_number: parseText(formData.get("vat_number")),
     address: parseText(formData.get("address")),
     postal_code: parseText(formData.get("postal_code")),
     city: parseText(formData.get("city")),
@@ -149,6 +155,89 @@ export async function uploadLogo(orgId: string, formData: FormData) {
   // Nettoie l'ancien logo si présent
   const oldPath = org?.logo_url
     ? extractPathFromPublicUrl(org.logo_url as string)
+    : null;
+  if (oldPath && oldPath !== fileName) {
+    await supabase.storage.from("organization-logos").remove([oldPath]);
+  }
+
+  revalidatePath("/parametres/organisation");
+  redirect("/parametres/organisation?success=1");
+}
+
+/**
+ * Logo secondaire (ex. Conseils & Formations) affiché à côté du logo
+ * principal sur le programme diffusable. Gilles 2026-06-08.
+ */
+export async function uploadSecondaryLogo(orgId: string, formData: FormData) {
+  const file = formData.get("logo") as File | null;
+  if (!file || file.size === 0) {
+    redirect(
+      "/parametres/organisation?error=" +
+        encodeURIComponent("Aucun fichier sélectionné"),
+    );
+  }
+  if (file.size > MAX_SIZE_BYTES) {
+    redirect(
+      "/parametres/organisation?error=" +
+        encodeURIComponent("Fichier trop volumineux (max 2 Mo)"),
+    );
+  }
+  if (!VALID_MIME_TYPES.includes(file.type)) {
+    redirect(
+      "/parametres/organisation?error=" +
+        encodeURIComponent("Format non supporté (PNG, JPEG, SVG ou WebP attendu)"),
+    );
+  }
+
+  const supabase = await createClient();
+  const { data: org } = await supabase
+    .from("organizations")
+    .select("secondary_logo_url")
+    .eq("id", orgId)
+    .maybeSingle();
+
+  const extGuess = file.name.includes(".") ? file.name.split(".").pop() : undefined;
+  const ext =
+    extGuess && /^[a-zA-Z0-9]+$/.test(extGuess)
+      ? extGuess.toLowerCase()
+      : file.type === "image/svg+xml"
+        ? "svg"
+        : file.type === "image/jpeg"
+          ? "jpg"
+          : file.type === "image/webp"
+            ? "webp"
+            : "png";
+  const fileName = `${orgId}/logo2-${Date.now()}.${ext}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from("organization-logos")
+    .upload(fileName, file, {
+      contentType: file.type,
+      upsert: false,
+      cacheControl: "3600",
+    });
+  if (uploadError) {
+    redirect(
+      `/parametres/organisation?error=${encodeURIComponent(uploadError.message)}`,
+    );
+  }
+
+  const {
+    data: { publicUrl },
+  } = supabase.storage.from("organization-logos").getPublicUrl(fileName);
+
+  const { error: updateError } = await supabase
+    .from("organizations")
+    .update({ secondary_logo_url: publicUrl })
+    .eq("id", orgId);
+  if (updateError) {
+    redirect(
+      `/parametres/organisation?error=${encodeURIComponent(updateError.message)}`,
+    );
+  }
+
+  const oldPath = org?.secondary_logo_url
+    ? extractPathFromPublicUrl(org.secondary_logo_url as string)
     : null;
   if (oldPath && oldPath !== fileName) {
     await supabase.storage.from("organization-logos").remove([oldPath]);

@@ -26,6 +26,7 @@ import {
   updateOrgIdentity,
   uploadCommercialBanner,
   uploadLogo,
+  uploadSecondaryLogo,
   uploadQualiopiCertificate,
   uploadSignatureStamp,
 } from "./actions";
@@ -41,6 +42,12 @@ type OrgInfo = {
   legal_mentions: string | null;
   siret: string | null;
   nda: string | null;
+  nda_authority: string | null;
+  legal_form: string | null;
+  share_capital: string | null;
+  rcs_number: string | null;
+  vat_number: string | null;
+  secondary_logo_url: string | null;
   address: string | null;
   postal_code: string | null;
   city: string | null;
@@ -102,7 +109,7 @@ export default async function OrganizationSettingsPage({
   const { data: membership } = await supabase
     .from("organization_members")
     .select(
-      "role, organization:organizations(id, name, logo_url, legal_mentions, siret, nda, address, postal_code, city, phone, email, website, default_morning_start, default_morning_end, default_afternoon_start, default_afternoon_end, qualiopi_certificate_path, qualiopi_certificate_filename, qualiopi_certificate_expires_at, qualiopi_certificate_uploaded_at, commercial_banner_path, commercial_banner_filename, commercial_banner_uploaded_at, signature_stamp_path, signature_stamp_filename, signature_stamp_uploaded_at, emargement_token_ttl_days, realization_certificate_threshold_percent)",
+      "role, organization:organizations(id, name, logo_url, secondary_logo_url, legal_mentions, siret, nda, nda_authority, legal_form, share_capital, rcs_number, vat_number, address, postal_code, city, phone, email, website, default_morning_start, default_morning_end, default_afternoon_start, default_afternoon_end, qualiopi_certificate_path, qualiopi_certificate_filename, qualiopi_certificate_expires_at, qualiopi_certificate_uploaded_at, commercial_banner_path, commercial_banner_filename, commercial_banner_uploaded_at, signature_stamp_path, signature_stamp_filename, signature_stamp_uploaded_at, emargement_token_ttl_days, realization_certificate_threshold_percent)",
     )
     .eq("profile_id", user.id)
     .eq("is_active", true)
@@ -134,6 +141,7 @@ export default async function OrganizationSettingsPage({
   }
 
   const upload = uploadLogo.bind(null, org.id);
+  const uploadSecondary = uploadSecondaryLogo.bind(null, org.id);
   const remove = removeLogo.bind(null, org.id);
   const saveHours = updateDefaultHours.bind(null, org.id);
   const saveLegal = updateLegalMentions.bind(null, org.id);
@@ -276,6 +284,11 @@ export default async function OrganizationSettingsPage({
               name: org.name,
               siret: org.siret,
               nda: org.nda,
+              nda_authority: org.nda_authority,
+              legal_form: org.legal_form,
+              share_capital: org.share_capital,
+              rcs_number: org.rcs_number,
+              vat_number: org.vat_number,
               address: org.address,
               postal_code: org.postal_code,
               city: org.city,
@@ -352,6 +365,40 @@ export default async function OrganizationSettingsPage({
               Envoyer
             </Button>
           </form>
+
+          {/* Logo secondaire (ex. Conseils & Formations) — affiché à côté du
+              logo principal sur le programme de formation. Gilles 2026-06-08. */}
+          <div className="mt-6 pt-6 border-t border-zinc-200 dark:border-zinc-800 space-y-3">
+            <div>
+              <h3 className="text-sm font-semibold">Logo secondaire</h3>
+              <p className="text-xs text-zinc-500 mt-0.5">
+                Affiché à côté du logo principal sur le <strong>programme de
+                formation</strong> (ex. « Conseils &amp; Formations »).
+              </p>
+            </div>
+            {org.secondary_logo_url && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={org.secondary_logo_url}
+                alt="Logo secondaire"
+                className="max-h-16 w-auto object-contain rounded border border-zinc-200 bg-white p-1"
+              />
+            )}
+            <form action={uploadSecondary} className="space-y-2">
+              <input
+                id="logo2"
+                name="logo"
+                type="file"
+                accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                required
+                className="block w-full text-sm text-zinc-600 dark:text-zinc-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-zinc-900 file:text-white hover:file:bg-zinc-800 dark:file:bg-white dark:file:text-zinc-900 dark:hover:file:bg-zinc-200 cursor-pointer"
+              />
+              <Button type="submit" variant="outline">
+                <Upload className="h-4 w-4" />
+                {org.secondary_logo_url ? "Remplacer" : "Envoyer"} le logo secondaire
+              </Button>
+            </form>
+          </div>
         </section>
 
         {/* Mentions légales — placées juste sous le logo, reprises en
