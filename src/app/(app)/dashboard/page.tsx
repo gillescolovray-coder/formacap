@@ -586,9 +586,20 @@ export default async function DashboardPage({
   > = {};
   for (let m = 0; m < 12; m++) monthlyDetailAcc[m] = new Map();
 
+  // Statuts de session retenus = sessions CONFIRMÉES (Gilles 2026-06-08).
+  // On exclut les brouillons, planifiées non confirmées, ANNULÉES et surtout
+  // REPORTÉES (postponed) — sinon une session reportée reste comptée à sa date
+  // d'origine (bug constaté sur CHORUS reporté de juin à octobre).
+  const COUNTED_SESSION_STATUSES = new Set([
+    "confirmed",
+    "in_progress",
+    "completed",
+  ]);
   ((yearEnrollments ?? []) as unknown as YearEnr[]).forEach((e) => {
     const sess = Array.isArray(e.session) ? e.session[0] : e.session;
     if (!sess?.start_date) return;
+    const sessStatus = (sess as { status?: string | null }).status ?? "";
+    if (!COUNTED_SESSION_STATUSES.has(sessStatus)) return;
     const monthIdx = new Date(sess.start_date + "T00:00:00").getMonth();
     const bucket = monthlyAcc[monthIdx];
     if (!bucket) return;
