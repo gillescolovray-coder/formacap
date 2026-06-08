@@ -105,39 +105,62 @@ export function MonthlyStats({
           <Calendar className="h-3.5 w-3.5" />
           Volume mensuel
         </p>
-        <div className="flex items-end gap-1 h-32">
-          {monthly.map((m) => {
-            const partHeight =
-              maxParticipants > 0
-                ? (m.participantsCount / maxParticipants) * 100
-                : 0;
-            const amtHeight =
-              maxAmount > 0 ? (m.amountHt / maxAmount) * 100 : 0;
-            return (
-              <div
-                key={m.month}
-                className="flex-1 flex flex-col items-center gap-1"
-                title={`${m.monthLabel}\n${m.participantsCount} participants\n${currencyFormatterPrecise.format(m.amountHt)} HT`}
-              >
-                <div className="flex-1 flex items-end gap-0.5 w-full">
-                  {/* Barre participants (cyan) */}
+        {(() => {
+          // Hauteur en PIXELS (et non %) : sur un conteneur flex, les hauteurs
+          // en % ne se résolvent pas de façon fiable -> barres écrasées.
+          const BAR_AREA = 110; // px
+          return (
+            <div
+              className="flex items-end gap-1"
+              style={{ height: BAR_AREA + 18 }}
+            >
+              {monthly.map((m) => {
+                const partPx =
+                  m.participantsCount > 0
+                    ? Math.max(
+                        2,
+                        Math.round(
+                          (m.participantsCount / maxParticipants) * BAR_AREA,
+                        ),
+                      )
+                    : 0;
+                const amtPx =
+                  m.amountHt > 0
+                    ? Math.max(
+                        2,
+                        Math.round((m.amountHt / maxAmount) * BAR_AREA),
+                      )
+                    : 0;
+                return (
                   <div
-                    className="flex-1 bg-cyan-500 rounded-t-sm transition-all hover:bg-cyan-600 min-h-[2px]"
-                    style={{ height: `${partHeight}%` }}
-                  />
-                  {/* Barre montant HT (amber) */}
-                  <div
-                    className="flex-1 bg-amber-500 rounded-t-sm transition-all hover:bg-amber-600 min-h-[2px]"
-                    style={{ height: `${amtHeight}%` }}
-                  />
-                </div>
-                <div className="text-[10px] text-zinc-500 font-medium">
-                  {m.monthLabel}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+                    key={m.month}
+                    className="flex-1 flex flex-col items-center justify-end gap-1"
+                    title={`${m.monthLabel}\n${m.participantsCount} participants\n${currencyFormatterPrecise.format(m.amountHt)} HT`}
+                  >
+                    <div
+                      className="flex items-end gap-0.5 w-full justify-center"
+                      style={{ height: BAR_AREA }}
+                    >
+                      {/* Barre participants (cyan) */}
+                      <div
+                        className="flex-1 bg-cyan-500 rounded-t-sm transition-all hover:bg-cyan-600"
+                        style={{ height: partPx }}
+                      />
+                      {/* Barre montant HT (amber) */}
+                      <div
+                        className="flex-1 bg-amber-500 rounded-t-sm transition-all hover:bg-amber-600"
+                        style={{ height: amtPx }}
+                      />
+                    </div>
+                    <div className="text-[10px] text-zinc-500 font-medium">
+                      {m.monthLabel}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
         <div className="flex items-center gap-3 mt-3 text-[10px] text-zinc-600">
           <span className="inline-flex items-center gap-1">
             <span className="h-2 w-2 rounded-sm bg-cyan-500" />
