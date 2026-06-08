@@ -1256,27 +1256,30 @@ export default async function SessionsListPage({
                 if (s.amount_ht !== null && s.amount_ht !== undefined) {
                   amount = Number(s.amount_ht);
                 } else {
+                  // Tarification R7 propre à la session. En mode forfait
+                  // (INTRA), le forfait est un PRIX FIXE qui prime sur la
+                  // somme des inscriptions (Gilles 2026-06-08).
+                  const r7 = r7SessionAmount(s);
+                  const isForfait =
+                    sessionCtxById.get(s.id)?.pricing_mode === "forfait";
                   const fromInscriptions = inscriptionAmounts.get(s.id) ?? 0;
-                  if (fromInscriptions > 0) {
+                  if (isForfait && r7 !== null) {
+                    amount = r7;
+                  } else if (fromInscriptions > 0) {
                     amount = fromInscriptions;
+                  } else if (r7 !== null) {
+                    amount = r7;
                   } else {
-                    // Tarification R7 propre à la session (forfait/jour…),
-                    // comptée même sans inscrit. Gilles 2026-06-08.
-                    const r7 = r7SessionAmount(s);
-                    if (r7 !== null) {
-                      amount = r7;
-                    } else {
-                      const pub = publicUnitBySession.get(s.id);
-                      if (pub && pub > 0) {
-                        const nb =
-                          totalPersons.get(s.id) ??
-                          enrollmentCount.get(s.id) ??
-                          inscriptionCount.get(s.id) ??
-                          0;
-                        const effectiveNb =
-                          nb > 0 ? nb : Number(s.max_participants ?? 0);
-                        if (effectiveNb > 0) amount = pub * effectiveNb;
-                      }
+                    const pub = publicUnitBySession.get(s.id);
+                    if (pub && pub > 0) {
+                      const nb =
+                        totalPersons.get(s.id) ??
+                        enrollmentCount.get(s.id) ??
+                        inscriptionCount.get(s.id) ??
+                        0;
+                      const effectiveNb =
+                        nb > 0 ? nb : Number(s.max_participants ?? 0);
+                      if (effectiveNb > 0) amount = pub * effectiveNb;
                     }
                   }
                 }
@@ -1411,19 +1414,32 @@ export default async function SessionsListPage({
                     // Tarification R7 propre à la session (forfait/jour…),
                     // affichée même sans inscrit. Gilles 2026-06-08.
                     const sessionConfigAmount = r7SessionAmount(s);
+                    // INTRA forfait : le prix de la session EST le forfait
+                    // (prix fixe), pas la somme des parts par apprenant qui
+                    // peuvent être figées/incohérentes. Le forfait prime donc
+                    // sur la somme des inscriptions. Gilles 2026-06-08.
+                    const isForfait =
+                      sessionCtxById.get(s.id)?.pricing_mode === "forfait";
+                    const useForfaitFirst =
+                      (s.amount_ht === null || s.amount_ht === undefined) &&
+                      isForfait &&
+                      sessionConfigAmount !== null;
 
                     const displayedAmount =
                       s.amount_ht !== null && s.amount_ht !== undefined
                         ? Number(s.amount_ht)
-                        : inscriptionTotal > 0
-                          ? inscriptionTotal
-                          : sessionConfigAmount !== null
-                            ? sessionConfigAmount
-                            : pubUnit && pubUnit > 0 && nbInscrits > 0
-                              ? pubUnit * nbInscrits
-                              : null;
+                        : useForfaitFirst
+                          ? sessionConfigAmount
+                          : inscriptionTotal > 0
+                            ? inscriptionTotal
+                            : sessionConfigAmount !== null
+                              ? sessionConfigAmount
+                              : pubUnit && pubUnit > 0 && nbInscrits > 0
+                                ? pubUnit * nbInscrits
+                                : null;
                     const amountFromInscriptions =
                       (s.amount_ht === null || s.amount_ht === undefined) &&
+                      !useForfaitFirst &&
                       inscriptionTotal > 0;
 
                     const enrolled = enrollmentCount.get(s.id) ?? 0;
