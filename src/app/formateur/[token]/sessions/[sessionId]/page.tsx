@@ -231,6 +231,39 @@ export default async function FormateurSessionDetailPage({
 
   const enrollmentIds = participants.map((p) => p.enrollmentId);
 
+  // Rattachement quiz ROBUSTE par apprenant (Gilles 2026-06-08) : un quiz
+  // joué en saisie express peut être lié à un AUTRE enrollment du même
+  // apprenant (doublon, ou mauvaise session le même jour). On récupère donc
+  // TOUS les enrollments de ces apprenants pour pouvoir retrouver l'essai par
+  // learner_id en secours, en plus du rattachement direct par enrollment.
+  const participantLearnerIds = Array.from(
+    new Set(
+      participants
+        .map((p) => p.learnerId)
+        .filter((x): x is string => Boolean(x)),
+    ),
+  );
+  const learnerByEnrollment = new Map<string, string>(); // enrollmentId -> learnerId
+  for (const p of participants) {
+    if (p.learnerId) learnerByEnrollment.set(p.enrollmentId, p.learnerId);
+  }
+  if (participantLearnerIds.length > 0) {
+    const { data: allEnr } = await supabase
+      .from("session_enrollments")
+      .select("id, learner_id")
+      .in("learner_id", participantLearnerIds);
+    for (const e of (allEnr ?? []) as Array<{
+      id: string;
+      learner_id: string | null;
+    }>) {
+      if (e.learner_id) learnerByEnrollment.set(e.id, e.learner_id);
+    }
+  }
+  // Liste élargie d'enrollments à interroger pour les quiz (direct + secours).
+  const quizEnrollmentIds = Array.from(
+    new Set([...enrollmentIds, ...learnerByEnrollment.keys()]),
+  );
+
   // Source d'inscription par apprenant (Gilles 2026-06-05) :
   //   'cap'         = inscrit directement par CAP NUMÉRIQUE -> CAP gère la
   //                   convocation (œil de visualisation disponible).
@@ -443,7 +476,7 @@ export default async function FormateurSessionDetailPage({
             "id, enrollment_id, quiz_template_id, phase, score, max_score, started_at, completed_at, data",
           )
           .eq("quiz_template_id", effectiveQuizId)
-          .in("enrollment_id", enrollmentIds)
+          .in("enrollment_id", quizEnrollmentIds)
       : Promise.resolve({ data: [] as Array<unknown> }),
     effectiveQuizId
       ? supabase
@@ -465,11 +498,46 @@ export default async function FormateurSessionDetailPage({
   for (const eid of enrollmentIds) {
     quizByEnrollment.set(eid, { pre: null, post: null });
   }
+  // Rattachement de secours par apprenant (essai lié à un autre enrollment).
+  const quizByLearner = new Map<
+    string,
+    { pre: QuizAttempt | null; post: QuizAttempt | null }
+  >();
+  const attemptTime = (a: QuizAttempt): number => {
+    const t = a.completed_at ?? a.started_at;
+    return t ? new Date(t).getTime() : 0;
+  };
   for (const a of quizAttempts) {
+    // 1) rattachement direct (enrollment affiché)
     const slot = quizByEnrollment.get(a.enrollment_id);
+    if (slot) {
+      if (a.phase === "pre") slot.pre = a;
+      if (a.phase === "post") slot.post = a;
+    }
+    // 2) index par apprenant (on garde l'essai le plus récent par phase)
+    const learnerId = learnerByEnrollment.get(a.enrollment_id);
+    if (learnerId) {
+      const ls = quizByLearner.get(learnerId) ?? { pre: null, post: null };
+      if (a.phase === "pre" && (!ls.pre || attemptTime(a) > attemptTime(ls.pre)))
+        ls.pre = a;
+      if (
+        a.phase === "post" &&
+        (!ls.post || attemptTime(a) > attemptTime(ls.post))
+      )
+        ls.post = a;
+      quizByLearner.set(learnerId, ls);
+    }
+  }
+  // Pour chaque participant, on complète le slot enrollment avec le secours
+  // apprenant si le rattachement direct n'a rien trouvé.
+  for (const p of participants) {
+    const slot = quizByEnrollment.get(p.enrollmentId);
     if (!slot) continue;
-    if (a.phase === "pre") slot.pre = a;
-    if (a.phase === "post") slot.post = a;
+    const ls = p.learnerId ? quizByLearner.get(p.learnerId) : null;
+    if (ls) {
+      if (!slot.pre && ls.pre) slot.pre = ls.pre;
+      if (!slot.post && ls.post) slot.post = ls.post;
+    }
   }
 
   // 6 quater. Bilan formateur (Module 7). Fallback silencieux si la
