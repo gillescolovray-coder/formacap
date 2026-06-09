@@ -36,10 +36,17 @@ export async function updateSession(request: NextRequest) {
     /^\/sessions\/[^/]+\/convocations\/[^/]+\/print\/?$/.test(pathname) &&
     request.nextUrl.searchParams.has("token");
 
+  // Pages imprimables internes (authentifiées) à rendre SANS sidebar :
+  // programme de formation. Gilles 2026-06-09.
+  const isBareLayout =
+    /^\/formations\/[^/]+\/programme\/?$/.test(pathname) ||
+    /^\/programmes\/[^/]+\/apercu\/?$/.test(pathname);
+
   // En-tête propagé au layout (app) : permet à AppShell de rendre la
   // convocation publique SANS exiger de login (sinon page blanche /login).
   const requestHeaders = new Headers(request.headers);
   if (isPublicConvocation) requestHeaders.set("x-public-print", "1");
+  if (isBareLayout) requestHeaders.set("x-bare-layout", "1");
 
   let supabaseResponse = NextResponse.next({
     request: { headers: requestHeaders },

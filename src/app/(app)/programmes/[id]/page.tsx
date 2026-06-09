@@ -6,6 +6,7 @@ import { BackButton } from "@/components/back-button";
 import { BlueprintEditor } from "../_blueprint-editor";
 import { ReviewForm } from "../_review-form";
 import { PublishToCatalogButton } from "../_publish-to-catalog-button";
+import { DeleteBlueprintButton } from "../_delete-blueprint-button";
 import { BLUEPRINT_STATUS_LABELS, type BloomObjective } from "@/lib/bloom/types";
 
 export const dynamic = "force-dynamic";
@@ -101,7 +102,12 @@ export default async function ProgrammeDetailPage({
           { label: "Programmes", href: "/programmes" },
           { label: blueprint.title },
         ]}
-        actions={<BackButton fallbackHref="/programmes" />}
+        actions={
+          <div className="flex items-center gap-2">
+            {canEdit && <DeleteBlueprintButton id={blueprint.id} />}
+            <BackButton fallbackHref="/programmes" />
+          </div>
+        }
       />
 
       <div className="p-4 sm:p-8 max-w-4xl space-y-5">

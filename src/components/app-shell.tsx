@@ -25,6 +25,13 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
     redirect("/login");
   }
 
+  // Pages imprimables internes (ex. programme de formation) : authentifié,
+  // mais rendu SANS sidebar/menu pour une impression propre. Le middleware
+  // pose l'en-tête x-bare-layout. Gilles 2026-06-09.
+  if (h.get("x-bare-layout") === "1") {
+    return <main className="min-h-screen bg-white">{children}</main>;
+  }
+
   const { data: profile } = await supabase
     .from("profiles")
     .select("first_name, last_name, email")

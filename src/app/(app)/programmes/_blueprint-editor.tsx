@@ -482,16 +482,26 @@ export function BlueprintEditor({
         </div>
       )}
 
-      {/* Le programme diffusable À LA CHARTE se génère depuis la fiche
-          formation (catalogue), après la bascule — pas ici (le brouillon
-          ne contient que les objectifs). Gilles 2026-06-09. */}
+      {/* Aperçu à la charte (même rendu que le catalogue). Les champs non
+          encore saisis (prérequis, déroulé…) s'affichent « À compléter » et
+          se renseignent sur la fiche formation après la bascule. */}
       {id && (
-        <p className="text-[11px] text-zinc-500 flex items-center gap-1.5">
-          <Eye className="h-3.5 w-3.5 text-zinc-400" />
-          Le <strong>programme diffusable (PDF à la charte)</strong> se génère
-          depuis la fiche formation, après l&apos;avoir basculé au catalogue
-          (bouton « Programme (PDF) » sur la formation).
-        </p>
+        <div className="flex flex-col gap-1">
+          <a
+            href={`/programmes/${id}/apercu`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-indigo-300 bg-indigo-50 text-indigo-800 text-sm font-bold hover:bg-indigo-100 w-fit"
+          >
+            <Eye className="h-4 w-4" />
+            Visualiser le rendu (à la charte)
+          </a>
+          <p className="text-[11px] text-zinc-500">
+            Même rendu que le catalogue. Enregistrez d&apos;abord vos
+            modifications. Les sections « À compléter » (prérequis, déroulé
+            Matin/Après-midi…) se renseignent sur la fiche formation.
+          </p>
+        </div>
       )}
     </div>
   );
