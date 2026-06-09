@@ -131,7 +131,20 @@ export default async function FormationProgrammePage({
       <style>{`
         .prog-root { color:#1f2433; }
         .no-print-bar { padding:16px; }
-        @media print { .no-print-bar { display:none !important; } .prog-page { page-break-after: always; } }
+        @media print {
+          /* On masque TOUT (sidebar, menus, header app) et on ne montre que
+             le document. Robuste quelle que soit la structure de la page. */
+          body * { visibility: hidden !important; }
+          .prog-root, .prog-root * { visibility: visible !important; }
+          .prog-root { position: absolute; left: 0; top: 0; right: 0; margin: 0; }
+          .no-print-bar { display: none !important; }
+          .prog-page { page-break-after: always; box-shadow: none; margin: 0; max-width: 100%; }
+          /* Forcer l'impression des aplats de couleur (bandeaux bleus). */
+          .prog-header, .prog-label, .prog-deroule-label {
+            -webkit-print-color-adjust: exact; print-color-adjust: exact;
+          }
+        }
+        @page { margin: 12mm; }
         .prog-page { max-width: 800px; margin: 0 auto 24px; background:#fff; box-shadow:0 0 0 1px #eee; }
         .prog-header { position:relative; background:linear-gradient(135deg,#0b1f4d 0%,#13367f 100%); color:#fff; padding:22px 28px 30px; overflow:hidden; }
         .prog-header::after { content:""; position:absolute; inset:0; background:

@@ -482,25 +482,16 @@ export function BlueprintEditor({
         </div>
       )}
 
-      {/* Aperçu du rendu final (programme imprimable / PDF) */}
+      {/* Le programme diffusable À LA CHARTE se génère depuis la fiche
+          formation (catalogue), après la bascule — pas ici (le brouillon
+          ne contient que les objectifs). Gilles 2026-06-09. */}
       {id && (
-        <div className="flex flex-col gap-1">
-          <a
-            href={`/programmes/${id}/apercu`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-indigo-300 bg-indigo-50 text-indigo-800 text-sm font-bold hover:bg-indigo-100 w-fit"
-          >
-            <Eye className="h-4 w-4" />
-            Visualiser le rendu (PDF)
-          </a>
-          {!locked && (
-            <p className="text-[11px] text-zinc-500">
-              Enregistrez d&apos;abord pour voir vos dernières modifications
-              dans l&apos;aperçu.
-            </p>
-          )}
-        </div>
+        <p className="text-[11px] text-zinc-500 flex items-center gap-1.5">
+          <Eye className="h-3.5 w-3.5 text-zinc-400" />
+          Le <strong>programme diffusable (PDF à la charte)</strong> se génère
+          depuis la fiche formation, après l&apos;avoir basculé au catalogue
+          (bouton « Programme (PDF) » sur la formation).
+        </p>
       )}
     </div>
   );
