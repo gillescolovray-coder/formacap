@@ -52,6 +52,10 @@ export default async function ProgrammeDetailPage({
     duration_hours: number | null;
     duration_days: number | null;
     general_objective: string | null;
+    prerequisites: string | null;
+    evaluation_methods: string | null;
+    teaching_methods: string | null;
+    programme_days: { morning: string; afternoon: string }[] | null;
     bloom_objectives: BloomObjective[] | null;
     status: string;
     formation_id: string | null;
@@ -184,6 +188,10 @@ export default async function ProgrammeDetailPage({
             duration_hours: blueprint.duration_hours,
             duration_days: blueprint.duration_days,
             general_objective: blueprint.general_objective,
+            prerequisites: blueprint.prerequisites,
+            evaluation_methods: blueprint.evaluation_methods,
+            teaching_methods: blueprint.teaching_methods,
+            programme_days: blueprint.programme_days ?? [],
             bloom_objectives: blueprint.bloom_objectives ?? [],
             status: blueprint.status,
           }}

@@ -35,7 +35,7 @@ export default async function ProgrammeApercuPage({
   const { data: bp } = await supabase
     .from("program_blueprints")
     .select(
-      "organization_id, formation_id, internal_code, title, target_audience, duration_hours, duration_days, general_objective, bloom_objectives",
+      "organization_id, formation_id, internal_code, title, target_audience, duration_hours, duration_days, general_objective, prerequisites, evaluation_methods, teaching_methods, programme_days, bloom_objectives",
     )
     .eq("id", id)
     .maybeSingle();
@@ -50,6 +50,10 @@ export default async function ProgrammeApercuPage({
     duration_hours: number | null;
     duration_days: number | null;
     general_objective: string | null;
+    prerequisites: string | null;
+    evaluation_methods: string | null;
+    teaching_methods: string | null;
+    programme_days: { morning: string | null; afternoon: string | null }[] | null;
     bloom_objectives: BloomObjective[] | null;
   };
 
@@ -74,15 +78,14 @@ export default async function ProgrammeApercuPage({
         title: b.title,
         generalObjective: b.general_objective,
         targetAudience: b.target_audience,
-        // Champs renseignés au niveau de la fiche formation (après bascule).
-        prerequisites: null,
-        evaluationMethods: null,
-        methods: null,
+        prerequisites: b.prerequisites,
+        evaluationMethods: b.evaluation_methods,
+        methods: b.teaching_methods,
         durationHours: b.duration_hours,
         durationDays: b.duration_days,
         minParticipants: null,
         maxParticipants: null,
-        days: [],
+        days: b.programme_days ?? [],
       }}
     />
   );

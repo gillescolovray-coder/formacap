@@ -10,7 +10,11 @@ import { createClient } from "@/lib/supabase/server";
 import {
   generateBloomObjectives,
   generateGeneralObjective,
+  generateProgramContent,
+  generateProgramDeroule,
   type BloomGenerationInput,
+  type ProgramContent,
+  type ProgramDay,
 } from "@/lib/bloom/generate";
 import type { BloomObjective } from "@/lib/bloom/types";
 
@@ -33,6 +37,8 @@ async function getCtx() {
   return { supabase, user, orgId, memberships: memberships ?? [] };
 }
 
+export type ProgrammeDay = { morning: string; afternoon: string };
+
 export type BlueprintFields = {
   internal_code: string | null;
   title: string;
@@ -41,6 +47,11 @@ export type BlueprintFields = {
   duration_hours: number | null;
   duration_days: number | null;
   general_objective: string | null;
+  // Contenu riche (HTML) — Gilles 2026-06-09
+  prerequisites: string | null;
+  evaluation_methods: string | null;
+  teaching_methods: string | null;
+  programme_days: ProgrammeDay[];
 };
 
 export async function createBlueprint(
@@ -62,6 +73,10 @@ export async function createBlueprint(
       duration_hours: fields.duration_hours,
       duration_days: fields.duration_days,
       general_objective: fields.general_objective,
+      prerequisites: fields.prerequisites,
+      evaluation_methods: fields.evaluation_methods,
+      teaching_methods: fields.teaching_methods,
+      programme_days: fields.programme_days ?? [],
       created_by: ctx.user.id,
       status: "draft",
     })
@@ -93,6 +108,10 @@ export async function saveBlueprint(
       duration_hours: fields.duration_hours,
       duration_days: fields.duration_days,
       general_objective: fields.general_objective,
+      prerequisites: fields.prerequisites,
+      evaluation_methods: fields.evaluation_methods,
+      teaching_methods: fields.teaching_methods,
+      programme_days: fields.programme_days ?? [],
       bloom_objectives: objectives,
       updated_at: new Date().toISOString(),
     })
@@ -141,6 +160,48 @@ export async function generateGeneralObjectiveAction(
       return { ok: false, error: "L'IA n'a renvoyé aucune proposition. Réessayez." };
     }
     return { ok: true, objective };
+  } catch (e) {
+    return {
+      ok: false,
+      error:
+        (e as Error).message ||
+        "Génération IA indisponible (vérifiez la configuration Gemini / LM Studio).",
+    };
+  }
+}
+
+export async function generateProgramContentAction(
+  input: BloomGenerationInput,
+): Promise<{ ok: true; content: ProgramContent } | { ok: false; error: string }> {
+  const ctx = await getCtx();
+  if (!ctx) return { ok: false, error: "Non authentifié." };
+  if (!input.title?.trim()) {
+    return { ok: false, error: "Renseignez au moins le titre avant de générer." };
+  }
+  try {
+    const content = await generateProgramContent(input);
+    return { ok: true, content };
+  } catch (e) {
+    return {
+      ok: false,
+      error:
+        (e as Error).message ||
+        "Génération IA indisponible (vérifiez la configuration Gemini / LM Studio).",
+    };
+  }
+}
+
+export async function generateProgramDerouleAction(
+  input: BloomGenerationInput & { durationDays?: number | null },
+): Promise<{ ok: true; days: ProgramDay[] } | { ok: false; error: string }> {
+  const ctx = await getCtx();
+  if (!ctx) return { ok: false, error: "Non authentifié." };
+  if (!input.title?.trim()) {
+    return { ok: false, error: "Renseignez au moins le titre avant de générer." };
+  }
+  try {
+    const days = await generateProgramDeroule(input);
+    return { ok: true, days };
   } catch (e) {
     return {
       ok: false,
@@ -238,7 +299,7 @@ export async function publishBlueprintToCatalog(
   const { data: bp } = await ctx.supabase
     .from("program_blueprints")
     .select(
-      "id, organization_id, status, formation_id, internal_code, title, theme, target_audience, duration_hours, duration_days, general_objective, bloom_objectives",
+      "id, organization_id, status, formation_id, internal_code, title, theme, target_audience, duration_hours, duration_days, general_objective, prerequisites, evaluation_methods, teaching_methods, programme_days, bloom_objectives",
     )
     .eq("id", id)
     .maybeSingle<{
@@ -253,6 +314,10 @@ export async function publishBlueprintToCatalog(
       duration_hours: number | null;
       duration_days: number | null;
       general_objective: string | null;
+      prerequisites: string | null;
+      evaluation_methods: string | null;
+      teaching_methods: string | null;
+      programme_days: ProgrammeDay[] | null;
       bloom_objectives: BloomObjective[] | null;
     }>();
   if (!bp) return { ok: false, error: "Programme introuvable." };
@@ -283,6 +348,10 @@ export async function publishBlueprintToCatalog(
       duration_hours: bp.duration_hours,
       duration_days: bp.duration_days,
       general_objective: bp.general_objective,
+      prerequisites: bp.prerequisites,
+      evaluation_methods: bp.evaluation_methods,
+      teaching_methods: bp.teaching_methods,
+      programme_days: bp.programme_days ?? [],
       operational_objectives: objectives,
       status: "draft",
     })

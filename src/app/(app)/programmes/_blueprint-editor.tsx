@@ -17,12 +17,15 @@ import {
   type BloomObjective,
   type BloomLevelKey,
 } from "@/lib/bloom/types";
+import { RichTextEditor } from "@/components/rich-text-editor";
 import {
   createBlueprint,
   saveBlueprint,
   submitForReview,
   generateObjectivesAction,
   generateGeneralObjectiveAction,
+  generateProgramContentAction,
+  generateProgramDerouleAction,
   listThemesAction,
   type BlueprintFields,
 } from "./actions";
@@ -45,6 +48,10 @@ type Initial = {
   duration_hours?: number | null;
   duration_days?: number | null;
   general_objective?: string | null;
+  prerequisites?: string | null;
+  evaluation_methods?: string | null;
+  teaching_methods?: string | null;
+  programme_days?: { morning: string; afternoon: string }[];
   bloom_objectives?: BloomObjective[];
   status?: string;
 };
@@ -66,6 +73,10 @@ export function BlueprintEditor({
     duration_hours: initial.duration_hours ?? null,
     duration_days: initial.duration_days ?? null,
     general_objective: initial.general_objective ?? null,
+    prerequisites: initial.prerequisites ?? null,
+    evaluation_methods: initial.evaluation_methods ?? null,
+    teaching_methods: initial.teaching_methods ?? null,
+    programme_days: initial.programme_days ?? [],
   });
   const [objectives, setObjectives] = useState<BloomObjective[]>(
     initial.bloom_objectives ?? [],
@@ -73,6 +84,8 @@ export function BlueprintEditor({
   const [status, setStatus] = useState<string>(initial.status ?? "draft");
   const [generating, startGen] = useTransition();
   const [generatingObj, startGenObj] = useTransition();
+  const [generatingContent, startGenContent] = useTransition();
+  const [generatingDeroule, startGenDeroule] = useTransition();
   const [saving, startSave] = useTransition();
   const [submitting, startSubmit] = useTransition();
   const [msg, setMsg] = useState<{ t: "ok" | "err"; m: string } | null>(null);
@@ -88,6 +101,75 @@ export function BlueprintEditor({
     v: BlueprintFields[K],
   ) {
     setFields((f) => ({ ...f, [k]: v }));
+  }
+
+  // IA — rédige tout le contenu (objectif, prérequis, modalités, méthodes).
+  function generateContent() {
+    setMsg(null);
+    startGenContent(async () => {
+      const res = await generateProgramContentAction({
+        title: fields.title,
+        theme: fields.theme,
+        targetAudience: fields.target_audience,
+        durationHours: fields.duration_hours,
+        existingObjectives: objectives.map((o) => o.text).filter(Boolean),
+      });
+      if (res.ok) {
+        setFields((f) => ({
+          ...f,
+          general_objective: res.content.generalObjective || f.general_objective,
+          prerequisites: res.content.prerequisites || f.prerequisites,
+          evaluation_methods:
+            res.content.evaluationMethods || f.evaluation_methods,
+          teaching_methods: res.content.teachingMethods || f.teaching_methods,
+        }));
+        setMsg({ t: "ok", m: "Contenu du programme proposé par l'IA. Ajustez-le si besoin." });
+      } else {
+        setMsg({ t: "err", m: res.error });
+      }
+    });
+  }
+
+  // IA — génère le déroulé pédagogique (Matin/Après-midi) selon Bloom.
+  function generateDeroule() {
+    setMsg(null);
+    startGenDeroule(async () => {
+      const res = await generateProgramDerouleAction({
+        title: fields.title,
+        theme: fields.theme,
+        targetAudience: fields.target_audience,
+        durationHours: fields.duration_hours,
+        durationDays: fields.duration_days,
+        existingObjectives: objectives.map((o) => o.text).filter(Boolean),
+      });
+      if (res.ok) {
+        setField("programme_days", res.days);
+        setMsg({ t: "ok", m: "Déroulé pédagogique proposé par l'IA. Ajustez-le si besoin." });
+      } else {
+        setMsg({ t: "err", m: res.error });
+      }
+    });
+  }
+
+  // Déroulé pédagogique (Matin / Après-midi par jour) — Gilles 2026-06-09
+  function setDay(index: number, field: "morning" | "afternoon", value: string) {
+    setFields((f) => {
+      const days = [...(f.programme_days ?? [])];
+      days[index] = { ...(days[index] ?? { morning: "", afternoon: "" }), [field]: value };
+      return { ...f, programme_days: days };
+    });
+  }
+  function addDay() {
+    setFields((f) => ({
+      ...f,
+      programme_days: [...(f.programme_days ?? []), { morning: "", afternoon: "" }],
+    }));
+  }
+  function removeDay(index: number) {
+    setFields((f) => ({
+      ...f,
+      programme_days: (f.programme_days ?? []).filter((_, i) => i !== index),
+    }));
   }
 
   function generate() {
@@ -448,6 +530,139 @@ export function BlueprintEditor({
         )}
       </section>
 
+      {/* Contenu rédactionnel (éditable + mise en forme) */}
+      <section className="rounded-2xl bg-white border border-zinc-200 p-4 sm:p-5 space-y-4">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <h2 className="text-sm font-bold text-zinc-800">
+            Contenu du programme
+          </h2>
+          {!locked && (
+            <button
+              type="button"
+              onClick={generateContent}
+              disabled={generatingContent}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-bold disabled:opacity-50"
+              title="L'IA rédige objectif, prérequis, modalités d'évaluation et méthodes pédagogiques"
+            >
+              {generatingContent ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Wand2 className="h-4 w-4" />
+              )}
+              Générer le programme complet (IA)
+            </button>
+          )}
+        </div>
+        <RichField
+          label="Prérequis"
+          value={fields.prerequisites}
+          onChange={(html) => setField("prerequisites", html)}
+          disabled={locked}
+        />
+        <RichField
+          label="Modalités d'évaluation"
+          value={fields.evaluation_methods}
+          onChange={(html) => setField("evaluation_methods", html)}
+          disabled={locked}
+        />
+        <RichField
+          label="Méthodes pédagogiques"
+          value={fields.teaching_methods}
+          onChange={(html) => setField("teaching_methods", html)}
+          disabled={locked}
+        />
+      </section>
+
+      {/* Déroulé pédagogique (Matin / Après-midi par jour) */}
+      <section className="rounded-2xl bg-white border border-zinc-200 p-4 sm:p-5 space-y-4">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <h2 className="text-sm font-bold text-zinc-800">
+            Déroulé pédagogique
+          </h2>
+          {!locked && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={generateDeroule}
+                disabled={generatingDeroule}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-bold disabled:opacity-50"
+                title="L'IA génère le déroulé Matin/Après-midi selon la taxonomie de Bloom"
+              >
+                {generatingDeroule ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Wand2 className="h-4 w-4" />
+                )}
+                Générer le déroulé (Bloom)
+              </button>
+              <button
+                type="button"
+                onClick={addDay}
+                className="inline-flex items-center gap-1.5 text-sm text-cyan-700 hover:text-cyan-900 font-semibold"
+              >
+                <Plus className="h-4 w-4" />
+                Ajouter un jour
+              </button>
+            </div>
+          )}
+        </div>
+        {(fields.programme_days ?? []).length === 0 ? (
+          <p className="text-xs text-zinc-400 italic">
+            Aucun jour. Cliquez « Ajouter un jour » ou utilisez le bouton IA
+            « Générer le déroulé (Bloom) » ci-dessous.
+          </p>
+        ) : (
+          (fields.programme_days ?? []).map((d, i) => (
+            <div
+              key={i}
+              className="rounded-xl border border-amber-200 bg-amber-50/40 p-3 space-y-3"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-amber-800">
+                  Jour {i + 1}
+                </span>
+                {!locked && (
+                  <button
+                    type="button"
+                    onClick={() => removeDay(i)}
+                    className="text-rose-500 hover:text-rose-700"
+                    title="Supprimer ce jour"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+              <div>
+                <span className="text-xs font-semibold text-zinc-600">
+                  Matin
+                </span>
+                {locked ? (
+                  <ReadOnlyHtml html={d.morning} />
+                ) : (
+                  <RichTextEditor
+                    value={d.morning ?? ""}
+                    onChange={(html) => setDay(i, "morning", html)}
+                  />
+                )}
+              </div>
+              <div>
+                <span className="text-xs font-semibold text-zinc-600">
+                  Après-midi
+                </span>
+                {locked ? (
+                  <ReadOnlyHtml html={d.afternoon} />
+                ) : (
+                  <RichTextEditor
+                    value={d.afternoon ?? ""}
+                    onChange={(html) => setDay(i, "afternoon", html)}
+                  />
+                )}
+              </div>
+            </div>
+          ))
+        )}
+      </section>
+
       {/* Actions */}
       {!locked && (
         <div className="flex items-center gap-2 flex-wrap">
@@ -522,5 +737,42 @@ function Field({
       <span className="text-xs font-semibold text-zinc-600">{label}</span>
       {children}
     </label>
+  );
+}
+
+/** Rendu HTML en lecture seule (programme verrouillé). */
+function ReadOnlyHtml({ html }: { html: string | null | undefined }) {
+  if (!html || !html.trim()) {
+    return <p className="text-xs text-zinc-400 italic">—</p>;
+  }
+  return (
+    <div
+      className="prose prose-sm max-w-none rounded-md border border-zinc-200 bg-zinc-50 p-2 text-sm"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+}
+
+/** Champ riche (éditeur TipTap) avec libellé, lecture seule si verrouillé. */
+function RichField({
+  label,
+  value,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  value: string | null;
+  onChange: (html: string) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="space-y-1">
+      <span className="text-xs font-semibold text-zinc-600">{label}</span>
+      {disabled ? (
+        <ReadOnlyHtml html={value} />
+      ) : (
+        <RichTextEditor value={value ?? ""} onChange={onChange} />
+      )}
+    </div>
   );
 }

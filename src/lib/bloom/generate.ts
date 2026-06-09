@@ -211,3 +211,157 @@ export async function generateGeneralObjective(
       .find((l) => l.length > 0) ?? "";
   return line.replace(/^["'«»]+|["'«»]+$/g, "").trim();
 }
+
+// ===========================================================================
+// Génération du CONTENU COMPLET + DÉROULÉ (Gilles 2026-06-09)
+// ===========================================================================
+
+async function runAI(prompt: string): Promise<string> {
+  return process.env.GEMINI_API_KEY
+    ? await generateWithGemini(prompt)
+    : await generateWithLmStudio(prompt);
+}
+
+/** Extrait un objet JSON d'une réponse modèle (retire les ```json …```). */
+function parseJsonLoose<T>(raw: string): T | null {
+  let s = raw.trim();
+  const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) s = fence[1].trim();
+  const start = s.search(/[[{]/);
+  if (start > 0) s = s.slice(start);
+  try {
+    return JSON.parse(s) as T;
+  } catch {
+    return null;
+  }
+}
+
+/** Transforme une liste de points en HTML (<ul><li>…</li></ul>). */
+function listToHtml(items: unknown): string {
+  if (!Array.isArray(items)) return "";
+  const lis = items
+    .map((x) => String(x ?? "").trim())
+    .filter(Boolean)
+    .map((t) => `<li>${escapeHtml(t)}</li>`)
+    .join("");
+  return lis ? `<ul>${lis}</ul>` : "";
+}
+
+function escapeHtml(t: string): string {
+  return t
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+export type ProgramContent = {
+  generalObjective: string;
+  prerequisites: string; // HTML
+  evaluationMethods: string; // HTML
+  teachingMethods: string; // HTML
+};
+
+/**
+ * Rédige le contenu complet du programme (objectif général + prérequis +
+ * modalités d'évaluation + méthodes pédagogiques) — éditable ensuite.
+ */
+export async function generateProgramContent(
+  input: BloomGenerationInput,
+): Promise<ProgramContent> {
+  const prompt = [
+    "Tu es ingénieur pédagogique en formation professionnelle (Qualiopi).",
+    "À partir des informations ci-dessous, rédige le contenu d'un programme de formation.",
+    "Réponds UNIQUEMENT en JSON valide, sans texte autour, au format :",
+    '{ "generalObjective": "une phrase", "prerequisites": ["...","..."], "evaluationMethods": ["...","..."], "teachingMethods": ["...","..."] }',
+    "Chaque liste = 2 à 5 puces courtes et professionnelles.",
+    "",
+    `Titre : ${input.title}`,
+    input.theme ? `Thème : ${input.theme}` : "",
+    input.targetAudience ? `Public visé : ${input.targetAudience}` : "",
+    input.durationHours ? `Durée : ${input.durationHours} h` : "",
+    input.existingObjectives && input.existingObjectives.length > 0
+      ? `Objectifs opérationnels :\n- ${input.existingObjectives.join("\n- ")}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const raw = await runAI(prompt);
+  const parsed = parseJsonLoose<{
+    generalObjective?: string;
+    prerequisites?: unknown;
+    evaluationMethods?: unknown;
+    teachingMethods?: unknown;
+  }>(raw);
+  return {
+    generalObjective: (parsed?.generalObjective ?? "").toString().trim(),
+    prerequisites: listToHtml(parsed?.prerequisites),
+    evaluationMethods: listToHtml(parsed?.evaluationMethods),
+    teachingMethods: listToHtml(parsed?.teachingMethods),
+  };
+}
+
+export type ProgramDay = { morning: string; afternoon: string };
+
+/**
+ * Génère le DÉROULÉ pédagogique (Matin / Après-midi par jour), structuré par
+ * sections rattachées aux objectifs Bloom. Retourne du HTML riche par
+ * demi-journée (titres + puces).
+ */
+export async function generateProgramDeroule(
+  input: BloomGenerationInput & { durationDays?: number | null },
+): Promise<ProgramDay[]> {
+  const nbDays =
+    input.durationDays && input.durationDays >= 1
+      ? Math.round(input.durationDays)
+      : 1;
+  const prompt = [
+    "Tu es ingénieur pédagogique (Qualiopi). Construis le DÉROULÉ pédagogique",
+    `d'une formation de ${nbDays} jour(s), réparti Matin / Après-midi.`,
+    "Chaque demi-journée = 2 à 4 SECTIONS ; chaque section a un titre et 2 à 5 points.",
+    "Les sections doivent couvrir progressivement les objectifs (logique Bloom : mémoriser → comprendre → appliquer → analyser…).",
+    "Réponds UNIQUEMENT en JSON valide au format :",
+    '{ "days": [ { "morning": [ {"title":"…","points":["…"]} ], "afternoon": [ {"title":"…","points":["…"]} ] } ] }',
+    `Il doit y avoir exactement ${nbDays} élément(s) dans "days".`,
+    "",
+    `Titre : ${input.title}`,
+    input.theme ? `Thème : ${input.theme}` : "",
+    input.targetAudience ? `Public visé : ${input.targetAudience}` : "",
+    input.existingObjectives && input.existingObjectives.length > 0
+      ? `Objectifs opérationnels :\n- ${input.existingObjectives.join("\n- ")}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const raw = await runAI(prompt);
+  const parsed = parseJsonLoose<{
+    days?: Array<{
+      morning?: Array<{ title?: string; points?: unknown }>;
+      afternoon?: Array<{ title?: string; points?: unknown }>;
+    }>;
+  }>(raw);
+
+  const sectionsToHtml = (
+    sections: Array<{ title?: string; points?: unknown }> | undefined,
+  ): string => {
+    if (!Array.isArray(sections)) return "";
+    return sections
+      .map((s) => {
+        const title = (s.title ?? "").toString().trim();
+        const list = listToHtml(s.points);
+        return `${title ? `<p><strong>${escapeHtml(title)}</strong></p>` : ""}${list}`;
+      })
+      .filter(Boolean)
+      .join("");
+  };
+
+  const days = Array.isArray(parsed?.days) ? parsed!.days : [];
+  const result: ProgramDay[] = days.map((d) => ({
+    morning: sectionsToHtml(d.morning),
+    afternoon: sectionsToHtml(d.afternoon),
+  }));
+  // Garantit au moins nbDays entrées (même vides) pour l'édition.
+  while (result.length < nbDays) result.push({ morning: "", afternoon: "" });
+  return result;
+}

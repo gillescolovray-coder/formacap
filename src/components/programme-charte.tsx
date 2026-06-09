@@ -43,6 +43,15 @@ function bullets(text: string | null | undefined): string[] {
     .filter(Boolean);
 }
 
+/** Détecte un contenu HTML riche (issu de l'éditeur). */
+function isHtml(s: string | null | undefined): boolean {
+  return !!s && /<[a-z][\s\S]*>/i.test(s);
+}
+function hasContent(s: string | null | undefined): boolean {
+  if (!s) return false;
+  return s.replace(/<[^>]*>/g, "").trim().length > 0;
+}
+
 export function ProgrammeCharte({
   data,
   org,
@@ -204,17 +213,11 @@ export function ProgrammeCharte({
             </div>
           </div>
 
-          <Section label="Objectif" items={bullets(data.generalObjective)} />
-          <Section label="Publics visés" items={bullets(data.targetAudience)} />
-          <Section label="Prérequis" items={bullets(data.prerequisites)} />
-          <Section
-            label="Modalités d'évaluation"
-            items={bullets(data.evaluationMethods)}
-          />
-          <Section
-            label="Méthodes pédagogiques"
-            items={bullets(data.methods)}
-          />
+          <Section label="Objectif" value={data.generalObjective} />
+          <Section label="Publics visés" value={data.targetAudience} />
+          <Section label="Prérequis" value={data.prerequisites} />
+          <Section label="Modalités d'évaluation" value={data.evaluationMethods} />
+          <Section label="Méthodes pédagogiques" value={data.methods} />
         </div>
         <Footer />
       </section>
@@ -234,12 +237,21 @@ export function ProgrammeCharte({
   );
 }
 
-function Section({ label, items }: { label: string; items: string[] }) {
+function Section({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | null;
+}) {
+  const items = isHtml(value) ? [] : bullets(value);
   return (
     <>
       <div className="prog-label">{label}</div>
       <div className="prog-content">
-        {items.length > 0 ? (
+        {isHtml(value) && hasContent(value) ? (
+          <div dangerouslySetInnerHTML={{ __html: value as string }} />
+        ) : items.length > 0 ? (
           <ul>
             {items.map((t, i) => (
               <li key={i}>{t}</li>
@@ -267,8 +279,18 @@ function DerouleSection({
   Footer: () => React.ReactElement;
 }) {
   const suffix = totalDays > 1 ? ` — Jour ${dayIndex + 1}` : "";
-  const renderBlocks = (text: string | null) =>
-    (text ?? "").split(/\r?\n/).map((l, i) => {
+  const renderBlocks = (text: string | null) => {
+    // Contenu riche (éditeur) -> on rend le HTML tel quel.
+    if (isHtml(text)) {
+      return (
+        <div
+          className="prog-rich"
+          dangerouslySetInnerHTML={{ __html: text as string }}
+        />
+      );
+    }
+    // Texte simple -> titres + puces (ancien format).
+    return (text ?? "").split(/\r?\n/).map((l, i) => {
       const t = l.trim();
       if (!t) return <div key={i} style={{ height: 6 }} />;
       if (/^[-•]/.test(t)) {
@@ -284,6 +306,7 @@ function DerouleSection({
         </div>
       );
     });
+  };
   return (
     <>
       {morning && morning.trim() && (
