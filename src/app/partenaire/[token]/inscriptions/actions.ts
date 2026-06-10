@@ -2,8 +2,25 @@
 
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolvePartnerContext } from "../_resolve";
 import { logInscriptionDeletion } from "@/lib/inscriptions/deletion-log";
+
+/** True si la session (date de fin) est déjà terminée. */
+async function isPartnerSessionEnded(
+  supabase: SupabaseClient,
+  sessionId: string | null,
+): Promise<boolean> {
+  if (!sessionId) return false;
+  const { data } = await supabase
+    .from("sessions")
+    .select("start_date, end_date")
+    .eq("id", sessionId)
+    .maybeSingle<{ start_date: string | null; end_date: string | null }>();
+  const end = data?.end_date ?? data?.start_date ?? null;
+  if (!end) return false;
+  return end.slice(0, 10) < new Date().toISOString().slice(0, 10);
+}
 
 /**
  * Met à jour les coordonnées d'un apprenant inscrit via le portail
@@ -51,6 +68,15 @@ export async function updateInscription(
       prospect_email: string | null;
     }>();
   if (!req) return { ok: false, error: "Inscription introuvable." };
+
+  // Garde : session terminée -> modification interdite depuis le portail.
+  if (await isPartnerSessionEnded(supabase, req.target_session_id)) {
+    return {
+      ok: false,
+      error:
+        "Session terminée : la modification n'est plus possible depuis votre espace. Contactez l'organisme de formation.",
+    };
+  }
 
   // Si on change l'email : vérifier qu'on ne crée pas un doublon sur
   // la session (contrainte d'unicité (session_id, learner_id) côté DB).
@@ -151,6 +177,15 @@ export async function deleteInscription(
       prospect_email: string | null;
     }>();
   if (!req) return { ok: false, error: "Inscription introuvable." };
+
+  // Garde : session terminée -> suppression interdite depuis le portail.
+  if (await isPartnerSessionEnded(supabase, req.target_session_id)) {
+    return {
+      ok: false,
+      error:
+        "Session terminée : la suppression n'est plus possible depuis votre espace. Contactez l'organisme de formation.",
+    };
+  }
 
   // Audit trail dans une table à part pour conserver la trace même
   // après suppression de la request. On utilise inscription_events

@@ -255,6 +255,18 @@ export function InscriptionsList({
   const [editedAt, setEditedAt] = useState("");
   const today = new Date().toISOString().slice(0, 10);
 
+  // Session terminée (date de fin dépassée) -> on bloque modif/suppression.
+  function endedDateOf(r: InscriptionRow): string | null {
+    return r.endDate ?? r.startDate ?? null;
+  }
+  function isEnded(r: InscriptionRow): boolean {
+    const e = endedDateOf(r);
+    return !!e && e.slice(0, 10) < today;
+  }
+  function endedMsg(r: InscriptionRow): string {
+    return `Session terminée le ${formatDate(endedDateOf(r))} — modification et suppression impossibles depuis votre espace.`;
+  }
+
   // Impression : on horodate l'édition (date + heure) puis on imprime.
   function handlePrint() {
     const now = new Date();
@@ -653,7 +665,7 @@ export function InscriptionsList({
                   {/* Bouton "+ Ajouter un apprenant pour cette entreprise"
                       (Gilles 2026-05-22). Redirige vers le formulaire
                       d'inscription pré-rempli avec SIRET + référent. */}
-                  {r.companyId && r.sessionId && (
+                  {r.companyId && r.sessionId && !isEnded(r) && (
                     <Link
                       href={`/partenaire/${token}/inscrire/${r.sessionId}?prefillCompanyId=${r.companyId}`}
                       className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-md border border-emerald-300 bg-emerald-50 text-emerald-700 text-xs font-bold hover:bg-emerald-100"
@@ -662,12 +674,18 @@ export function InscriptionsList({
                       Ajouter un apprenant pour {r.companyName ?? "cette entreprise"}
                     </Link>
                   )}
+                  {isEnded(r) && (
+                    <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1">
+                      🔒 {endedMsg(r)}
+                    </p>
+                  )}
                   <div className="flex gap-2">
                     <button
                       type="button"
                       onClick={() => setEditingId(r.id)}
-                      disabled={pending}
-                      className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-md border border-zinc-300 bg-white text-zinc-700 text-xs font-medium hover:bg-cyan-50 hover:border-cyan-300 hover:text-cyan-700 disabled:opacity-50"
+                      disabled={pending || isEnded(r)}
+                      title={isEnded(r) ? endedMsg(r) : "Modifier les coordonnées de l'apprenant"}
+                      className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-md border border-zinc-300 bg-white text-zinc-700 text-xs font-medium hover:bg-cyan-50 hover:border-cyan-300 hover:text-cyan-700 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <Pencil className="h-3.5 w-3.5" />
                       Modifier
@@ -675,8 +693,9 @@ export function InscriptionsList({
                     <button
                       type="button"
                       onClick={() => doDelete(r)}
-                      disabled={pending}
-                      className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-md border border-zinc-300 bg-white text-zinc-700 text-xs font-medium hover:bg-rose-50 hover:border-rose-300 hover:text-rose-700 disabled:opacity-50"
+                      disabled={pending || isEnded(r)}
+                      title={isEnded(r) ? endedMsg(r) : "Supprimer l'inscription"}
+                      className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-md border border-zinc-300 bg-white text-zinc-700 text-xs font-medium hover:bg-rose-50 hover:border-rose-300 hover:text-rose-700 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                       Supprimer
@@ -889,8 +908,9 @@ export function InscriptionsList({
                         plus contrastées pour meilleure lisibilité). */}
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-1.5">
-                        {/* Bouton "+ Ajouter apprenant pour entreprise" */}
-                        {r.companyId && r.sessionId && (
+                        {/* Bouton "+ Ajouter apprenant pour entreprise"
+                            (masqué si la session est terminée) */}
+                        {r.companyId && r.sessionId && !isEnded(r) && (
                           <Link
                             href={`/partenaire/${token}/inscrire/${r.sessionId}?prefillCompanyId=${r.companyId}`}
                             className="inline-flex items-center justify-center h-9 w-9 rounded-md bg-emerald-50 border border-emerald-300 text-emerald-700 hover:bg-emerald-100 hover:border-emerald-500 transition-colors"
@@ -899,21 +919,29 @@ export function InscriptionsList({
                             <UserPlus className="h-5 w-5" strokeWidth={2.25} />
                           </Link>
                         )}
+                        {isEnded(r) && (
+                          <span
+                            className="text-[10px] text-amber-700 font-semibold whitespace-nowrap"
+                            title={endedMsg(r)}
+                          >
+                            🔒 Terminée
+                          </span>
+                        )}
                         <button
                           type="button"
                           onClick={() => setEditingId(r.id)}
-                          disabled={pending}
-                          className="inline-flex items-center justify-center h-9 w-9 rounded-md bg-cyan-50 border border-cyan-300 text-cyan-700 hover:bg-cyan-100 hover:border-cyan-500 transition-colors disabled:opacity-30"
-                          title="Modifier les coordonnées de l'apprenant"
+                          disabled={pending || isEnded(r)}
+                          className="inline-flex items-center justify-center h-9 w-9 rounded-md bg-cyan-50 border border-cyan-300 text-cyan-700 hover:bg-cyan-100 hover:border-cyan-500 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                          title={isEnded(r) ? endedMsg(r) : "Modifier les coordonnées de l'apprenant"}
                         >
                           <Pencil className="h-5 w-5" strokeWidth={2.25} />
                         </button>
                         <button
                           type="button"
                           onClick={() => doDelete(r)}
-                          disabled={pending}
-                          className="inline-flex items-center justify-center h-9 w-9 rounded-md bg-rose-50 border border-rose-300 text-rose-700 hover:bg-rose-100 hover:border-rose-500 transition-colors disabled:opacity-30"
-                          title="Supprimer l'inscription"
+                          disabled={pending || isEnded(r)}
+                          className="inline-flex items-center justify-center h-9 w-9 rounded-md bg-rose-50 border border-rose-300 text-rose-700 hover:bg-rose-100 hover:border-rose-500 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                          title={isEnded(r) ? endedMsg(r) : "Supprimer l'inscription"}
                         >
                           <Trash2 className="h-5 w-5" strokeWidth={2.25} />
                         </button>

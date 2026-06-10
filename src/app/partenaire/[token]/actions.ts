@@ -82,8 +82,19 @@ export async function submitPartnerEnrollment(formData: FormData): Promise<
     is_inter: boolean | null;
     prescriber_company_id: string | null;
     subcontracting_company_id: string | null;
+    start_date: string | null;
+    end_date: string | null;
     formations: unknown;
   };
+  // Garde : session terminée -> nouvelle inscription interdite (portail).
+  const sessEnd = sessionTyped.end_date ?? sessionTyped.start_date ?? null;
+  if (sessEnd && sessEnd.slice(0, 10) < new Date().toISOString().slice(0, 10)) {
+    return {
+      ok: false,
+      error:
+        "Cette session est terminée : l'inscription n'est plus possible. Contactez l'organisme de formation.",
+    };
+  }
   const formationId = sessionTyped.formation_id;
   const formationRel = sessionTyped.formations;
   const formation =
@@ -535,7 +546,7 @@ export async function submitPartnerBatchEnrollmentForm(formData: FormData) {
   const { data: session } = await supabase
     .from("sessions")
     .select(
-      "id, organization_id, formation_id, is_inter, prescriber_company_id, subcontracting_company_id, formations!inner(modality, title, duration_hours, duration_days)",
+      "id, organization_id, formation_id, is_inter, prescriber_company_id, subcontracting_company_id, start_date, end_date, formations!inner(modality, title, duration_hours, duration_days)",
     )
     .eq("id", sessionId)
     .eq("organization_id", ctx.company.organization_id)
@@ -547,8 +558,21 @@ export async function submitPartnerBatchEnrollmentForm(formData: FormData) {
     is_inter: boolean | null;
     prescriber_company_id: string | null;
     subcontracting_company_id: string | null;
+    start_date: string | null;
+    end_date: string | null;
     formations: unknown;
   };
+  // Garde : session terminée -> nouvelle inscription interdite (portail).
+  const batchSessEnd =
+    sessionTyped.end_date ?? sessionTyped.start_date ?? null;
+  if (
+    batchSessEnd &&
+    batchSessEnd.slice(0, 10) < new Date().toISOString().slice(0, 10)
+  ) {
+    return redirectError(
+      "Cette session est terminée : l'inscription n'est plus possible. Contactez l'organisme de formation.",
+    );
+  }
   const formationRel = sessionTyped.formations;
   const formation =
     Array.isArray(formationRel) && formationRel.length > 0
