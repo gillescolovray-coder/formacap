@@ -376,11 +376,28 @@ export function InscriptionsList({
   return (
     <div className="space-y-3">
       <style>{`
+        /* Impression : format PAYSAGE + texte réduit (tableau large). */
+        @page { size: A4 landscape; margin: 8mm; }
         @media print {
           body * { visibility: hidden !important; }
           .ins-print, .ins-print * { visibility: visible !important; }
-          .ins-print { position: absolute; left: 0; top: 0; right: 0; }
+          .ins-print {
+            position: absolute; left: 0; top: 0; right: 0;
+            border: 0 !important; border-radius: 0 !important;
+            overflow: visible !important;
+          }
           .no-print { display: none !important; }
+          /* Police plus petite + cellules compactes pour tout faire tenir. */
+          .ins-print table { font-size: 8.5px; width: 100%; }
+          .ins-print th, .ins-print td {
+            padding: 3px 5px !important; white-space: normal !important;
+          }
+          /* On masque les boutons d'action (modifier/supprimer/relance) dans le PDF. */
+          .ins-print button { display: none !important; }
+          /* Force les couleurs (statuts, en-tête). */
+          .ins-print, .ins-print * {
+            -webkit-print-color-adjust: exact; print-color-adjust: exact;
+          }
         }
         .ins-print-header { display: none; }
         @media print { .ins-print-header { display: block; margin-bottom: 10px; } }
