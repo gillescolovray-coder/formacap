@@ -40,6 +40,7 @@ import {
 } from "@/lib/trainer-report/types";
 import { TrainerReportForm } from "./_trainer-report-form";
 import { TrainerQrEvaluationButton } from "./_trainer-qr-evaluation-button";
+import { BlankEvaluationButton } from "./_blank-evaluation-button";
 import { TrainerQrQuizButton } from "./_trainer-qr-quiz-button";
 import {
   BlankQuizButton,
@@ -1566,6 +1567,11 @@ export default async function FormateurSessionDetailPage({
                 />
               </div>
             </div>
+          </div>
+
+          {/* Consulter l'évaluation à chaud vierge (Gilles 2026-06-09) */}
+          <div className="mb-4">
+            <BlankEvaluationButton />
           </div>
 
           {(hotEvals?.length ?? 0) === 0 ? (
