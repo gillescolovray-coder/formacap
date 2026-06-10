@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { ParametresNav } from "../_nav";
 import { updatePricingDefaults } from "./actions";
 import { BillingBackfillButton } from "./_billing-backfill-button";
+import { RealignPrescripteurButton } from "./_realign-button";
 
 type PricingDefaults = {
   inter_presentiel_per_day_ht: number;
@@ -282,6 +283,9 @@ export default async function PricingSettingsPage({
               Recalcule billing_total_ht pour toutes les inscriptions
               existantes en appliquant le helper unifie. */}
           <BillingBackfillButton />
+
+          {/* Réalignement des inscriptions prescripteurs sur la grille */}
+          <RealignPrescripteurButton />
 
           <div className="flex justify-end gap-2">
             <Button type="submit">
