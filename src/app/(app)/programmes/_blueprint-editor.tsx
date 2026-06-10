@@ -3,6 +3,8 @@
 import { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
+  ChevronDown,
+  ChevronUp,
   Eye,
   Loader2,
   Plus,
@@ -230,6 +232,16 @@ export function BlueprintEditor({
   }
   function removeObj(oid: string) {
     setObjectives((prev) => prev.filter((o) => o.id !== oid));
+  }
+  // Réordonner les objectifs (monter / descendre) — Gilles 2026-06-09
+  function moveObj(index: number, dir: -1 | 1) {
+    setObjectives((prev) => {
+      const next = [...prev];
+      const target = index + dir;
+      if (target < 0 || target >= next.length) return prev;
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
   }
 
   function save(then?: () => void) {
@@ -467,14 +479,36 @@ export function BlueprintEditor({
                       placeholder="À l'issue, l'apprenant sera capable de…"
                     />
                     {!locked && (
-                      <button
-                        type="button"
-                        onClick={() => removeObj(o.id)}
-                        className="shrink-0 mt-1 text-zinc-400 hover:text-rose-600"
-                        title="Supprimer"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                      <div className="shrink-0 flex items-center gap-0.5 mt-1">
+                        <div className="flex flex-col">
+                          <button
+                            type="button"
+                            onClick={() => moveObj(idx, -1)}
+                            disabled={idx === 0}
+                            className="text-zinc-400 hover:text-cyan-700 disabled:opacity-30 disabled:cursor-not-allowed"
+                            title="Monter"
+                          >
+                            <ChevronUp className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => moveObj(idx, 1)}
+                            disabled={idx === objectives.length - 1}
+                            className="text-zinc-400 hover:text-cyan-700 disabled:opacity-30 disabled:cursor-not-allowed"
+                            title="Descendre"
+                          >
+                            <ChevronDown className="h-4 w-4" />
+                          </button>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeObj(o.id)}
+                          className="text-zinc-400 hover:text-rose-600"
+                          title="Supprimer"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
                     )}
                   </div>
                   <div className="flex items-center gap-2 flex-wrap pl-6">
