@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { FileQuestion, X, Eye, EyeOff, Printer } from "lucide-react";
+import { FileQuestion, X, Printer } from "lucide-react";
 
 /**
  * Consultation du QUIZ VIERGE par le formateur (Gilles 2026-06-09).
@@ -50,6 +50,38 @@ function answerText(correct: unknown): string {
   return JSON.stringify(correct);
 }
 
+/**
+ * Ensemble des LETTRES de réponse correcte (a, b, c…) à partir de
+ * correct_answer (lettre(s), index numérique(s) ou texte d'option).
+ * Permet de surligner directement la/les bonne(s) option(s).
+ */
+function correctKeys(correct: unknown, options: string[]): Set<number> {
+  const idx = new Set<number>();
+  const norm = (s: string) =>
+    s.trim().toLowerCase().replace(/\s+/g, " ");
+  const add = (raw: unknown) => {
+    const v = String(raw ?? "").trim();
+    if (!v) return;
+    // Lettre : a, b, c…
+    if (/^[a-zA-Z]$/.test(v)) {
+      idx.add(v.toLowerCase().charCodeAt(0) - 97);
+      return;
+    }
+    // Index numérique
+    if (/^\d+$/.test(v)) {
+      idx.add(Number(v));
+      return;
+    }
+    // Texte d'option : on cherche la correspondance
+    const oi = options.findIndex((o) => norm(o) === norm(v));
+    if (oi >= 0) idx.add(oi);
+  };
+  if (Array.isArray(correct)) correct.forEach(add);
+  else if (typeof correct === "string") correct.split(/[,;]+/).forEach(add);
+  else if (correct !== null && correct !== undefined) add(correct);
+  return idx;
+}
+
 export function BlankQuizButton({
   questions,
   quizTitle,
@@ -59,8 +91,6 @@ export function BlankQuizButton({
 }) {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
-  // Réservé au formateur : on montre les BONNES RÉPONSES par défaut.
-  const [showAnswers, setShowAnswers] = useState(true);
   useEffect(() => setMounted(true), []);
 
   if (questions.length === 0) return null;
@@ -96,18 +126,9 @@ export function BlankQuizButton({
                   Quiz vierge {quizTitle ? `— ${quizTitle}` : ""}
                 </h3>
                 <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowAnswers((v) => !v)}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-zinc-300 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
-                  >
-                    {showAnswers ? (
-                      <EyeOff className="h-3.5 w-3.5" />
-                    ) : (
-                      <Eye className="h-3.5 w-3.5" />
-                    )}
-                    {showAnswers ? "Masquer les réponses" : "Afficher les réponses"}
-                  </button>
+                  <span className="text-[11px] text-emerald-700 font-semibold hidden sm:inline">
+                    Bonnes réponses en vert
+                  </span>
                   <button
                     type="button"
                     onClick={() => window.print()}
@@ -136,7 +157,10 @@ export function BlankQuizButton({
                   .sort((a, b) => a.position - b.position)
                   .map((q, i) => {
                     const opts = optionList(q.options);
-                    const ans = showAnswers ? answerText(q.correct_answer) : "";
+                    const correct = correctKeys(q.correct_answer, opts);
+                    // Pour les questions sans options (réponse libre), on
+                    // affiche la réponse attendue en vert.
+                    const ans = answerText(q.correct_answer);
                     return (
                       <div key={q.id} className="space-y-2">
                         <div className="flex items-start gap-2">
@@ -153,25 +177,44 @@ export function BlankQuizButton({
                             </p>
                             {opts.length > 0 ? (
                               <ul className="mt-1.5 space-y-1">
-                                {opts.map((o, oi) => (
-                                  <li
-                                    key={oi}
-                                    className="flex items-center gap-2 text-sm text-zinc-700"
-                                  >
-                                    <span className="inline-block h-3.5 w-3.5 rounded-sm border border-zinc-400 shrink-0" />
-                                    {o}
-                                  </li>
-                                ))}
+                                {opts.map((o, oi) => {
+                                  const ok = correct.has(oi);
+                                  return (
+                                    <li
+                                      key={oi}
+                                      className={
+                                        "flex items-center gap-2 text-sm rounded px-1.5 py-0.5 " +
+                                        (ok
+                                          ? "bg-emerald-50 text-emerald-800 font-semibold"
+                                          : "text-zinc-700")
+                                      }
+                                    >
+                                      <span
+                                        className={
+                                          "inline-flex items-center justify-center h-4 w-4 rounded-sm border shrink-0 " +
+                                          (ok
+                                            ? "border-emerald-500 bg-emerald-500 text-white text-[10px]"
+                                            : "border-zinc-400")
+                                        }
+                                      >
+                                        {ok ? "✓" : ""}
+                                      </span>
+                                      {o}
+                                    </li>
+                                  );
+                                })}
                               </ul>
                             ) : (
-                              <div className="mt-1.5 h-12 rounded-md border border-dashed border-zinc-300 bg-zinc-50" />
+                              <div className="mt-1.5">
+                                <div className="h-10 rounded-md border border-dashed border-zinc-300 bg-zinc-50" />
+                                {ans && (
+                                  <p className="mt-1 text-xs font-semibold text-emerald-700">
+                                    ✓ Réponse attendue : {ans}
+                                  </p>
+                                )}
+                              </div>
                             )}
-                            {showAnswers && ans && (
-                              <p className="mt-1.5 text-xs font-semibold text-emerald-700">
-                                ✓ Réponse attendue : {ans}
-                              </p>
-                            )}
-                            {showAnswers && q.explanation && (
+                            {q.explanation && (
                               <p className="mt-0.5 text-[11px] text-zinc-500 italic">
                                 {q.explanation}
                               </p>
