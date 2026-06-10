@@ -136,6 +136,15 @@ export async function importBlueprintFromPdf(formData: FormData) {
       duration_hours: p.duration_hours ?? null,
       duration_days: p.duration_days ?? null,
       general_objective: p.general_objective ?? null,
+      // Réadaptation : on remonte TOUT le contenu du programme existant
+      // (Gilles 2026-06-09). L'utilisateur peut ensuite cliquer « Générer le
+      // programme complet (IA) » pour optimiser le texte.
+      prerequisites: p.prerequisites ?? null,
+      evaluation_methods: p.evaluation_methods ?? null,
+      teaching_methods:
+        [p.teaching_methods, p.pedagogy_approach].filter(Boolean).join("\n") ||
+        null,
+      programme_days: p.programme_days ?? [],
       bloom_objectives: objectives,
       created_by: user.id,
       status: "draft",

@@ -59,7 +59,8 @@ export function BlankQuizButton({
 }) {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [showAnswers, setShowAnswers] = useState(false);
+  // Réservé au formateur : on montre les BONNES RÉPONSES par défaut.
+  const [showAnswers, setShowAnswers] = useState(true);
   useEffect(() => setMounted(true), []);
 
   if (questions.length === 0) return null;
