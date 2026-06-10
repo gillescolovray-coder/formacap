@@ -3,9 +3,8 @@
 import { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
-  ChevronDown,
-  ChevronUp,
   Eye,
+  GripVertical,
   Loader2,
   Plus,
   Send,
@@ -83,6 +82,7 @@ export function BlueprintEditor({
   const [objectives, setObjectives] = useState<BloomObjective[]>(
     initial.bloom_objectives ?? [],
   );
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [status, setStatus] = useState<string>(initial.status ?? "draft");
   const [generating, startGen] = useTransition();
   const [generatingObj, startGenObj] = useTransition();
@@ -233,13 +233,14 @@ export function BlueprintEditor({
   function removeObj(oid: string) {
     setObjectives((prev) => prev.filter((o) => o.id !== oid));
   }
-  // Réordonner les objectifs (monter / descendre) — Gilles 2026-06-09
-  function moveObj(index: number, dir: -1 | 1) {
+  // Réordonner les objectifs par GLISSER-DÉPOSER (Gilles 2026-06-09).
+  function reorderObj(from: number, to: number) {
     setObjectives((prev) => {
+      if (from === to || from < 0 || to < 0 || from >= prev.length || to >= prev.length)
+        return prev;
       const next = [...prev];
-      const target = index + dir;
-      if (target < 0 || target >= next.length) return prev;
-      [next[index], next[target]] = [next[target], next[index]];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
       return next;
     });
   }
@@ -465,9 +466,35 @@ export function BlueprintEditor({
               return (
                 <li
                   key={o.id}
-                  className="rounded-lg border border-zinc-200 p-3 space-y-2"
+                  onDragOver={(e) => {
+                    if (dragIndex !== null) e.preventDefault();
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    if (dragIndex !== null) reorderObj(dragIndex, idx);
+                    setDragIndex(null);
+                  }}
+                  className={
+                    "rounded-lg border p-3 space-y-2 transition-colors " +
+                    (dragIndex === idx
+                      ? "border-cyan-400 bg-cyan-50/40 opacity-60"
+                      : dragIndex !== null
+                        ? "border-dashed border-cyan-300"
+                        : "border-zinc-200")
+                  }
                 >
                   <div className="flex items-start gap-2">
+                    {!locked && (
+                      <span
+                        draggable
+                        onDragStart={() => setDragIndex(idx)}
+                        onDragEnd={() => setDragIndex(null)}
+                        className="mt-2 shrink-0 cursor-grab active:cursor-grabbing text-zinc-300 hover:text-zinc-500"
+                        title="Glisser pour réordonner"
+                      >
+                        <GripVertical className="h-4 w-4" />
+                      </span>
+                    )}
                     <span className="text-xs font-bold text-zinc-400 mt-2 tabular-nums">
                       {idx + 1}.
                     </span>
@@ -479,36 +506,14 @@ export function BlueprintEditor({
                       placeholder="À l'issue, l'apprenant sera capable de…"
                     />
                     {!locked && (
-                      <div className="shrink-0 flex items-center gap-0.5 mt-1">
-                        <div className="flex flex-col">
-                          <button
-                            type="button"
-                            onClick={() => moveObj(idx, -1)}
-                            disabled={idx === 0}
-                            className="text-zinc-400 hover:text-cyan-700 disabled:opacity-30 disabled:cursor-not-allowed"
-                            title="Monter"
-                          >
-                            <ChevronUp className="h-4 w-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => moveObj(idx, 1)}
-                            disabled={idx === objectives.length - 1}
-                            className="text-zinc-400 hover:text-cyan-700 disabled:opacity-30 disabled:cursor-not-allowed"
-                            title="Descendre"
-                          >
-                            <ChevronDown className="h-4 w-4" />
-                          </button>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => removeObj(o.id)}
-                          className="text-zinc-400 hover:text-rose-600"
-                          title="Supprimer"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeObj(o.id)}
+                        className="shrink-0 mt-1 text-zinc-400 hover:text-rose-600"
+                        title="Supprimer"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
                     )}
                   </div>
                   <div className="flex items-center gap-2 flex-wrap pl-6">
