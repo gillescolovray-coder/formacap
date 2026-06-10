@@ -9,9 +9,12 @@ import {
   Check,
   Clock,
   FileSignature,
+  FileSpreadsheet,
+  Loader2,
   Mail,
   Pencil,
   Phone,
+  Printer,
   Search,
   Send,
   Trash2,
@@ -245,6 +248,10 @@ export function InscriptionsList({
   const editingRow = editingId ? rows.find((r) => r.id === editingId) ?? null : null;
   const [query, setQuery] = useState("");
   const [dateFilter, setDateFilter] = useState<DateFilter>("all");
+  // Période personnalisée (date de session) — Gilles 2026-06-09
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [exporting, setExporting] = useState(false);
   const today = new Date().toISOString().slice(0, 10);
 
   // Calcul des bornes pour les filtres "Cette semaine" et "Ce mois"
@@ -274,6 +281,9 @@ export function InscriptionsList({
         )
           return false;
       }
+      // Période personnalisée (sur la date de session)
+      if (fromDate && (!r.startDate || r.startDate < fromDate)) return false;
+      if (toDate && (!r.startDate || r.startDate > toDate)) return false;
       // Filtre texte
       if (!q) return true;
       const haystack = normalize(
@@ -309,7 +319,41 @@ export function InscriptionsList({
         ? aStart.localeCompare(bStart)
         : bStart.localeCompare(aStart);
     });
-  }, [rows, query, dateFilter, today, weekEndIso, monthEndIso]);
+  }, [rows, query, dateFilter, fromDate, toDate, today, weekEndIso, monthEndIso]);
+
+  const periodLabel =
+    fromDate || toDate
+      ? `Période : ${fromDate ? formatDate(fromDate) : "…"} → ${toDate ? formatDate(toDate) : "…"}`
+      : dateFilter === "all"
+        ? "Toutes les dates"
+        : "Période filtrée";
+
+  // Export Excel (.xlsx) — envoie les lignes filtrées à la route serveur.
+  async function exportExcel() {
+    setExporting(true);
+    setActionError(null);
+    try {
+      const res = await fetch(`/api/partner/${token}/inscriptions/export`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rows: filtered, periodLabel }),
+      });
+      if (!res.ok) throw new Error("Export impossible");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `inscriptions-${today}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      setActionError("Export Excel impossible. Réessayez.");
+    } finally {
+      setExporting(false);
+    }
+  }
 
   function doDelete(r: InscriptionRow) {
     if (
@@ -331,8 +375,18 @@ export function InscriptionsList({
 
   return (
     <div className="space-y-3">
+      <style>{`
+        @media print {
+          body * { visibility: hidden !important; }
+          .ins-print, .ins-print * { visibility: visible !important; }
+          .ins-print { position: absolute; left: 0; top: 0; right: 0; }
+          .no-print { display: none !important; }
+        }
+        .ins-print-header { display: none; }
+        @media print { .ins-print-header { display: block; margin-bottom: 10px; } }
+      `}</style>
       {/* Filtre texte + filtre date */}
-      <div className="rounded-xl bg-white border border-zinc-200 p-3 flex items-center gap-2 flex-wrap">
+      <div className="rounded-xl bg-white border border-zinc-200 p-3 flex items-center gap-2 flex-wrap no-print">
         <div className="relative flex-1 min-w-[240px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400 pointer-events-none" />
           <input
@@ -365,8 +419,67 @@ export function InscriptionsList({
           <option value="this_month">Dans le mois</option>
           <option value="past">Sessions passées</option>
         </select>
+        {/* Période personnalisée (date de session) */}
+        <div className="flex items-center gap-1.5 text-xs">
+          <span className="text-zinc-500">Du</span>
+          <input
+            type="date"
+            value={fromDate}
+            onChange={(e) => setFromDate(e.target.value)}
+            className="h-10 rounded-md border border-zinc-300 px-2 text-sm"
+            title="Date de début (session)"
+          />
+          <span className="text-zinc-500">au</span>
+          <input
+            type="date"
+            value={toDate}
+            onChange={(e) => setToDate(e.target.value)}
+            className="h-10 rounded-md border border-zinc-300 px-2 text-sm"
+            title="Date de fin (session)"
+          />
+          {(fromDate || toDate) && (
+            <button
+              type="button"
+              onClick={() => {
+                setFromDate("");
+                setToDate("");
+              }}
+              className="text-zinc-400 hover:text-zinc-700 p-1"
+              title="Effacer la période"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
         <div className="text-xs text-zinc-500 px-1">
           {filtered.length} sur {rows.length}
+        </div>
+        {/* Exports */}
+        <div className="flex items-center gap-2 ml-auto no-print">
+          <button
+            type="button"
+            onClick={exportExcel}
+            disabled={exporting || filtered.length === 0}
+            className="inline-flex items-center gap-1.5 h-10 px-3 rounded-md border border-emerald-300 bg-emerald-50 text-emerald-800 text-sm font-semibold hover:bg-emerald-100 disabled:opacity-50"
+            title="Exporter le tableau filtré au format Excel (.xlsx)"
+          >
+            {exporting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <FileSpreadsheet className="h-4 w-4" />
+            )}
+            Exporter Excel
+          </button>
+          <button
+            type="button"
+            onClick={() => window.print()}
+            disabled={filtered.length === 0}
+            className="inline-flex items-center gap-1.5 h-10 px-3 rounded-md border border-zinc-300 bg-white text-zinc-800 text-sm font-semibold hover:bg-zinc-50 disabled:opacity-50"
+            title="Imprimer / Enregistrer en PDF le tableau filtré"
+          >
+            <Printer className="h-4 w-4" />
+            Imprimer / PDF
+          </button>
         </div>
       </div>
 
@@ -550,7 +663,15 @@ export function InscriptionsList({
         </div>
 
         {/* === VUE DESKTOP : tableau (≥ md) === */}
-        <div className="hidden md:block overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
+        <div className="hidden md:block overflow-x-auto rounded-2xl border border-zinc-200 bg-white ins-print">
+          {/* En-tête imprimé (visible uniquement à l'impression / PDF) */}
+          <div className="ins-print-header px-4 pt-3">
+            <h2 style={{ fontWeight: 700, fontSize: 16 }}>Mes inscriptions</h2>
+            <div style={{ fontSize: 12, color: "#555" }}>
+              {periodLabel} · {filtered.length} inscription
+              {filtered.length > 1 ? "s" : ""}
+            </div>
+          </div>
           <table className="w-full text-sm">
             <thead className="bg-zinc-50">
               <tr>
