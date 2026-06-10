@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import type { Learner } from "@/lib/learners/types";
+import { LearnerPortalButtons } from "../entreprises/_learner-portal-buttons";
 import type { Company } from "@/lib/companies/types";
 
 type SearchParams = {
@@ -345,6 +346,7 @@ export default async function LearnersListPage({
                     <th className="px-4 py-3">Société</th>
                     <th className="px-4 py-3">CP &amp; Ville</th>
                     <th className="px-4 py-3">État</th>
+                    <th className="px-4 py-3">Portail apprenant</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
@@ -488,6 +490,12 @@ export default async function LearnersListPage({
                               ○ Inactif
                             </span>
                           )}
+                        </td>
+                        <td className="px-4 py-3">
+                          <LearnerPortalButtons
+                            learnerId={l.id}
+                            hasEmail={Boolean(l.email)}
+                          />
                         </td>
                       </tr>
                     );
