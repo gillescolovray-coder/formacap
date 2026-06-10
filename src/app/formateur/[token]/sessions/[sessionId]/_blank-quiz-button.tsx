@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { FileQuestion, X, Printer } from "lucide-react";
+import { FileQuestion, X } from "lucide-react";
 
 /**
  * Consultation du QUIZ VIERGE par le formateur (Gilles 2026-06-09).
@@ -129,15 +129,6 @@ export function BlankQuizButton({
                   <span className="text-[11px] text-emerald-700 font-semibold hidden sm:inline">
                     Bonnes réponses en vert
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => window.print()}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-zinc-300 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
-                    title="Imprimer le questionnaire"
-                  >
-                    <Printer className="h-3.5 w-3.5" />
-                    Imprimer
-                  </button>
                   <button
                     type="button"
                     onClick={() => setOpen(false)}
