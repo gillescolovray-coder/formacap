@@ -1342,6 +1342,15 @@ export default async function FormateurSessionDetailPage({
             collapsible
             defaultOpen
           >
+            {/* Consultation du quiz vierge — AU-DESSUS du QR et discret, pour
+                que le QR (à lancer devant les apprenants) reste l'action
+                principale. Gilles 2026-06-09. */}
+            {quizQuestions.length > 0 && (
+              <div className="mb-2">
+                <BlankQuizButton questions={quizQuestions} />
+              </div>
+            )}
+
             {/* Bandeau QR code partagé : un seul QR pour toute la session,
                 chaque apprenant choisit son nom puis joue (Gilles 2026-05-25,
                 remplace le QR par participant). Anti-rejeu pre/post hérité
@@ -1368,13 +1377,6 @@ export default async function FormateurSessionDetailPage({
                 </div>
               </div>
             </div>
-
-            {/* Consultation du quiz vierge (Gilles 2026-06-09) */}
-            {quizQuestions.length > 0 && (
-              <div className="mb-4">
-                <BlankQuizButton questions={quizQuestions} />
-              </div>
-            )}
 
             {participants.length === 0 ? (
               <p className="text-xs text-zinc-500 italic">Aucun apprenant.</p>
@@ -1539,6 +1541,12 @@ export default async function FormateurSessionDetailPage({
           collapsible
           defaultOpen
         >
+          {/* Consultation de l'éval à chaud vierge — AU-DESSUS du QR et
+              discrète (le QR reste l'action principale). Gilles 2026-06-09. */}
+          <div className="mb-2">
+            <BlankEvaluationButton />
+          </div>
+
           {/* Bandeau QR code à projeter en fin de session
               (Gilles 2026-05-25). Affichage identique à celui du QR
               émargement, en violet pour rester cohérent avec le code
@@ -1567,11 +1575,6 @@ export default async function FormateurSessionDetailPage({
                 />
               </div>
             </div>
-          </div>
-
-          {/* Consulter l'évaluation à chaud vierge (Gilles 2026-06-09) */}
-          <div className="mb-4">
-            <BlankEvaluationButton />
           </div>
 
           {(hotEvals?.length ?? 0) === 0 ? (

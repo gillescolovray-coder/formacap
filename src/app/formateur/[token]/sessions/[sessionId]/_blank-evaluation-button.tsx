@@ -142,11 +142,11 @@ export function BlankEvaluationButton() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-violet-300 bg-violet-50 text-violet-800 text-sm font-semibold hover:bg-violet-100"
-        title="Voir l'évaluation à chaud vierge (telle que l'apprenant la remplit)"
+        className="inline-flex items-center gap-1 text-[11px] font-medium text-violet-600 hover:text-violet-800 hover:underline"
+        title="Voir l'évaluation à chaud vierge (pour préparation — à ne PAS lancer devant les apprenants)"
       >
-        <ClipboardList className="h-4 w-4" />
-        Consulter l&apos;évaluation à chaud vierge
+        <ClipboardList className="h-3 w-3" />
+        Consulter l&apos;évaluation à chaud vierge (préparation)
       </button>
 
       {open &&

@@ -100,11 +100,11 @@ export function BlankQuizButton({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-indigo-300 bg-indigo-50 text-indigo-800 text-sm font-semibold hover:bg-indigo-100"
-        title="Voir le questionnaire vierge (tel que l'apprenant le voit)"
+        className="inline-flex items-center gap-1 text-[11px] font-medium text-indigo-600 hover:text-indigo-800 hover:underline"
+        title="Voir le questionnaire vierge (pour préparation — à ne PAS lancer devant les apprenants)"
       >
-        <FileQuestion className="h-4 w-4" />
-        Consulter le quiz vierge
+        <FileQuestion className="h-3 w-3" />
+        Consulter le quiz vierge (préparation)
       </button>
 
       {open &&
