@@ -41,6 +41,10 @@ import {
 import { TrainerReportForm } from "./_trainer-report-form";
 import { TrainerQrEvaluationButton } from "./_trainer-qr-evaluation-button";
 import { TrainerQrQuizButton } from "./_trainer-qr-quiz-button";
+import {
+  BlankQuizButton,
+  type BlankQuizQuestion,
+} from "./_blank-quiz-button";
 import { UploadSupportForm } from "./_upload-support-form";
 import {
   createExpressLearnerFromPortal,
@@ -489,8 +493,9 @@ export default async function FormateurSessionDetailPage({
       : Promise.resolve({ data: [] as Array<unknown> }),
   ]);
   const quizAttempts = (quizAttemptsRaw ?? []) as unknown as QuizAttempt[];
-  // (quizQuestionsRaw n'est plus utilisé — vue par question retirée 2026-05-24.)
-  void quizQuestionsRaw;
+  // Questions du quiz (pour la consultation du quiz vierge par le formateur
+  // — Gilles 2026-06-09).
+  const quizQuestions = (quizQuestionsRaw ?? []) as unknown as BlankQuizQuestion[];
   const quizByEnrollment = new Map<
     string,
     { pre: QuizAttempt | null; post: QuizAttempt | null }
@@ -1362,6 +1367,13 @@ export default async function FormateurSessionDetailPage({
                 </div>
               </div>
             </div>
+
+            {/* Consultation du quiz vierge (Gilles 2026-06-09) */}
+            {quizQuestions.length > 0 && (
+              <div className="mb-4">
+                <BlankQuizButton questions={quizQuestions} />
+              </div>
+            )}
 
             {participants.length === 0 ? (
               <p className="text-xs text-zinc-500 italic">Aucun apprenant.</p>
