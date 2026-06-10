@@ -252,7 +252,17 @@ export function InscriptionsList({
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [exporting, setExporting] = useState(false);
+  const [editedAt, setEditedAt] = useState("");
   const today = new Date().toISOString().slice(0, 10);
+
+  // Impression : on horodate l'édition (date + heure) puis on imprime.
+  function handlePrint() {
+    const now = new Date();
+    setEditedAt(
+      `${now.toLocaleDateString("fr-FR")} à ${now.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`,
+    );
+    setTimeout(() => window.print(), 80);
+  }
 
   // Calcul des bornes pour les filtres "Cette semaine" et "Ce mois"
   const now = new Date();
@@ -489,10 +499,10 @@ export function InscriptionsList({
           </button>
           <button
             type="button"
-            onClick={() => window.print()}
+            onClick={handlePrint}
             disabled={filtered.length === 0}
-            className="inline-flex items-center gap-1.5 h-10 px-3 rounded-md border border-zinc-300 bg-white text-zinc-800 text-sm font-semibold hover:bg-zinc-50 disabled:opacity-50"
-            title="Imprimer / Enregistrer en PDF le tableau filtré"
+            className="inline-flex items-center gap-1.5 h-10 px-3 rounded-md bg-rose-600 text-white text-sm font-semibold hover:bg-rose-700 disabled:opacity-50"
+            title="Imprimer / Enregistrer en PDF le tableau filtré (format paysage)"
           >
             <Printer className="h-4 w-4" />
             Imprimer / PDF
@@ -688,6 +698,11 @@ export function InscriptionsList({
               {periodLabel} · {filtered.length} inscription
               {filtered.length > 1 ? "s" : ""}
             </div>
+            {editedAt && (
+              <div style={{ fontSize: 10, color: "#888", marginTop: 2 }}>
+                Édité le {editedAt}
+              </div>
+            )}
           </div>
           <table className="w-full text-sm">
             <thead className="bg-zinc-50">

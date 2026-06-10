@@ -67,6 +67,15 @@ export async function POST(
   ws.mergeCells("A2:K2");
   ws.getCell("A2").value = body.periodLabel ?? "Toutes les dates";
   ws.getCell("A2").font = { italic: true, size: 10, color: { argb: "FF666666" } };
+  // Date + heure d'édition (fuseau France).
+  const editedAt = new Intl.DateTimeFormat("fr-FR", {
+    timeZone: "Europe/Paris",
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(new Date());
+  ws.mergeCells("A3:K3");
+  ws.getCell("A3").value = `Édité le ${editedAt}`;
+  ws.getCell("A3").font = { italic: true, size: 9, color: { argb: "FF999999" } };
   ws.addRow([]);
 
   const headerRow = ws.addRow([
