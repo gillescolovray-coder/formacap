@@ -9,6 +9,10 @@ import { resolvePartnerContext } from "../_resolve";
 import { InviteBlock } from "../_invite-block";
 import { CatalogueList, type CatalogueSession } from "./_list-client";
 
+// Rendu toujours frais : reflète immédiatement les tarifs de Paramètres
+// (grille prescripteur/OF) — Gilles 2026-06-09.
+export const dynamic = "force-dynamic";
+
 type Params = { token: string };
 
 type LocationObj = {

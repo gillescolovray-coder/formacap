@@ -15,6 +15,9 @@ import {
 import { resolvePartnerContext } from "../../_resolve";
 import { PartnerInscribeForm } from "./_form-client";
 
+// Rendu toujours frais : reflète les tarifs de Paramètres — Gilles 2026-06-09.
+export const dynamic = "force-dynamic";
+
 type Params = { token: string; sessionId: string };
 
 function formatDate(s: string | null): string {
