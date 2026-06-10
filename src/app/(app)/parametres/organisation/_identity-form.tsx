@@ -48,10 +48,11 @@ export function OrgIdentityForm({
           help="Numéro Qualiopi délivré par la DREETS, repris dans les conventions et attestations."
         />
         <Field
-          label="Autorité du NDA (DREETS)"
+          label="Autorité du NDA (complément)"
           name="nda_authority"
           defaultValue={initial.nda_authority}
-          placeholder="ex. DREETS Provence-Alpes-Côte d'Azur"
+          placeholder="ex. auprès du Préfet de la région PACA"
+          help="Texte affiché juste après le n° de DA dans le pied de page du programme (ex. « auprès du Préfet de la région PACA »)."
         />
         <Field
           label="Forme juridique"

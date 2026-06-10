@@ -147,8 +147,8 @@ export function ProgrammeCharte({
             <>
               {footerLegal ? " – " : ""}
               Déclaration d&apos;activité enregistrée sous le numéro{" "}
-              <strong>{org.nda}</strong>
-              {org.nda_authority ? ` auprès de ${org.nda_authority}` : ""}
+              <strong style={{ fontSize: "12.5px" }}>{org.nda}</strong>
+              {org.nda_authority ? ` ${org.nda_authority}` : ""}
             </>
           )}
         </div>
