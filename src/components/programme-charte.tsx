@@ -77,6 +77,36 @@ export function ProgrammeCharte({
     (d) => (d.morning && d.morning.trim()) || (d.afternoon && d.afternoon.trim()),
   );
 
+  // Pages du déroulé (1 par demi-journée renseignée) + total pour la
+  // numérotation « Page i/N » (Gilles 2026-06-09).
+  const derPages: { label: React.ReactNode; html: string | null }[] = [];
+  days.forEach((d, i) => {
+    const suffix = days.length > 1 ? ` — Jour ${i + 1}` : "";
+    if (d.morning && d.morning.trim())
+      derPages.push({
+        label: (
+          <>
+            Programme
+            <br />
+            Matin{suffix}
+          </>
+        ),
+        html: d.morning,
+      });
+    if (d.afternoon && d.afternoon.trim())
+      derPages.push({
+        label: (
+          <>
+            Programme
+            <br />
+            Après-midi{suffix}
+          </>
+        ),
+        html: d.afternoon,
+      });
+  });
+  const totalPages = 1 + derPages.length;
+
   const footerAddress = [
     org.address,
     [org.postal_code, org.city].filter(Boolean).join(" "),
@@ -90,30 +120,39 @@ export function ProgrammeCharte({
   ]
     .filter(Boolean)
     .join(" – ");
+  // Mentions légales (forme, capital, RCS, TVA, SIRET) — SIRET toujours affiché.
   const footerLegal = [
     org.legal_form,
     org.share_capital ? `au capital de ${org.share_capital}` : null,
     org.rcs_number ? `RCS : ${org.rcs_number}` : null,
     org.vat_number ? `TVA : ${org.vat_number}` : null,
-    org.siret && !org.rcs_number ? `SIRET : ${org.siret}` : null,
+    org.siret ? `SIRET : ${org.siret}` : null,
   ]
     .filter(Boolean)
     .join(" – ");
-  const footerNda =
-    org.nda &&
-    `Déclaration d'activité enregistrée sous le numéro ${org.nda}${
-      org.nda_authority ? ` auprès de ${org.nda_authority}` : ""
-    }`;
 
   const Footer = () => (
     <div className="prog-footer">
-      <div className="font-semibold">
-        {orgName}
+      {/* Nom de la société plus gros */}
+      <div>
+        <span style={{ fontWeight: 800, fontSize: "13px" }}>{orgName}</span>
         {footerAddress ? ` – ${footerAddress}` : ""}
       </div>
       {footerContact && <div>{footerContact}</div>}
-      {footerLegal && <div>{footerLegal}</div>}
-      {footerNda && <div>{footerNda}</div>}
+      {/* SIRET + déclaration d'activité sur la même ligne (n° NDA en gras) */}
+      {(footerLegal || org.nda) && (
+        <div>
+          {footerLegal}
+          {org.nda && (
+            <>
+              {footerLegal ? " – " : ""}
+              Déclaration d&apos;activité enregistrée sous le numéro{" "}
+              <strong>{org.nda}</strong>
+              {org.nda_authority ? ` auprès de ${org.nda_authority}` : ""}
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 
@@ -152,7 +191,8 @@ export function ProgrammeCharte({
         .prog-access { font-size:12px; color:#444; border-top:1px solid #eee; padding-top:8px; }
         .prog-deroule-label { background:linear-gradient(180deg,#0b1f4d,#1f57c4); color:#fff; font-weight:800; font-size:20px; padding:24px 14px; }
         .prog-sec-title { color:#0b1f4d; font-weight:800; font-size:17px; margin:14px 0 4px; }
-        .prog-footer { text-align:center; font-size:10.5px; color:#555; padding:14px 24px 18px; border-top:1px solid #e5e7eb; line-height:1.5; }
+        .prog-footer { text-align:center; font-size:10.5px; color:#555; padding:14px 24px 6px; border-top:1px solid #e5e7eb; line-height:1.5; }
+        .prog-pagenum { text-align:right; font-size:9px; color:#999; padding:0 24px 12px; }
       `}</style>
 
       <div className="no-print-bar" style={{ padding: 16 }}>
@@ -163,14 +203,7 @@ export function ProgrammeCharte({
       <section className="prog-page">
         <div className="prog-header">
           <div className="flex items-start justify-between gap-4">
-            <div>
-              <div className="text-xs uppercase tracking-widest opacity-80">
-                Référence
-              </div>
-              <div className="text-2xl font-extrabold">
-                {data.internalCode ?? "—"}
-              </div>
-            </div>
+            {/* Logo(s) à gauche */}
             <div className="prog-logos">
               {org.logo_url && (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -180,6 +213,13 @@ export function ProgrammeCharte({
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={org.secondary_logo_url} alt="" />
               )}
+            </div>
+            {/* Référence à droite, en petit */}
+            <div className="text-right shrink-0">
+              <div className="text-[9px] uppercase tracking-widest opacity-70">
+                Réf.
+              </div>
+              <div className="text-xs font-bold">{data.internalCode ?? "—"}</div>
             </div>
           </div>
           <h1 className="prog-title">{data.title}</h1>
@@ -220,18 +260,21 @@ export function ProgrammeCharte({
           <Section label="Méthodes pédagogiques" value={data.methods} />
         </div>
         <Footer />
+        <div className="prog-pagenum">Page 1/{totalPages}</div>
       </section>
 
-      {/* DÉROULÉ */}
-      {days.map((d, i) => (
-        <DerouleSection
-          key={i}
-          dayIndex={i}
-          totalDays={days.length}
-          morning={d.morning}
-          afternoon={d.afternoon}
-          Footer={Footer}
-        />
+      {/* DÉROULÉ — une page par demi-journée, avec numéro de page */}
+      {derPages.map((p, i) => (
+        <section className="prog-page" key={i}>
+          <div className="prog-grid">
+            <div className="prog-deroule-label">{p.label}</div>
+            <div className="prog-content">{renderDerouleBlocks(p.html)}</div>
+          </div>
+          <Footer />
+          <div className="prog-pagenum">
+            Page {i + 2}/{totalPages}
+          </div>
+        </section>
       ))}
     </div>
   );
@@ -265,76 +308,30 @@ function Section({
   );
 }
 
-function DerouleSection({
-  dayIndex,
-  totalDays,
-  morning,
-  afternoon,
-  Footer,
-}: {
-  dayIndex: number;
-  totalDays: number;
-  morning: string | null;
-  afternoon: string | null;
-  Footer: () => React.ReactElement;
-}) {
-  const suffix = totalDays > 1 ? ` — Jour ${dayIndex + 1}` : "";
-  const renderBlocks = (text: string | null) => {
-    // Contenu riche (éditeur) -> on rend le HTML tel quel.
-    if (isHtml(text)) {
+/** Rendu d'une demi-journée de déroulé (HTML riche ou texte simple). */
+function renderDerouleBlocks(text: string | null) {
+  if (isHtml(text)) {
+    return (
+      <div
+        className="prog-rich"
+        dangerouslySetInnerHTML={{ __html: text as string }}
+      />
+    );
+  }
+  return (text ?? "").split(/\r?\n/).map((l, i) => {
+    const t = l.trim();
+    if (!t) return <div key={i} style={{ height: 6 }} />;
+    if (/^[-•]/.test(t)) {
       return (
-        <div
-          className="prog-rich"
-          dangerouslySetInnerHTML={{ __html: text as string }}
-        />
+        <ul key={i} style={{ margin: 0, paddingLeft: 18 }}>
+          <li>{t.replace(/^[-•\s]+/, "")}</li>
+        </ul>
       );
     }
-    // Texte simple -> titres + puces (ancien format).
-    return (text ?? "").split(/\r?\n/).map((l, i) => {
-      const t = l.trim();
-      if (!t) return <div key={i} style={{ height: 6 }} />;
-      if (/^[-•]/.test(t)) {
-        return (
-          <ul key={i} style={{ margin: 0, paddingLeft: 18 }}>
-            <li>{t.replace(/^[-•\s]+/, "")}</li>
-          </ul>
-        );
-      }
-      return (
-        <div key={i} className="prog-sec-title">
-          {t}
-        </div>
-      );
-    });
-  };
-  return (
-    <>
-      {morning && morning.trim() && (
-        <section className="prog-page">
-          <div className="prog-grid">
-            <div className="prog-deroule-label">
-              Programme
-              <br />
-              Matin{suffix}
-            </div>
-            <div className="prog-content">{renderBlocks(morning)}</div>
-          </div>
-          <Footer />
-        </section>
-      )}
-      {afternoon && afternoon.trim() && (
-        <section className="prog-page">
-          <div className="prog-grid">
-            <div className="prog-deroule-label">
-              Programme
-              <br />
-              Après-midi{suffix}
-            </div>
-            <div className="prog-content">{renderBlocks(afternoon)}</div>
-          </div>
-          <Footer />
-        </section>
-      )}
-    </>
-  );
+    return (
+      <div key={i} className="prog-sec-title">
+        {t}
+      </div>
+    );
+  });
 }
