@@ -481,10 +481,14 @@ export default async function SessionsListPage({
         // pour une vue agregee (les ecrans detail font le bon calcul).
       });
       // Sous-traitance : on garde l'OF donneur d'ordre + la modalité.
+      // L'OF peut être relié via subcontracting_company_id OU, à défaut,
+      // prescriber_company_id (selon la saisie). On essaie les deux.
       if (sessAny.is_subcontracted === true) {
         subcontractInfoBySession.set((s as { id: string }).id, {
           companyId:
-            (sessAny.subcontracting_company_id as string | null) ?? null,
+            (sessAny.subcontracting_company_id as string | null) ??
+            (sessAny.prescriber_company_id as string | null) ??
+            null,
           modality: (sessAny.modality as string | null) ?? null,
           durationDays,
         });
