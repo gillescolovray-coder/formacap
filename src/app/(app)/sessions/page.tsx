@@ -20,6 +20,7 @@ import { DuplicateSessionButton } from "./_duplicate-button";
 import { InscriptionsCounterCell } from "./_inscriptions-tooltip";
 import { PageHeader } from "@/components/page-header";
 import { SyncCalendarButton } from "./_sync-calendar-button";
+import { SessionStatusSelect } from "./_status-select";
 import {
   computeInscriptionDisplayAmount,
   type DisplayAmountSessionContext,
@@ -389,6 +390,15 @@ export default async function SessionsListPage({
       ),
   ]);
   const customStatuses = (customStatusesRaw ?? []) as SessionStatusDef[];
+  // Options de statut pour le sélecteur inline (Gilles 2026-06-12).
+  const statusOptions: { code: string; label: string }[] =
+    customStatuses.length > 0
+      ? customStatuses.map((st) => ({ code: st.code, label: st.label }))
+      : (
+          Object.keys(SESSION_STATUS_LABELS) as Array<
+            keyof typeof SESSION_STATUS_LABELS
+          >
+        ).map((key) => ({ code: key, label: SESSION_STATUS_LABELS[key] }));
 
   if (hasSessions) {
     stagesList = (stagesData ?? []) as typeof stagesList;
@@ -1695,28 +1705,40 @@ export default async function SessionsListPage({
                                   : rawPrescriber ?? null;
                                 if (prescriber?.name) {
                                   return (
-                                    <span
-                                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-violet-50 border border-violet-200 text-violet-700 whitespace-nowrap max-w-[220px]"
-                                      title={`Prescripteur : ${prescriber.name}`}
+                                    <Link
+                                      href={`/entreprises/${prescriber.id}`}
+                                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-violet-50 border border-violet-200 text-violet-700 hover:bg-violet-100 whitespace-nowrap max-w-[220px]"
+                                      title={`Prescripteur : ${prescriber.name} — ouvrir la fiche`}
                                     >
                                       <Building2 className="h-3 w-3 shrink-0" />
                                       <span className="truncate">
                                         {prescriber.name}
                                       </span>
-                                    </span>
+                                    </Link>
                                   );
                                 }
                                 if (s.subcontractor_name) {
+                                  // Si l'OF est relié (subcontracting_company_id),
+                                  // on ouvre sa fiche ; sinon on recherche par nom.
+                                  const scId = (
+                                    s as unknown as {
+                                      subcontracting_company_id?: string | null;
+                                    }
+                                  ).subcontracting_company_id;
+                                  const href = scId
+                                    ? `/entreprises/${scId}`
+                                    : `/entreprises?q=${encodeURIComponent(s.subcontractor_name)}`;
                                   return (
-                                    <span
-                                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-orange-50 border border-orange-200 text-orange-700 whitespace-nowrap max-w-[220px]"
-                                      title={`Donneur d'ordre (sous-traitance) : ${s.subcontractor_name}`}
+                                    <Link
+                                      href={href}
+                                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-orange-50 border border-orange-200 text-orange-700 hover:bg-orange-100 whitespace-nowrap max-w-[220px]"
+                                      title={`Donneur d'ordre (sous-traitance) : ${s.subcontractor_name} — ouvrir la fiche`}
                                     >
                                       <Building2 className="h-3 w-3 shrink-0" />
                                       <span className="truncate">
                                         {s.subcontractor_name}
                                       </span>
-                                    </span>
+                                    </Link>
                                   );
                                 }
                                 return null;
@@ -1902,20 +1924,12 @@ export default async function SessionsListPage({
                         />
                       </td>
                       <td className="px-4 py-3">
-                        <span
-                          className={cn(
-                            "inline-block px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap cursor-help",
-                            statusInfo.badgeClasses,
-                          )}
-                          title={
-                            statusInfo.description
-                              ? `${statusInfo.label} — ${statusInfo.description}`
-                              : statusInfo.label
-                          }
-                          aria-label={statusInfo.description || statusInfo.label}
-                        >
-                          {statusInfo.label}
-                        </span>
+                        <SessionStatusSelect
+                          sessionId={s.id}
+                          current={s.status}
+                          options={statusOptions}
+                          badgeClasses={statusInfo.badgeClasses}
+                        />
                       </td>
                       <td className="px-4 py-3 text-right whitespace-nowrap">
                         <Link

@@ -497,6 +497,29 @@ export async function deleteSession(id: string) {
 }
 
 /**
+ * Change rapidement le statut d'une session depuis le tableau (Gilles
+ * 2026-06-12). Met à jour sessions.status (synchronisé avec la fiche session)
+ * + l'agenda Google. Override manuel : n'envoie pas d'email (contrairement à
+ * « Confirmer l'ouverture » / annulation guidée).
+ */
+export async function updateSessionStatusQuick(
+  id: string,
+  status: SessionStatus,
+): Promise<{ ok: boolean; error?: string }> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("sessions")
+    .update({ status })
+    .eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  await syncSessionCalendar(id);
+  revalidatePath("/sessions");
+  revalidatePath(`/sessions/${id}`);
+  revalidatePath("/inscriptions");
+  return { ok: true };
+}
+
+/**
  * Bascule manuellement le statut « archived » d'une session :
  *  - si déjà archivée → repasse à `completed` (statut revenu à actif)
  *  - sinon → archive la session (la masque du tableau d'inscriptions)
