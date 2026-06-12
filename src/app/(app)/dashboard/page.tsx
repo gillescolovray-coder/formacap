@@ -506,23 +506,55 @@ export default async function DashboardPage({
     .map((s) => s.id)
     .filter((x): x is string => Boolean(x));
 
-  const { data: yearEnrollments } =
-    yearSessionIds.length > 0
-      ? await supabase
-          .from("session_enrollments")
-          .select(
-            `
-            id, session_id, learner_id,
-            learner:learners(company_id, first_name, last_name, company_name_temp),
-            inscription_request:inscription_requests(
-              quote_amount_ht, billing_total_ht,
-              referrer:companies!referrer_company_id(name, type)
+  // Inscrits = MÊME logique que le tableau /sessions (Gilles 2026-06-12) :
+  // enrollments (apprenants déjà inscrits) + inscription_requests rattachées
+  // NON encore converties (nouvelle demande / en cours), en excluant les
+  // stages "perdus" et les brouillons zombies. Avant, le dashboard ne comptait
+  // que les enrollments -> une session avec seulement une demande en cours
+  // (ex. 14/04) affichait 0 participant.
+  const [{ data: yearEnrollments }, { data: yearInscriptions }, { data: stagesData }] =
+    await Promise.all([
+      yearSessionIds.length > 0
+        ? supabase
+            .from("session_enrollments")
+            .select(
+              `
+              id, session_id, learner_id,
+              learner:learners(company_id, first_name, last_name, company_name_temp),
+              inscription_request:inscription_requests(
+                quote_amount_ht, billing_total_ht,
+                referrer:companies!referrer_company_id(name, type)
+              )
+            `,
             )
-          `,
-          )
-          .neq("status", "cancelled")
-          .in("session_id", yearSessionIds)
-      : { data: [] as unknown[] };
+            .neq("status", "cancelled")
+            .in("session_id", yearSessionIds)
+        : Promise.resolve({ data: [] as unknown[] }),
+      yearSessionIds.length > 0
+        ? supabase
+            .from("inscription_requests")
+            .select(
+              `
+              id, target_session_id, learner_id, stage_id,
+              prospect_first_name, prospect_last_name, prospect_email,
+              quote_amount_ht, billing_total_ht,
+              referrer:companies!referrer_company_id(name, type),
+              learner:learners(first_name, last_name, company:companies(id, name))
+            `,
+            )
+            .in("target_session_id", yearSessionIds)
+        : Promise.resolve({ data: [] as unknown[] }),
+      supabase
+        .from("inscription_stages")
+        .select("id, is_lost")
+        .eq("is_active", true),
+    ]);
+
+  const lostStageIds = new Set(
+    ((stagesData ?? []) as Array<{ id: string; is_lost: boolean | null }>)
+      .filter((s) => s.is_lost === true)
+      .map((s) => s.id),
+  );
 
   const MONTH_LABELS = [
     "Jan", "Fév", "Mar", "Avr", "Mai", "Juin",
@@ -565,6 +597,9 @@ export default async function DashboardPage({
     amountHt: number;
     amountTtc: number;
     hours: number;
+    /** true = heures réelles (émargement) ; false = heures théoriques. */
+    hoursFromEmargement: boolean;
+    companiesCount: number;
     source: string;
     sourceKind: "direct" | "of" | "partenaire";
     learners: { name: string; amountHt: number; perDayHt: number }[];
@@ -637,8 +672,30 @@ export default async function DashboardPage({
     learner: EnrLearner | EnrLearner[] | null;
     inscription_request: EnrReq | EnrReq[] | null;
   };
+  type InscLearner = {
+    first_name: string | null;
+    last_name: string | null;
+    company:
+      | { id: string | null; name: string | null }
+      | Array<{ id: string | null; name: string | null }>
+      | null;
+  };
+  type InscRow = {
+    id: string;
+    target_session_id: string | null;
+    learner_id: string | null;
+    stage_id: string | null;
+    prospect_first_name: string | null;
+    prospect_last_name: string | null;
+    prospect_email: string | null;
+    quote_amount_ht: number | string | null;
+    billing_total_ht: number | string | null;
+    referrer: CoNm | CoNm[] | null;
+    learner: InscLearner | InscLearner[] | null;
+  };
 
   const enrRows = (yearEnrollments ?? []) as unknown as EnrRow[];
+  const inscRows = (yearInscriptions ?? []) as unknown as InscRow[];
 
   // Présence (émargement apprenant) pour le calcul des heures-stagiaires
   // CAP NUMÉRIQUE / prescripteur.
@@ -666,6 +723,13 @@ export default async function DashboardPage({
     present: boolean;
     referrer: CoNm | null;
   };
+  // Inscription en cours (demande non encore convertie en enrollment).
+  type SessPending = {
+    id: string;
+    name: string;
+    companyId: string | null;
+    amount: number | null;
+  };
   type SessGroup = {
     id: string;
     start_date: string;
@@ -686,6 +750,12 @@ export default async function DashboardPage({
     priceExtra: number | null;
     threshold: number | null;
     enrollments: SessEnr[];
+    enrolledLearnerIds: Set<string>;
+    pendingInscrits: SessPending[];
+    /** Somme HT des montants d'affichage de toutes les inscriptions
+     *  (demandes), source du CA quand ni forfait ni sous-traitance. */
+    inscriptionTotalReq: number;
+    referrerFromInsc: CoNm | null;
   };
   const sessGroups = new Map<string, SessGroup>();
 
@@ -721,10 +791,14 @@ export default async function DashboardPage({
       priceExtra: numOrNull(sess.price_extra_per_day_ht),
       threshold: numOrNull(sess.pricing_threshold),
       enrollments: [],
+      enrolledLearnerIds: new Set<string>(),
+      pendingInscrits: [],
+      inscriptionTotalReq: 0,
+      referrerFromInsc: null,
     });
   }
 
-  // 2) Rattache chaque inscription (non annulée) à sa session.
+  // 2) Rattache chaque enrollment (apprenant déjà inscrit) à sa session.
   for (const e of enrRows) {
     const sid = e.session_id;
     if (!sid) continue;
@@ -750,6 +824,7 @@ export default async function DashboardPage({
         .trim() ||
       learner?.company_name_temp ||
       "Apprenant";
+    if (e.learner_id) g.enrolledLearnerIds.add(e.learner_id);
     g.enrollments.push({
       id: e.id,
       name,
@@ -758,6 +833,56 @@ export default async function DashboardPage({
       present: presentEnrollments.has(e.id),
       referrer,
     });
+  }
+
+  // 3) Inscriptions (demandes) : somme des montants + comptage des demandes
+  //    NON encore converties (learner pas déjà enrôlé), en excluant les
+  //    stages perdus et les brouillons zombies. Aligné sur /sessions.
+  for (const r of inscRows) {
+    const sid = r.target_session_id;
+    if (!sid) continue;
+    const g = sessGroups.get(sid);
+    if (!g) continue;
+    if (r.stage_id && lostStageIds.has(r.stage_id)) continue;
+    const hasLearner = !!r.learner_id;
+    const pLast = (r.prospect_last_name ?? "").trim();
+    const pFirst = (r.prospect_first_name ?? "").trim();
+    const pEmail = (r.prospect_email ?? "").trim();
+    if (!hasLearner && !pLast && !pFirst && !pEmail) continue; // zombie
+
+    const insLearner = pick(r.learner);
+    const insCompany = insLearner ? pick(insLearner.company) : null;
+    const ctx: DisplayAmountSessionContext = {
+      pricing_mode: g.pricingMode,
+      price_per_day_ht: g.pricePerDay,
+      price_forfait_ht: g.priceForfait,
+      price_extra_per_day_ht: g.priceExtra,
+      pricing_threshold: g.threshold,
+      duration_days: g.durationDays,
+      formation_public_price_excl_tax: g.pubUnit,
+    };
+    const res = computeInscriptionDisplayAmount(r, ctx);
+    if (res.amount !== null && res.amount > 0) {
+      g.inscriptionTotalReq += res.amount;
+    }
+    if (!g.referrerFromInsc) {
+      const ref = pick(r.referrer);
+      if (ref?.name) g.referrerFromInsc = ref;
+    }
+    // Demande non encore convertie -> compte comme une place / personne.
+    if (!(r.learner_id && g.enrolledLearnerIds.has(r.learner_id))) {
+      const name =
+        [insLearner?.first_name ?? pFirst, insLearner?.last_name ?? pLast]
+          .filter(Boolean)
+          .join(" ")
+          .trim() || "Apprenant";
+      g.pendingInscrits.push({
+        id: r.id,
+        name,
+        companyId: insCompany?.id ?? null,
+        amount: res.amount,
+      });
+    }
   }
 
   // Tarifs sous-traitance des OF donneurs d'ordre (forfait jour).
@@ -845,11 +970,11 @@ export default async function DashboardPage({
     const bucket = monthlyAcc[monthIdx];
     if (!bucket) continue;
 
-    const nbInscrits = g.enrollments.length;
-    const inscriptionTotal = g.enrollments.reduce(
-      (acc, e) => acc + (e.amount && e.amount > 0 ? e.amount : 0),
-      0,
-    );
+    // Inscrits = enrollments + demandes en cours non converties (aligné /sessions).
+    const nbEnrolled = g.enrollments.length;
+    const nbPending = g.pendingInscrits.length;
+    const nbInscrits = nbEnrolled + nbPending;
+    const inscriptionTotal = g.inscriptionTotalReq;
     const r7 = r7AmountOf(g, nbInscrits);
     const isForfait = g.pricingMode === "forfait";
     const useForfaitFirst =
@@ -886,7 +1011,9 @@ export default async function DashboardPage({
       sourceLabel = ofNm ? `OF · ${ofNm}` : "OF (donneur d'ordre)";
     } else {
       const ref =
-        g.enrollments.map((e) => e.referrer).find((r) => r && r.name) ?? null;
+        g.referrerFromInsc ??
+        g.enrollments.map((e) => e.referrer).find((r) => r && r.name) ??
+        null;
       if (ref?.name) {
         if (ref.type === "of") {
           sourceKind = "of";
@@ -903,26 +1030,27 @@ export default async function DashboardPage({
 
     // Heures-stagiaires (Gilles 2026-06-12) : OF = nb inscrits × heures ;
     // CAP NUMÉRIQUE & prescripteur = nb PRÉSENTS (émargement) × heures.
-    // Repli (Gilles 2026-06-12) : si AUCUN émargement n'a été saisi pour la
-    // session (présents = 0), on crédite les heures à tous les inscrits —
-    // sinon une session réalisée sans émargement remonterait 0 h.
+    // Repli : si AUCUN émargement n'a été saisi (présents = 0), on crédite
+    // les heures à tous les inscrits (heures THÉORIQUES, affichées en orange) ;
+    // si l'émargement existe, heures RÉELLES (présents, affichées en vert).
     const presentCount = g.enrollments.filter((e) => e.present).length;
-    const nbForHours =
-      sourceKind === "of"
-        ? nbInscrits
-        : presentCount > 0
-          ? presentCount
-          : nbInscrits;
+    const hoursFromEmargement = sourceKind !== "of" && presentCount > 0;
+    const nbForHours = hoursFromEmargement ? presentCount : nbInscrits;
     const sessionHours = g.durationHours * nbForHours;
+
+    // Nombre d'entreprises distinctes de la session (enrollments + demandes).
+    const companyIds = new Set<string>();
+    for (const e of g.enrollments) if (e.companyId) companyIds.add(e.companyId);
+    for (const p of g.pendingInscrits) if (p.companyId) companyIds.add(p.companyId);
 
     // Réalisé (fin dépassée) vs prévisionnel.
     const sessEnd = g.end_date ?? g.start_date;
     const isRealise = sessEnd ? sessEnd.slice(0, 10) < todayIso : false;
 
-    for (const e of g.enrollments) {
-      bucket.participants.add(e.id);
-      if (e.companyId) bucket.companies.add(e.companyId);
-    }
+    // Participants du mois = inscrits (enrollments + demandes), clés uniques.
+    for (const e of g.enrollments) bucket.participants.add(`e:${e.id}`);
+    for (const p of g.pendingInscrits) bucket.participants.add(`i:${p.id}`);
+    for (const cid of companyIds) bucket.companies.add(cid);
     bucket.hours += sessionHours;
     if (amount !== null) {
       bucket.amountHt += amount;
@@ -930,20 +1058,23 @@ export default async function DashboardPage({
       else bucket.amountHtPrevi += amount;
     }
 
-    // Détail dépliage : coût par apprenant. Si le montant vient des
-    // inscriptions on garde le montant réel par apprenant, sinon on répartit
-    // le montant session à parts égales (forfait / sous-traitance).
+    // Détail dépliage : coût par apprenant (enrollments + demandes). Si le
+    // montant vient des inscriptions on garde le montant réel par apprenant,
+    // sinon on répartit le montant session à parts égales (forfait / s-trait).
     const days = daysOf(g);
     const perLearnerEven =
       amount !== null && nbInscrits > 0 ? amount / nbInscrits : 0;
-    const learners = g.enrollments.map((e) => {
+    const learners = [
+      ...g.enrollments.map((e) => ({ name: e.name, amount: e.amount })),
+      ...g.pendingInscrits.map((p) => ({ name: p.name, amount: p.amount })),
+    ].map((l) => {
       const a = amountFromInscriptions
-        ? e.amount && e.amount > 0
-          ? e.amount
+        ? l.amount && l.amount > 0
+          ? l.amount
           : 0
         : perLearnerEven;
       return {
-        name: e.name,
+        name: l.name,
         amountHt: Math.round(a * 100) / 100,
         perDayHt: days > 0 ? Math.round((a / days) * 100) / 100 : a,
       };
@@ -963,6 +1094,8 @@ export default async function DashboardPage({
           ? Math.round(amount * (1 + VAT_RATE) * 100) / 100
           : 0,
       hours: Math.round(sessionHours),
+      hoursFromEmargement,
+      companiesCount: companyIds.size,
       source: sourceLabel,
       sourceKind,
       learners,

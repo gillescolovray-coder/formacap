@@ -40,6 +40,9 @@ export type MonthlyDetailSession = {
   amountHt: number;
   amountTtc: number;
   hours: number;
+  /** true = heures réelles (émargement) ; false = heures théoriques (sans). */
+  hoursFromEmargement: boolean;
+  companiesCount: number;
   /** Libellé de la source : "CAP NUMÉRIQUE", "Prescripteur · …", "OF · …". */
   source: string;
   sourceKind: "direct" | "of" | "partenaire";
@@ -192,7 +195,10 @@ export function MonthlyStats({
       </div>
       <div className="px-4 pt-2 -mb-1 text-[10px] text-zinc-400">
         CA réalisé = sessions terminées (date de fin dépassée) · Prévisionnel =
-        sessions à venir / en cours.
+        sessions à venir / en cours. Dépliez un mois puis une session pour le
+        détail. Heures : <span className="text-emerald-600 font-medium">vert</span>{" "}
+        = réelles (émargement) · <span className="text-amber-600 font-medium">orange</span>{" "}
+        = théoriques (émargement non saisi).
       </div>
 
       {/* === Graphique en barres : participants + montant HT par mois === */}
@@ -403,11 +409,26 @@ export function MonthlyStats({
                             <td className="px-3 py-1.5 text-right tabular-nums text-xs text-zinc-500">
                               {s.learners.length}
                             </td>
-                            <td className="px-3 py-1.5 text-right tabular-nums text-xs text-zinc-500">
+                            <td
+                              className={`px-3 py-1.5 text-right tabular-nums text-xs font-medium ${
+                                s.hours <= 0
+                                  ? "text-zinc-400"
+                                  : s.hoursFromEmargement
+                                    ? "text-emerald-600"
+                                    : "text-amber-600"
+                              }`}
+                              title={
+                                s.hours <= 0
+                                  ? "Aucune heure (pas d'inscrit)"
+                                  : s.hoursFromEmargement
+                                    ? "Heures réelles : calculées d'après l'émargement (présents)"
+                                    : "Heures théoriques : émargement non saisi → estimation sur la base des inscrits"
+                              }
+                            >
                               {s.hours > 0 ? Math.round(s.hours) : "—"}
                             </td>
-                            <td className="px-3 py-1.5 text-right tabular-nums text-[10px] text-zinc-400">
-                              —
+                            <td className="px-3 py-1.5 text-right tabular-nums text-xs text-zinc-500">
+                              {s.companiesCount > 0 ? s.companiesCount : "—"}
                             </td>
                             <td
                               className={`px-3 py-1.5 text-right tabular-nums text-xs ${
