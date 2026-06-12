@@ -255,10 +255,18 @@ function buildDayEvent(
       : null,
   ].filter((l): l is string => l !== null);
 
+  // Couleur Google Agenda selon le statut (Gilles 2026-06-12) : les RDV
+  // ANNULÉS passent en GRIS clair ("Graphite" = colorId 8) — la croix ❌ ne
+  // suffisait pas à les distinguer visuellement. Les REPORTÉS aussi en gris.
+  // Les autres statuts gardent la couleur par défaut de l'agenda.
+  const colorId =
+    s.status === "cancelled" || s.status === "postponed" ? "8" : undefined;
+
   return {
     summary,
     location: locationStr,
     description: descriptionLines.join("<br>"),
+    ...(colorId ? { colorId } : {}),
     start: {
       dateTime: `${day.date}T${day.start}`,
       timeZone: "Europe/Paris",

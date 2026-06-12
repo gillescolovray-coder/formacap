@@ -26,6 +26,11 @@ import {
   UserX,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import {
+  computeInscriptionDisplayAmount,
+  type DisplayAmountSessionContext,
+} from "@/lib/billing/display-amount";
+import { computeSessionPrice } from "@/lib/pricing/compute";
 import { PageHeader } from "@/components/page-header";
 import { StatCard } from "@/components/stat-card";
 import { Button } from "@/components/ui/button";
@@ -268,7 +273,9 @@ export default async function DashboardPage({
         company:companies(name, address, postal_code, city)
       ),
       session:sessions(id, start_date, end_date, is_inter, modality,
-        formation:formations(title, duration_hours, duration_days, public_price_excl_tax)
+        pricing_mode, price_per_day_ht, price_forfait_ht,
+        price_extra_per_day_ht, pricing_threshold,
+        formation:formations(title, duration_hours, duration_days, public_price_excl_tax, price_company)
       ),
       inscription_request:inscription_requests(
         id, via_partner_portal,
@@ -296,57 +303,43 @@ export default async function DashboardPage({
     job_title: string | null;
     company: CompanyShape | Array<CompanyShape> | null;
   };
+  type OverviewFormationShape = {
+    title: string;
+    duration_hours: number | null;
+    duration_days: number | null;
+    public_price_excl_tax: number | string | null;
+    price_company: number | string | null;
+  };
+  type OverviewSessionShape = {
+    id: string;
+    start_date: string | null;
+    end_date: string | null;
+    is_inter: boolean | null;
+    modality: string | null;
+    pricing_mode: "per_learner" | "forfait" | null;
+    price_per_day_ht: number | string | null;
+    price_forfait_ht: number | string | null;
+    price_extra_per_day_ht: number | string | null;
+    pricing_threshold: number | string | null;
+    formation: OverviewFormationShape | OverviewFormationShape[] | null;
+  };
+  type OverviewReqShape = {
+    id: string;
+    via_partner_portal: boolean | null;
+    quote_amount_ht: number | string | null;
+    billing_total_ht: number | string | null;
+    referrer:
+      | { name: string | null; type: string | null }
+      | Array<{ name: string | null; type: string | null }>
+      | null;
+  };
   type EnrollmentRaw = {
     id: string;
     status: string;
     enrolled_at: string;
     learner: LearnerShape | Array<LearnerShape> | null;
-    session:
-      | {
-          id: string;
-          start_date: string | null;
-          end_date: string | null;
-          is_inter: boolean | null;
-          modality: string | null;
-          formation:
-            | { title: string; duration_hours: number | null; duration_days: number | null; public_price_excl_tax: number | null }
-            | Array<{ title: string; duration_hours: number | null; duration_days: number | null; public_price_excl_tax: number | null }>
-            | null;
-        }
-      | Array<{
-          id: string;
-          start_date: string | null;
-          end_date: string | null;
-          is_inter: boolean | null;
-          modality: string | null;
-          formation:
-            | { title: string; duration_hours: number | null; duration_days: number | null; public_price_excl_tax: number | null }
-            | Array<{ title: string; duration_hours: number | null; duration_days: number | null; public_price_excl_tax: number | null }>
-            | null;
-        }>
-      | null;
-    inscription_request:
-      | {
-          id: string;
-          via_partner_portal: boolean | null;
-          quote_amount_ht: number | string | null;
-          billing_total_ht: number | string | null;
-          referrer:
-            | { name: string | null; type: string | null }
-            | Array<{ name: string | null; type: string | null }>
-            | null;
-        }
-      | Array<{
-          id: string;
-          via_partner_portal: boolean | null;
-          quote_amount_ht: number | string | null;
-          billing_total_ht: number | string | null;
-          referrer:
-            | { name: string | null; type: string | null }
-            | Array<{ name: string | null; type: string | null }>
-            | null;
-        }>
-      | null;
+    session: OverviewSessionShape | OverviewSessionShape[] | null;
+    inscription_request: OverviewReqShape | OverviewReqShape[] | null;
   };
 
   const inscriptionRows: InscriptionOverviewRow[] = (
@@ -379,41 +372,30 @@ export default async function DashboardPage({
           ? "of"
           : "partenaire"
         : "direct";
-      // Budget HT (refonte tarification 2026-05-31, Gilles etape 6) :
-      //   1) billing_total_ht (source de verite refonte si calcule via
-      //      le helper computeBillingForInscription)
-      //   2) quote_amount_ht legacy (saisi a la main ou portail
-      //      partenaire)
-      //   3) fallback formations.public_price_excl_tax × duration_days
-      //      (cas typique d'une inscription CAP NUMERIQUE direct ou
-      //      l'admin n'a pas saisi de montant — flag amountHtEstimated
-      //      affiche en italique).
-      const billingRaw = (
-        req as { billing_total_ht?: number | string | null } | null
-      )?.billing_total_ht;
-      const billingAmount =
-        billingRaw === null || billingRaw === undefined
-          ? null
-          : Number(billingRaw);
-      const validBilling =
-        billingAmount != null && Number.isFinite(billingAmount)
-          ? billingAmount
-          : null;
-      const amountRaw = req?.quote_amount_ht;
-      const explicitAmount =
-        amountRaw === null || amountRaw === undefined
-          ? null
-          : typeof amountRaw === "number"
-            ? amountRaw
-            : Number(amountRaw);
-      const validExplicit =
-        explicitAmount != null && Number.isFinite(explicitAmount)
-          ? explicitAmount
-          : null;
-      let amountHt: number | null = validBilling ?? validExplicit;
-      let amountHtEstimated = false;
+      // Budget HT (refonte tarification 2026-05-31 + alignement 2026-06-12) :
+      // on délègue au helper partagé computeInscriptionDisplayAmount qui gère
+      //   1) billing_total_ht  2) quote_amount_ht (montants explicites)
+      //   3) tarif R7 dérivé de la session (INTER per_learner / INTRA forfait)
+      // Avant, ce tableau ignorait la tarification R7 de la session : les
+      // sessions sans devis NI prix catalogue (ex. CHORUS 11/06) restaient à
+      // "—" même quand la session avait un prix/jour. Repli final = prix
+      // catalogue × jours (estimation, en italique).
+      const sessionCtx: DisplayAmountSessionContext = {
+        pricing_mode: session?.pricing_mode ?? null,
+        price_per_day_ht: session?.price_per_day_ht ?? null,
+        price_forfait_ht: session?.price_forfait_ht ?? null,
+        price_extra_per_day_ht: session?.price_extra_per_day_ht ?? null,
+        pricing_threshold: session?.pricing_threshold ?? null,
+        duration_days: formation?.duration_days ?? null,
+        // pas de formation_public_price ici : on garde le repli "× jours"
+        // ci-dessous pour ne pas changer l'estimation catalogue existante.
+      };
+      const disp = computeInscriptionDisplayAmount(req ?? {}, sessionCtx);
+      let amountHt: number | null = disp.amount;
+      let amountHtEstimated = disp.isEstimated;
       if (amountHt === null) {
-        const publicPrice = formation?.public_price_excl_tax;
+        const publicPrice =
+          formation?.price_company ?? formation?.public_price_excl_tax;
         const days = formation?.duration_days;
         if (
           publicPrice !== null &&
@@ -491,16 +473,32 @@ export default async function DashboardPage({
 
   const yearStart = `${selectedYear}-01-01`;
   const yearEnd = `${selectedYear + 1}-01-01`;
+  // Refonte 2026-06-12 (Gilles) — calcul SESSION-CENTRÉ pour corriger :
+  //  1. Montants : même cascade que le tableau /sessions (amount_ht →
+  //     sous-traitance forfait jour OF → forfait INTRA → somme inscriptions →
+  //     R7 per_learner → catalogue × inscrits). Avant on ne sommait que
+  //     billing/quote des inscriptions -> INTRA forfait & sous-traitance "—".
+  //  2. Heures-stagiaires : CAP NUMÉRIQUE & prescripteur = nb PRÉSENTS
+  //     (émargement) × heures ; OF (CAP sous-traitant) = nb INSCRITS × heures.
+  //  3. Source affichée par session (CAP NUMÉRIQUE / Prescripteur / OF).
   const { data: yearEnrollments } = await supabase
     .from("session_enrollments")
     .select(
       `
       id, learner_id,
       learner:learners(company_id, first_name, last_name, company_name_temp),
-      session:sessions!inner(id, start_date, end_date, status, modality, is_inter,
-        formation:formations(title, duration_hours, duration_days)
+      session:sessions!inner(
+        id, start_date, end_date, status, modality, is_inter,
+        amount_ht, pricing_mode, price_per_day_ht, price_forfait_ht,
+        price_extra_per_day_ht, pricing_threshold,
+        is_subcontracted, subcontracting_company_id, prescriber_company_id,
+        prescriber:companies!prescriber_company_id(name, type),
+        formation:formations(title, duration_hours, duration_days, public_price_excl_tax, price_company)
       ),
-      inscription_request:inscription_requests(quote_amount_ht, billing_total_ht)
+      inscription_request:inscription_requests(
+        quote_amount_ht, billing_total_ht,
+        referrer:companies!referrer_company_id(name, type)
+      )
     `,
     )
     .neq("status", "cancelled")
@@ -511,6 +509,7 @@ export default async function DashboardPage({
     "Jan", "Fév", "Mar", "Avr", "Mai", "Juin",
     "Juil", "Août", "Sep", "Oct", "Nov", "Déc",
   ];
+  const VAT_RATE = 0.2;
   const monthlyAcc: Record<
     number,
     {
@@ -535,55 +534,23 @@ export default async function DashboardPage({
     };
   }
 
-  type LearnerJoin = {
-    company_id: string | null;
-    first_name: string | null;
-    last_name: string | null;
-    company_name_temp: string | null;
-  };
-  type FormationJoin = {
-    title: string | null;
-    duration_hours: number | null;
-    duration_days: number | null;
-  };
-  type SessionJoin = {
-    id: string;
-    start_date: string | null;
-    end_date: string | null;
-    status: string | null;
-    modality: string | null;
-    is_inter: boolean | null;
-    formation: FormationJoin | FormationJoin[] | null;
-  };
-  type YearEnr = {
-    id: string;
-    learner_id: string | null;
-    learner: LearnerJoin | LearnerJoin[] | null;
-    session: SessionJoin | SessionJoin[] | null;
-    inscription_request:
-      | { quote_amount_ht: number | string | null; billing_total_ht: number | string | null }
-      | Array<{ quote_amount_ht: number | string | null; billing_total_ht: number | string | null }>
-      | null;
-  };
-
   // Détail pour le dépliage (mois -> sessions -> apprenants + coût/jour).
-  const monthlyDetailAcc: Record<
-    number,
-    Map<
-      string,
-      {
-        id: string;
-        title: string;
-        date: string;
-        modality: string | null;
-        isInter: boolean;
-        isRealise: boolean;
-        days: number;
-        amountHt: number;
-        learners: { name: string; amountHt: number; perDayHt: number }[];
-      }
-    >
-  > = {};
+  type DetailSession = {
+    id: string;
+    title: string;
+    date: string;
+    modality: string | null;
+    isInter: boolean;
+    isRealise: boolean;
+    days: number;
+    amountHt: number;
+    amountTtc: number;
+    hours: number;
+    source: string;
+    sourceKind: "direct" | "of" | "partenaire";
+    learners: { name: string; amountHt: number; perDayHt: number }[];
+  };
+  const monthlyDetailAcc: Record<number, Map<string, DetailSession>> = {};
   for (let m = 0; m < 12; m++) monthlyDetailAcc[m] = new Map();
 
   // Statuts de session retenus = sessions CONFIRMÉES (Gilles 2026-06-08).
@@ -595,108 +562,386 @@ export default async function DashboardPage({
     "in_progress",
     "completed",
   ]);
-  ((yearEnrollments ?? []) as unknown as YearEnr[]).forEach((e) => {
-    const sess = Array.isArray(e.session) ? e.session[0] : e.session;
-    if (!sess?.start_date) return;
-    const sessStatus = (sess as { status?: string | null }).status ?? "";
-    if (!COUNTED_SESSION_STATUSES.has(sessStatus)) return;
-    const monthIdx = new Date(sess.start_date + "T00:00:00").getMonth();
+
+  // --- Helpers d'extraction (les jointures Supabase arrivent en objet ou
+  //     en tableau selon la cardinalité). ---
+  const pick = <T,>(v: T | T[] | null | undefined): T | null =>
+    Array.isArray(v) ? v[0] ?? null : v ?? null;
+  const numOrNull = (v: number | string | null | undefined): number | null => {
+    if (v === null || v === undefined) return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  type CoNm = { name: string | null; type?: string | null };
+  type FormJoin = {
+    title: string | null;
+    duration_hours: number | string | null;
+    duration_days: number | string | null;
+    public_price_excl_tax: number | string | null;
+    price_company: number | string | null;
+  };
+  type SessJoin = {
+    id: string;
+    start_date: string | null;
+    end_date: string | null;
+    status: string | null;
+    modality: string | null;
+    is_inter: boolean | null;
+    amount_ht: number | string | null;
+    pricing_mode: "per_learner" | "forfait" | null;
+    price_per_day_ht: number | string | null;
+    price_forfait_ht: number | string | null;
+    price_extra_per_day_ht: number | string | null;
+    pricing_threshold: number | string | null;
+    is_subcontracted: boolean | null;
+    subcontracting_company_id: string | null;
+    prescriber_company_id: string | null;
+    prescriber: CoNm | CoNm[] | null;
+    formation: FormJoin | FormJoin[] | null;
+  };
+  type EnrLearner = {
+    company_id: string | null;
+    first_name: string | null;
+    last_name: string | null;
+    company_name_temp: string | null;
+  };
+  type EnrReq = {
+    quote_amount_ht: number | string | null;
+    billing_total_ht: number | string | null;
+    referrer: CoNm | CoNm[] | null;
+  };
+  type EnrRow = {
+    id: string;
+    learner_id: string | null;
+    learner: EnrLearner | EnrLearner[] | null;
+    session: SessJoin | SessJoin[] | null;
+    inscription_request: EnrReq | EnrReq[] | null;
+  };
+
+  const enrRows = (yearEnrollments ?? []) as unknown as EnrRow[];
+
+  // Présence (émargement apprenant) pour le calcul des heures-stagiaires
+  // CAP NUMÉRIQUE / prescripteur.
+  const enrIds = enrRows.map((e) => e.id);
+  const presentEnrollments = new Set<string>();
+  if (enrIds.length > 0) {
+    const { data: sigRows } = await supabase
+      .from("attendance_signatures")
+      .select("enrollment_id")
+      .in("enrollment_id", enrIds)
+      .eq("signer_role", "learner");
+    for (const s of (sigRows ?? []) as Array<{ enrollment_id: string }>) {
+      presentEnrollments.add(s.enrollment_id);
+    }
+  }
+
+  // Regroupement par session : on calcule le montant UNE fois par session
+  // (la cascade peut être un forfait ou un montant sous-traitance, dus une
+  // seule fois), pas par inscription.
+  type SessEnr = {
+    id: string;
+    name: string;
+    companyId: string | null;
+    amount: number | null;
+    present: boolean;
+    referrer: CoNm | null;
+  };
+  type SessGroup = {
+    id: string;
+    start_date: string;
+    end_date: string | null;
+    isSubcontracted: boolean;
+    ofCompanyId: string | null;
+    ofName: string | null;
+    modality: string | null;
+    isInter: boolean;
+    title: string;
+    durationDays: number | null;
+    durationHours: number;
+    pubUnit: number | null;
+    amountHtManual: number | null;
+    pricingMode: "per_learner" | "forfait" | null;
+    pricePerDay: number | null;
+    priceForfait: number | null;
+    priceExtra: number | null;
+    threshold: number | null;
+    enrollments: SessEnr[];
+  };
+  const sessGroups = new Map<string, SessGroup>();
+
+  for (const e of enrRows) {
+    const sess = pick(e.session);
+    if (!sess?.start_date || !sess.id) continue;
+    if (!COUNTED_SESSION_STATUSES.has(sess.status ?? "")) continue;
+    let g = sessGroups.get(sess.id);
+    if (!g) {
+      const form = pick(sess.formation);
+      const pres = pick(sess.prescriber);
+      const pubUnit =
+        numOrNull(form?.price_company) ??
+        numOrNull(form?.public_price_excl_tax);
+      g = {
+        id: sess.id,
+        start_date: sess.start_date,
+        end_date: sess.end_date,
+        isSubcontracted: sess.is_subcontracted === true,
+        ofCompanyId:
+          sess.subcontracting_company_id ?? sess.prescriber_company_id ?? null,
+        // Nom de l'OF donneur d'ordre : prescriber (embed) en 1er, complété
+        // ensuite par ofNameById (cf. requête tarifs sous-traitance).
+        ofName: pres?.name ?? null,
+        modality: sess.modality,
+        isInter: sess.is_inter === true,
+        title: (form?.title ?? "").trim() || "Session",
+        durationDays: numOrNull(form?.duration_days),
+        durationHours: numOrNull(form?.duration_hours) ?? 0,
+        pubUnit: pubUnit && pubUnit > 0 ? pubUnit : null,
+        amountHtManual: numOrNull(sess.amount_ht),
+        pricingMode: sess.pricing_mode ?? null,
+        pricePerDay: numOrNull(sess.price_per_day_ht),
+        priceForfait: numOrNull(sess.price_forfait_ht),
+        priceExtra: numOrNull(sess.price_extra_per_day_ht),
+        threshold: numOrNull(sess.pricing_threshold),
+        enrollments: [],
+      };
+      sessGroups.set(sess.id, g);
+    }
+    const learner = pick(e.learner);
+    const req = pick(e.inscription_request);
+    const referrer = req ? pick(req.referrer) : null;
+    const ctx: DisplayAmountSessionContext = {
+      pricing_mode: g.pricingMode,
+      price_per_day_ht: g.pricePerDay,
+      price_forfait_ht: g.priceForfait,
+      price_extra_per_day_ht: g.priceExtra,
+      pricing_threshold: g.threshold,
+      duration_days: g.durationDays,
+      formation_public_price_excl_tax: g.pubUnit,
+    };
+    const res = computeInscriptionDisplayAmount(req ?? {}, ctx);
+    const name =
+      [learner?.first_name, learner?.last_name]
+        .filter(Boolean)
+        .join(" ")
+        .trim() ||
+      learner?.company_name_temp ||
+      "Apprenant";
+    g.enrollments.push({
+      id: e.id,
+      name,
+      companyId: learner?.company_id ?? null,
+      amount: res.amount,
+      present: presentEnrollments.has(e.id),
+      referrer,
+    });
+  }
+
+  // Tarifs sous-traitance des OF donneurs d'ordre (forfait jour).
+  const ofIds = Array.from(
+    new Set(
+      Array.from(sessGroups.values())
+        .filter((g) => g.isSubcontracted && g.ofCompanyId)
+        .map((g) => g.ofCompanyId as string),
+    ),
+  );
+  const ofRates = new Map<
+    string,
+    { distanciel: number | null; presentiel: number | null }
+  >();
+  const ofNameById = new Map<string, string>();
+  if (ofIds.length > 0) {
+    const { data: rc } = await supabase
+      .from("companies")
+      .select(
+        "id, name, subcontracting_daily_rate_distanciel_ht, subcontracting_daily_rate_presentiel_ht",
+      )
+      .in("id", ofIds);
+    for (const c of (rc ?? []) as Array<{
+      id: string;
+      name: string | null;
+      subcontracting_daily_rate_distanciel_ht: number | string | null;
+      subcontracting_daily_rate_presentiel_ht: number | string | null;
+    }>) {
+      ofRates.set(c.id, {
+        distanciel: numOrNull(c.subcontracting_daily_rate_distanciel_ht),
+        presentiel: numOrNull(c.subcontracting_daily_rate_presentiel_ht),
+      });
+      if (c.name) ofNameById.set(c.id, c.name);
+    }
+  }
+
+  const daysOf = (g: SessGroup): number =>
+    g.durationDays && g.durationDays > 0
+      ? g.durationDays
+      : g.end_date
+        ? Math.max(
+            1,
+            Math.round(
+              (new Date(g.end_date).getTime() -
+                new Date(g.start_date).getTime()) /
+                86_400_000,
+            ) + 1,
+          )
+        : 1;
+
+  const subcontractAmountOf = (g: SessGroup): number | null => {
+    if (!g.isSubcontracted || !g.ofCompanyId) return null;
+    const rates = ofRates.get(g.ofCompanyId);
+    if (!rates) return null;
+    const rate =
+      g.modality === "distanciel"
+        ? rates.distanciel ?? rates.presentiel
+        : rates.presentiel ?? rates.distanciel;
+    if (!rate || rate <= 0) return null;
+    return Math.round(rate * daysOf(g) * 100) / 100;
+  };
+
+  const r7AmountOf = (g: SessGroup, nbInscrits: number): number | null => {
+    if (!g.pricingMode) return null;
+    const days = daysOf(g);
+    const nbForPrice =
+      g.pricingMode === "forfait" ? Math.max(nbInscrits, 1) : nbInscrits;
+    const breakdown = computeSessionPrice(
+      {
+        mode: g.pricingMode,
+        pricePerDayHt: g.pricePerDay,
+        priceForfaitHt: g.priceForfait,
+        priceExtraPerDayHt: g.priceExtra,
+        threshold: g.threshold,
+      },
+      nbForPrice,
+      days,
+    );
+    return breakdown.totalHt > 0 ? breakdown.totalHt : null;
+  };
+
+  // Calcul final par session puis ventilation dans le mois.
+  for (const g of sessGroups.values()) {
+    const monthIdx = new Date(g.start_date + "T00:00:00").getMonth();
     const bucket = monthlyAcc[monthIdx];
-    if (!bucket) return;
-    bucket.participants.add(e.id);
-    // Réalisé vs prévisionnel : une session est "réalisée" quand sa date de
-    // FIN est dépassée (terminée). Sinon (à venir / en cours) -> prévisionnel.
-    const sessEnd =
-      (sess as { end_date?: string | null }).end_date ?? sess.start_date;
-    const isRealise = sessEnd ? sessEnd.slice(0, 10) < todayIso : false;
-    const learner = Array.isArray(e.learner) ? e.learner[0] : e.learner;
-    if (learner?.company_id) bucket.companies.add(learner.company_id);
-    const form = sess.formation
-      ? Array.isArray(sess.formation)
-        ? sess.formation[0]
-        : sess.formation
-      : null;
-    if (form?.duration_hours) bucket.hours += Number(form.duration_hours);
-    const req = Array.isArray(e.inscription_request)
-      ? e.inscription_request[0]
-      : e.inscription_request;
-    // Refonte 2026-05-31 : billing_total_ht en priorite (refonte
-    // tarification), sinon quote_amount_ht (legacy).
-    const billing = req?.billing_total_ht;
-    const amt =
-      billing !== null && billing !== undefined ? billing : req?.quote_amount_ht;
-    let enrAmount = 0;
-    if (amt !== null && amt !== undefined) {
-      const n = Number(amt);
-      if (Number.isFinite(n)) {
-        bucket.amountHt += n;
-        if (isRealise) bucket.amountHtRealise += n;
-        else bucket.amountHtPrevi += n;
-        enrAmount = n;
+    if (!bucket) continue;
+
+    const nbInscrits = g.enrollments.length;
+    const inscriptionTotal = g.enrollments.reduce(
+      (acc, e) => acc + (e.amount && e.amount > 0 ? e.amount : 0),
+      0,
+    );
+    const r7 = r7AmountOf(g, nbInscrits);
+    const isForfait = g.pricingMode === "forfait";
+    const useForfaitFirst =
+      g.amountHtManual === null && isForfait && r7 !== null;
+    const sc = g.amountHtManual === null ? subcontractAmountOf(g) : null;
+    // Cascade alignée sur le tableau /sessions (Gilles 2026-06-12).
+    const amount =
+      g.amountHtManual !== null
+        ? g.amountHtManual
+        : sc !== null
+          ? sc
+          : useForfaitFirst
+            ? r7
+            : inscriptionTotal > 0
+              ? inscriptionTotal
+              : r7 !== null
+                ? r7
+                : g.pubUnit && g.pubUnit > 0 && nbInscrits > 0
+                  ? g.pubUnit * nbInscrits
+                  : null;
+    const amountFromInscriptions =
+      g.amountHtManual === null &&
+      sc === null &&
+      !useForfaitFirst &&
+      inscriptionTotal > 0;
+
+    // Source : OF (sous-traitance) / Prescripteur / CAP NUMÉRIQUE.
+    let sourceKind: "direct" | "of" | "partenaire";
+    let sourceLabel: string;
+    if (g.isSubcontracted) {
+      sourceKind = "of";
+      const ofNm =
+        (g.ofCompanyId ? ofNameById.get(g.ofCompanyId) : null) ?? g.ofName;
+      sourceLabel = ofNm ? `OF · ${ofNm}` : "OF (donneur d'ordre)";
+    } else {
+      const ref =
+        g.enrollments.map((e) => e.referrer).find((r) => r && r.name) ?? null;
+      if (ref?.name) {
+        if (ref.type === "of") {
+          sourceKind = "of";
+          sourceLabel = `OF · ${ref.name}`;
+        } else {
+          sourceKind = "partenaire";
+          sourceLabel = `Prescripteur · ${ref.name}`;
+        }
+      } else {
+        sourceKind = "direct";
+        sourceLabel = "CAP NUMÉRIQUE";
       }
     }
 
-    // --- Détail dépliage ---
-    const sid = (sess as { id?: string }).id;
-    if (sid) {
-      const end = (sess as { end_date?: string | null }).end_date ?? null;
-      const days =
-        form?.duration_days && Number(form.duration_days) > 0
-          ? Number(form.duration_days)
-          : end && sess.start_date
-            ? Math.max(
-                1,
-                Math.round(
-                  (new Date(end).getTime() -
-                    new Date(sess.start_date).getTime()) /
-                    86_400_000,
-                ) + 1,
-              )
-            : 1;
-      const dmap = monthlyDetailAcc[monthIdx];
-      let entry = dmap.get(sid);
-      if (!entry) {
-        entry = {
-          id: sid,
-          title: (form?.title as string | null)?.trim() || "Session",
-          date: sess.start_date as string,
-          modality: (sess as { modality?: string | null }).modality ?? null,
-          isInter: (sess as { is_inter?: boolean | null }).is_inter === true,
-          isRealise,
-          days,
-          amountHt: 0,
-          learners: [],
-        };
-        dmap.set(sid, entry);
-      }
-      const ln = Array.isArray(e.learner) ? e.learner[0] : e.learner;
-      const name =
-        [ln?.first_name, ln?.last_name].filter(Boolean).join(" ").trim() ||
-        "Apprenant";
-      entry.amountHt += enrAmount;
-      entry.learners.push({
-        name,
-        amountHt: enrAmount,
-        perDayHt: days > 0 ? Math.round((enrAmount / days) * 100) / 100 : enrAmount,
-      });
+    // Heures-stagiaires (Gilles 2026-06-12) : OF = nb inscrits × heures ;
+    // CAP NUMÉRIQUE & prescripteur = nb PRÉSENTS (émargement) × heures.
+    const nbForHours =
+      sourceKind === "of"
+        ? nbInscrits
+        : g.enrollments.filter((e) => e.present).length;
+    const sessionHours = g.durationHours * nbForHours;
+
+    // Réalisé (fin dépassée) vs prévisionnel.
+    const sessEnd = g.end_date ?? g.start_date;
+    const isRealise = sessEnd ? sessEnd.slice(0, 10) < todayIso : false;
+
+    for (const e of g.enrollments) {
+      bucket.participants.add(e.id);
+      if (e.companyId) bucket.companies.add(e.companyId);
     }
-  });
+    bucket.hours += sessionHours;
+    if (amount !== null) {
+      bucket.amountHt += amount;
+      if (isRealise) bucket.amountHtRealise += amount;
+      else bucket.amountHtPrevi += amount;
+    }
+
+    // Détail dépliage : coût par apprenant. Si le montant vient des
+    // inscriptions on garde le montant réel par apprenant, sinon on répartit
+    // le montant session à parts égales (forfait / sous-traitance).
+    const days = daysOf(g);
+    const perLearnerEven =
+      amount !== null && nbInscrits > 0 ? amount / nbInscrits : 0;
+    const learners = g.enrollments.map((e) => {
+      const a = amountFromInscriptions
+        ? e.amount && e.amount > 0
+          ? e.amount
+          : 0
+        : perLearnerEven;
+      return {
+        name: e.name,
+        amountHt: Math.round(a * 100) / 100,
+        perDayHt: days > 0 ? Math.round((a / days) * 100) / 100 : a,
+      };
+    });
+
+    monthlyDetailAcc[monthIdx].set(g.id, {
+      id: g.id,
+      title: g.title,
+      date: g.start_date,
+      modality: g.modality,
+      isInter: g.isInter,
+      isRealise,
+      days,
+      amountHt: amount !== null ? Math.round(amount * 100) / 100 : 0,
+      amountTtc:
+        amount !== null
+          ? Math.round(amount * (1 + VAT_RATE) * 100) / 100
+          : 0,
+      hours: Math.round(sessionHours),
+      source: sourceLabel,
+      sourceKind,
+      learners,
+    });
+  }
 
   // Conversion du détail en tableaux triés par date, prêts pour le client.
-  const monthlyDetail: Record<
-    string,
-    Array<{
-      id: string;
-      title: string;
-      date: string;
-      modality: string | null;
-      isInter: boolean;
-      isRealise: boolean;
-      days: number;
-      amountHt: number;
-      learners: { name: string; amountHt: number; perDayHt: number }[];
-    }>
-  > = {};
+  const monthlyDetail: Record<string, DetailSession[]> = {};
   for (let m = 0; m < 12; m++) {
     const key = `${selectedYear}-${String(m + 1).padStart(2, "0")}`;
     monthlyDetail[key] = Array.from(monthlyDetailAcc[m].values()).sort((a, b) =>
@@ -704,7 +949,6 @@ export default async function DashboardPage({
     );
   }
 
-  const VAT_RATE = 0.2;
   const monthlyStats: MonthlyStatsType[] = MONTH_LABELS.map((label, i) => ({
     month: `${selectedYear}-${String(i + 1).padStart(2, "0")}`,
     monthLabel: label,

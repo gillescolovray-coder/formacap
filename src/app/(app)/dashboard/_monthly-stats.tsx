@@ -38,6 +38,11 @@ export type MonthlyDetailSession = {
   isRealise: boolean;
   days: number;
   amountHt: number;
+  amountTtc: number;
+  hours: number;
+  /** Libellé de la source : "CAP NUMÉRIQUE", "Prescripteur · …", "OF · …". */
+  source: string;
+  sourceKind: "direct" | "of" | "partenaire";
   learners: { name: string; amountHt: number; perDayHt: number }[];
 };
 
@@ -362,8 +367,8 @@ export function MonthlyStats({
                             className="bg-zinc-50/70 dark:bg-zinc-900/30 border-t border-zinc-100 cursor-pointer hover:bg-cyan-50/60"
                             onClick={() => toggleSession(s.id)}
                           >
-                            <td className="px-3 py-1.5 pl-8" colSpan={3}>
-                              <span className="inline-flex items-center gap-1.5 text-xs">
+                            <td className="px-3 py-1.5 pl-8">
+                              <span className="inline-flex items-center gap-1.5 text-xs flex-wrap">
                                 <ChevronRight
                                   className={`h-3 w-3 text-zinc-400 transition-transform ${
                                     sOpen ? "rotate-90" : ""
@@ -375,6 +380,10 @@ export function MonthlyStats({
                                 <span className="font-medium text-zinc-700">
                                   {s.title}
                                 </span>
+                                <SourceBadge
+                                  kind={s.sourceKind}
+                                  label={s.source}
+                                />
                                 <span
                                   className={`text-[9px] uppercase font-bold px-1.5 py-0.5 rounded ${
                                     s.isRealise
@@ -394,16 +403,27 @@ export function MonthlyStats({
                             <td className="px-3 py-1.5 text-right tabular-nums text-xs text-zinc-500">
                               {s.learners.length}
                             </td>
+                            <td className="px-3 py-1.5 text-right tabular-nums text-xs text-zinc-500">
+                              {s.hours > 0 ? Math.round(s.hours) : "—"}
+                            </td>
+                            <td className="px-3 py-1.5 text-right tabular-nums text-[10px] text-zinc-400">
+                              —
+                            </td>
                             <td className="px-3 py-1.5 text-right tabular-nums text-xs">
                               {s.amountHt > 0
                                 ? currencyFormatterPrecise.format(s.amountHt)
                                 : "—"}
                             </td>
                             <td className="px-3 py-1.5 text-right">
+                              <div className="tabular-nums text-xs font-medium text-emerald-700">
+                                {s.amountTtc > 0
+                                  ? currencyFormatterPrecise.format(s.amountTtc)
+                                  : "—"}
+                              </div>
                               <Link
                                 href={`/sessions/${s.id}`}
                                 onClick={(e) => e.stopPropagation()}
-                                className="text-[11px] text-cyan-700 hover:underline"
+                                className="text-[10px] text-cyan-700 hover:underline"
                               >
                                 Ouvrir →
                               </Link>
@@ -480,6 +500,29 @@ export function MonthlyStats({
         </table>
       </div>
     </div>
+  );
+}
+
+/** Petit badge indiquant la source de la session (Gilles 2026-06-12). */
+function SourceBadge({
+  kind,
+  label,
+}: {
+  kind: "direct" | "of" | "partenaire";
+  label: string;
+}) {
+  const cls = {
+    direct: "bg-cyan-100 text-cyan-800",
+    of: "bg-amber-100 text-amber-800",
+    partenaire: "bg-violet-100 text-violet-800",
+  }[kind];
+  return (
+    <span
+      className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${cls}`}
+      title={`Source : ${label}`}
+    >
+      {label}
+    </span>
   );
 }
 
