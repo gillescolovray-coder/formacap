@@ -481,29 +481,48 @@ export default async function DashboardPage({
   //  2. Heures-stagiaires : CAP NUMÉRIQUE & prescripteur = nb PRÉSENTS
   //     (émargement) × heures ; OF (CAP sous-traitant) = nb INSCRITS × heures.
   //  3. Source affichée par session (CAP NUMÉRIQUE / Prescripteur / OF).
-  const { data: yearEnrollments } = await supabase
-    .from("session_enrollments")
+  //  4. On part des SESSIONS (et non des inscriptions) pour que les sessions
+  //     confirmées SANS inscrit apparaissent aussi, avec leur forfait/jour
+  //     (Gilles 2026-06-12). Filtre statut conservé : confirmée/en cours/
+  //     terminée uniquement (brouillon & planifiée exclus).
+  const { data: yearSessions } = await supabase
+    .from("sessions")
     .select(
       `
-      id, learner_id,
-      learner:learners(company_id, first_name, last_name, company_name_temp),
-      session:sessions!inner(
-        id, start_date, end_date, status, modality, is_inter,
-        amount_ht, pricing_mode, price_per_day_ht, price_forfait_ht,
-        price_extra_per_day_ht, pricing_threshold,
-        is_subcontracted, subcontracting_company_id, prescriber_company_id,
-        prescriber:companies!prescriber_company_id(name, type),
-        formation:formations(title, duration_hours, duration_days, public_price_excl_tax, price_company)
-      ),
-      inscription_request:inscription_requests(
-        quote_amount_ht, billing_total_ht,
-        referrer:companies!referrer_company_id(name, type)
-      )
+      id, start_date, end_date, status, modality, is_inter,
+      amount_ht, pricing_mode, price_per_day_ht, price_forfait_ht,
+      price_extra_per_day_ht, pricing_threshold,
+      is_subcontracted, subcontracting_company_id, prescriber_company_id,
+      prescriber:companies!prescriber_company_id(name, type),
+      formation:formations(title, duration_hours, duration_days, public_price_excl_tax, price_company)
     `,
     )
-    .neq("status", "cancelled")
-    .gte("session.start_date", yearStart)
-    .lt("session.start_date", yearEnd);
+    .in("status", ["confirmed", "in_progress", "completed"])
+    .gte("start_date", yearStart)
+    .lt("start_date", yearEnd);
+
+  const yearSessionRows = (yearSessions ?? []) as unknown as SessJoin[];
+  const yearSessionIds = yearSessionRows
+    .map((s) => s.id)
+    .filter((x): x is string => Boolean(x));
+
+  const { data: yearEnrollments } =
+    yearSessionIds.length > 0
+      ? await supabase
+          .from("session_enrollments")
+          .select(
+            `
+            id, session_id, learner_id,
+            learner:learners(company_id, first_name, last_name, company_name_temp),
+            inscription_request:inscription_requests(
+              quote_amount_ht, billing_total_ht,
+              referrer:companies!referrer_company_id(name, type)
+            )
+          `,
+          )
+          .neq("status", "cancelled")
+          .in("session_id", yearSessionIds)
+      : { data: [] as unknown[] };
 
   const MONTH_LABELS = [
     "Jan", "Fév", "Mar", "Avr", "Mai", "Juin",
@@ -613,9 +632,9 @@ export default async function DashboardPage({
   };
   type EnrRow = {
     id: string;
+    session_id: string | null;
     learner_id: string | null;
     learner: EnrLearner | EnrLearner[] | null;
-    session: SessJoin | SessJoin[] | null;
     inscription_request: EnrReq | EnrReq[] | null;
   };
 
@@ -670,43 +689,47 @@ export default async function DashboardPage({
   };
   const sessGroups = new Map<string, SessGroup>();
 
-  for (const e of enrRows) {
-    const sess = pick(e.session);
+  // 1) Un groupe par SESSION confirmée de l'année (même sans inscrit).
+  for (const sess of yearSessionRows) {
     if (!sess?.start_date || !sess.id) continue;
     if (!COUNTED_SESSION_STATUSES.has(sess.status ?? "")) continue;
-    let g = sessGroups.get(sess.id);
-    if (!g) {
-      const form = pick(sess.formation);
-      const pres = pick(sess.prescriber);
-      const pubUnit =
-        numOrNull(form?.price_company) ??
-        numOrNull(form?.public_price_excl_tax);
-      g = {
-        id: sess.id,
-        start_date: sess.start_date,
-        end_date: sess.end_date,
-        isSubcontracted: sess.is_subcontracted === true,
-        ofCompanyId:
-          sess.subcontracting_company_id ?? sess.prescriber_company_id ?? null,
-        // Nom de l'OF donneur d'ordre : prescriber (embed) en 1er, complété
-        // ensuite par ofNameById (cf. requête tarifs sous-traitance).
-        ofName: pres?.name ?? null,
-        modality: sess.modality,
-        isInter: sess.is_inter === true,
-        title: (form?.title ?? "").trim() || "Session",
-        durationDays: numOrNull(form?.duration_days),
-        durationHours: numOrNull(form?.duration_hours) ?? 0,
-        pubUnit: pubUnit && pubUnit > 0 ? pubUnit : null,
-        amountHtManual: numOrNull(sess.amount_ht),
-        pricingMode: sess.pricing_mode ?? null,
-        pricePerDay: numOrNull(sess.price_per_day_ht),
-        priceForfait: numOrNull(sess.price_forfait_ht),
-        priceExtra: numOrNull(sess.price_extra_per_day_ht),
-        threshold: numOrNull(sess.pricing_threshold),
-        enrollments: [],
-      };
-      sessGroups.set(sess.id, g);
-    }
+    if (sessGroups.has(sess.id)) continue;
+    const form = pick(sess.formation);
+    const pres = pick(sess.prescriber);
+    const pubUnit =
+      numOrNull(form?.price_company) ?? numOrNull(form?.public_price_excl_tax);
+    sessGroups.set(sess.id, {
+      id: sess.id,
+      start_date: sess.start_date,
+      end_date: sess.end_date,
+      isSubcontracted: sess.is_subcontracted === true,
+      ofCompanyId:
+        sess.subcontracting_company_id ?? sess.prescriber_company_id ?? null,
+      // Nom de l'OF donneur d'ordre : prescriber (embed) en 1er, complété
+      // ensuite par ofNameById (cf. requête tarifs sous-traitance).
+      ofName: pres?.name ?? null,
+      modality: sess.modality,
+      isInter: sess.is_inter === true,
+      title: (form?.title ?? "").trim() || "Session",
+      durationDays: numOrNull(form?.duration_days),
+      durationHours: numOrNull(form?.duration_hours) ?? 0,
+      pubUnit: pubUnit && pubUnit > 0 ? pubUnit : null,
+      amountHtManual: numOrNull(sess.amount_ht),
+      pricingMode: sess.pricing_mode ?? null,
+      pricePerDay: numOrNull(sess.price_per_day_ht),
+      priceForfait: numOrNull(sess.price_forfait_ht),
+      priceExtra: numOrNull(sess.price_extra_per_day_ht),
+      threshold: numOrNull(sess.pricing_threshold),
+      enrollments: [],
+    });
+  }
+
+  // 2) Rattache chaque inscription (non annulée) à sa session.
+  for (const e of enrRows) {
+    const sid = e.session_id;
+    if (!sid) continue;
+    const g = sessGroups.get(sid);
+    if (!g) continue; // session hors périmètre (statut non compté / autre année)
     const learner = pick(e.learner);
     const req = pick(e.inscription_request);
     const referrer = req ? pick(req.referrer) : null;
