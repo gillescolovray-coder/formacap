@@ -255,6 +255,12 @@ export default async function SessionsListPage({
   // Contexte tarification R7 par session (hors du if hasSessions pour rester
   // accessible dans le helper r7SessionAmount et le rendu JSX).
   const sessionCtxById = new Map<string, DisplayAmountSessionContext>();
+  // Sous-traitance : session -> { donneur d'ordre (OF), modalité } pour
+  // calculer le forfait jour (Gilles 2026-06-12).
+  const subcontractInfoBySession = new Map<
+    string,
+    { companyId: string | null; modality: string | null; durationDays: number | null }
+  >();
   // Formateurs déduits des jours (session_days.trainer_id) — un seul
   // par id, fusionnés au cas où plusieurs jours partagent un formateur.
   const dayTrainersBySession = new Map<
@@ -474,6 +480,15 @@ export default async function SessionsListPage({
         // le mode forfait sera moins precis ici mais c est acceptable
         // pour une vue agregee (les ecrans detail font le bon calcul).
       });
+      // Sous-traitance : on garde l'OF donneur d'ordre + la modalité.
+      if (sessAny.is_subcontracted === true) {
+        subcontractInfoBySession.set((s as { id: string }).id, {
+          companyId:
+            (sessAny.subcontracting_company_id as string | null) ?? null,
+          modality: (sessAny.modality as string | null) ?? null,
+          durationDays,
+        });
+      }
     }
 
     (inscriptions ?? []).forEach((r, idx) => {
@@ -656,6 +671,67 @@ export default async function SessionsListPage({
     }
   }
   const stageById = new Map(stagesList.map((s) => [s.id, s]));
+
+  // ── Sous-traitance : montant = forfait jour de l'OF donneur d'ordre × jours
+  //    (Gilles 2026-06-12). CAP est rémunéré au forfait journalier, pas par
+  //    apprenant. Le tarif sous-traitance est sur la fiche de l'OF.
+  const subcontractCompanyIds = Array.from(
+    new Set(
+      Array.from(subcontractInfoBySession.values())
+        .map((v) => v.companyId)
+        .filter((x): x is string => Boolean(x)),
+    ),
+  );
+  const subcontractRateByCompany = new Map<
+    string,
+    { distanciel: number | null; presentiel: number | null }
+  >();
+  if (subcontractCompanyIds.length > 0) {
+    const { data: scCompanies } = await supabase
+      .from("companies")
+      .select(
+        "id, subcontracting_daily_rate_distanciel_ht, subcontracting_daily_rate_presentiel_ht",
+      )
+      .in("id", subcontractCompanyIds);
+    for (const c of (scCompanies ?? []) as Array<{
+      id: string;
+      subcontracting_daily_rate_distanciel_ht: number | string | null;
+      subcontracting_daily_rate_presentiel_ht: number | string | null;
+    }>) {
+      const toN = (v: number | string | null) =>
+        v == null ? null : Number.isFinite(Number(v)) ? Number(v) : null;
+      subcontractRateByCompany.set(c.id, {
+        distanciel: toN(c.subcontracting_daily_rate_distanciel_ht),
+        presentiel: toN(c.subcontracting_daily_rate_presentiel_ht),
+      });
+    }
+  }
+
+  // Montant forfait sous-traitance pour une session (ou null si non applicable
+  // / tarif non renseigné sur l'OF).
+  const subcontractAmount = (s: TrainingSession): number | null => {
+    const info = subcontractInfoBySession.get(s.id);
+    if (!info || !info.companyId) return null;
+    const rates = subcontractRateByCompany.get(info.companyId);
+    if (!rates) return null;
+    const rate =
+      info.modality === "distanciel"
+        ? rates.distanciel ?? rates.presentiel
+        : rates.presentiel ?? rates.distanciel;
+    if (!rate || rate <= 0) return null;
+    const days =
+      info.durationDays && info.durationDays > 0
+        ? info.durationDays
+        : Math.max(
+            1,
+            Math.round(
+              (new Date(s.end_date).getTime() -
+                new Date(s.start_date).getTime()) /
+                86_400_000,
+            ) + 1,
+          );
+    return Math.round(rate * days * 100) / 100;
+  };
 
   // Montant calculé depuis la tarification R7 propre à la session (forfait
   // INTRA / per_learner INTER) — Gilles 2026-06-08. Permet d'afficher le
@@ -1255,6 +1331,9 @@ export default async function SessionsListPage({
                 let amount = 0;
                 if (s.amount_ht !== null && s.amount_ht !== undefined) {
                   amount = Number(s.amount_ht);
+                } else if (subcontractAmount(s) !== null) {
+                  // Sous-traitance : forfait jour de l'OF (prioritaire).
+                  amount = subcontractAmount(s) as number;
                 } else {
                   // Tarification R7 propre à la session. En mode forfait
                   // (INTRA), le forfait est un PRIX FIXE qui prime sur la
@@ -1424,21 +1503,30 @@ export default async function SessionsListPage({
                       (s.amount_ht === null || s.amount_ht === undefined) &&
                       isForfait &&
                       sessionConfigAmount !== null;
+                    // Sous-traitance : forfait jour de l'OF (prioritaire, car
+                    // CAP est payé au forfait, pas par apprenant). Gilles 2026-06-12.
+                    const scAmount =
+                      s.amount_ht === null || s.amount_ht === undefined
+                        ? subcontractAmount(s)
+                        : null;
 
                     const displayedAmount =
                       s.amount_ht !== null && s.amount_ht !== undefined
                         ? Number(s.amount_ht)
-                        : useForfaitFirst
-                          ? sessionConfigAmount
-                          : inscriptionTotal > 0
-                            ? inscriptionTotal
-                            : sessionConfigAmount !== null
-                              ? sessionConfigAmount
-                              : pubUnit && pubUnit > 0 && nbInscrits > 0
-                                ? pubUnit * nbInscrits
-                                : null;
+                        : scAmount !== null
+                          ? scAmount
+                          : useForfaitFirst
+                            ? sessionConfigAmount
+                            : inscriptionTotal > 0
+                              ? inscriptionTotal
+                              : sessionConfigAmount !== null
+                                ? sessionConfigAmount
+                                : pubUnit && pubUnit > 0 && nbInscrits > 0
+                                  ? pubUnit * nbInscrits
+                                  : null;
                     const amountFromInscriptions =
                       (s.amount_ht === null || s.amount_ht === undefined) &&
+                      scAmount === null &&
                       !useForfaitFirst &&
                       inscriptionTotal > 0;
 
