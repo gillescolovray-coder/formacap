@@ -903,10 +903,16 @@ export default async function DashboardPage({
 
     // Heures-stagiaires (Gilles 2026-06-12) : OF = nb inscrits × heures ;
     // CAP NUMÉRIQUE & prescripteur = nb PRÉSENTS (émargement) × heures.
+    // Repli (Gilles 2026-06-12) : si AUCUN émargement n'a été saisi pour la
+    // session (présents = 0), on crédite les heures à tous les inscrits —
+    // sinon une session réalisée sans émargement remonterait 0 h.
+    const presentCount = g.enrollments.filter((e) => e.present).length;
     const nbForHours =
       sourceKind === "of"
         ? nbInscrits
-        : g.enrollments.filter((e) => e.present).length;
+        : presentCount > 0
+          ? presentCount
+          : nbInscrits;
     const sessionHours = g.durationHours * nbForHours;
 
     // Réalisé (fin dépassée) vs prévisionnel.

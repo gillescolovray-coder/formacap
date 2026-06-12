@@ -409,13 +409,30 @@ export function MonthlyStats({
                             <td className="px-3 py-1.5 text-right tabular-nums text-[10px] text-zinc-400">
                               —
                             </td>
-                            <td className="px-3 py-1.5 text-right tabular-nums text-xs">
-                              {s.amountHt > 0
-                                ? currencyFormatterPrecise.format(s.amountHt)
-                                : "—"}
+                            <td
+                              className={`px-3 py-1.5 text-right tabular-nums text-xs ${
+                                s.isRealise
+                                  ? "text-zinc-700"
+                                  : "text-amber-600 italic"
+                              }`}
+                            >
+                              {s.amountHt > 0 ? (
+                                <>
+                                  {!s.isRealise && "⏳ "}
+                                  {currencyFormatterPrecise.format(s.amountHt)}
+                                </>
+                              ) : (
+                                "—"
+                              )}
                             </td>
                             <td className="px-3 py-1.5 text-right">
-                              <div className="tabular-nums text-xs font-medium text-emerald-700">
+                              <div
+                                className={`tabular-nums text-xs font-medium ${
+                                  s.isRealise
+                                    ? "text-emerald-700"
+                                    : "text-amber-600 italic"
+                                }`}
+                              >
                                 {s.amountTtc > 0
                                   ? currencyFormatterPrecise.format(s.amountTtc)
                                   : "—"}
