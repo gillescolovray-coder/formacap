@@ -275,6 +275,8 @@ export default async function DashboardPage({
       session:sessions(id, start_date, end_date, is_inter, modality,
         pricing_mode, price_per_day_ht, price_forfait_ht,
         price_extra_per_day_ht, pricing_threshold,
+        is_subcontracted, subcontracting_company_id, prescriber_company_id,
+        prescriber:companies!prescriber_company_id(name, type),
         formation:formations(title, duration_hours, duration_days, public_price_excl_tax, price_company)
       ),
       inscription_request:inscription_requests(
@@ -321,6 +323,13 @@ export default async function DashboardPage({
     price_forfait_ht: number | string | null;
     price_extra_per_day_ht: number | string | null;
     pricing_threshold: number | string | null;
+    is_subcontracted: boolean | null;
+    subcontracting_company_id: string | null;
+    prescriber_company_id: string | null;
+    prescriber:
+      | { name: string | null; type: string | null }
+      | Array<{ name: string | null; type: string | null }>
+      | null;
     formation: OverviewFormationShape | OverviewFormationShape[] | null;
   };
   type OverviewReqShape = {
@@ -342,9 +351,52 @@ export default async function DashboardPage({
     inscription_request: OverviewReqShape | OverviewReqShape[] | null;
   };
 
-  const inscriptionRows: InscriptionOverviewRow[] = (
-    (enrollmentsRaw ?? []) as unknown as EnrollmentRaw[]
-  )
+  // Sous-traitance / prescripteur : noms + tarifs jour des OF donneurs
+  // d'ordre (pour la SOURCE et le MONTANT forfait du tableau ci-dessous).
+  const ovRows = (enrollmentsRaw ?? []) as unknown as EnrollmentRaw[];
+  const ovOne = <T,>(v: unknown): T | null =>
+    (Array.isArray(v) ? (v[0] ?? null) : (v ?? null)) as T | null;
+  const ovNum = (v: number | string | null | undefined): number | null => {
+    if (v === null || v === undefined) return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  const ovCompanyIds = new Set<string>();
+  const ovSessionEnrollCount = new Map<string, number>();
+  for (const e of ovRows) {
+    const s = ovOne<OverviewSessionShape>(e.session);
+    if (!s) continue;
+    if (s.id)
+      ovSessionEnrollCount.set(s.id, (ovSessionEnrollCount.get(s.id) ?? 0) + 1);
+    if (s.subcontracting_company_id) ovCompanyIds.add(s.subcontracting_company_id);
+    if (s.prescriber_company_id) ovCompanyIds.add(s.prescriber_company_id);
+  }
+  const ovCompanyInfo = new Map<
+    string,
+    { name: string | null; distanciel: number | null; presentiel: number | null }
+  >();
+  if (ovCompanyIds.size > 0) {
+    const { data: ovc } = await supabase
+      .from("companies")
+      .select(
+        "id, name, subcontracting_daily_rate_distanciel_ht, subcontracting_daily_rate_presentiel_ht",
+      )
+      .in("id", Array.from(ovCompanyIds));
+    for (const c of (ovc ?? []) as Array<{
+      id: string;
+      name: string | null;
+      subcontracting_daily_rate_distanciel_ht: number | string | null;
+      subcontracting_daily_rate_presentiel_ht: number | string | null;
+    }>) {
+      ovCompanyInfo.set(c.id, {
+        name: c.name,
+        distanciel: ovNum(c.subcontracting_daily_rate_distanciel_ht),
+        presentiel: ovNum(c.subcontracting_daily_rate_presentiel_ht),
+      });
+    }
+  }
+
+  const inscriptionRows: InscriptionOverviewRow[] = ovRows
     .map((e) => {
       const learner = Array.isArray(e.learner) ? e.learner[0] ?? null : e.learner;
       const company =
@@ -367,47 +419,101 @@ export default async function DashboardPage({
           ? req.referrer[0] ?? null
           : req.referrer
         : null;
-      const sourceKind: InscriptionOverviewRow["sourceKind"] = referrer?.name
-        ? referrer.type === "of"
-          ? "of"
-          : "partenaire"
-        : "direct";
-      // Budget HT (refonte tarification 2026-05-31 + alignement 2026-06-12) :
-      // on délègue au helper partagé computeInscriptionDisplayAmount qui gère
-      //   1) billing_total_ht  2) quote_amount_ht (montants explicites)
-      //   3) tarif R7 dérivé de la session (INTER per_learner / INTRA forfait)
-      // Avant, ce tableau ignorait la tarification R7 de la session : les
-      // sessions sans devis NI prix catalogue (ex. CHORUS 11/06) restaient à
-      // "—" même quand la session avait un prix/jour. Repli final = prix
-      // catalogue × jours (estimation, en italique).
-      const sessionCtx: DisplayAmountSessionContext = {
-        pricing_mode: session?.pricing_mode ?? null,
-        price_per_day_ht: session?.price_per_day_ht ?? null,
-        price_forfait_ht: session?.price_forfait_ht ?? null,
-        price_extra_per_day_ht: session?.price_extra_per_day_ht ?? null,
-        pricing_threshold: session?.pricing_threshold ?? null,
-        duration_days: formation?.duration_days ?? null,
-        // pas de formation_public_price ici : on garde le repli "× jours"
-        // ci-dessous pour ne pas changer l'estimation catalogue existante.
-      };
-      const disp = computeInscriptionDisplayAmount(req ?? {}, sessionCtx);
-      let amountHt: number | null = disp.amount;
-      let amountHtEstimated = disp.isEstimated;
-      if (amountHt === null) {
-        const publicPrice =
-          formation?.price_company ?? formation?.public_price_excl_tax;
-        const days = formation?.duration_days;
-        if (
-          publicPrice !== null &&
-          publicPrice !== undefined &&
-          days !== null &&
-          days !== undefined
-        ) {
-          const p = Number(publicPrice);
-          const d = Number(days);
-          if (Number.isFinite(p) && Number.isFinite(d) && p > 0 && d > 0) {
-            amountHt = p * d;
-            amountHtEstimated = true;
+      const prescriber = ovOne<{ name: string | null; type: string | null }>(
+        session?.prescriber,
+      );
+      const isSub = session?.is_subcontracted === true;
+      const ofInfo =
+        isSub && session?.subcontracting_company_id
+          ? ovCompanyInfo.get(session.subcontracting_company_id) ?? null
+          : null;
+      // Source corrigée (Gilles 2026-06-12) : une session SOUS-TRAITÉE est un
+      // OF (donneur d'ordre), même sans referrer sur l'inscription.
+      let sourceKind: InscriptionOverviewRow["sourceKind"];
+      let partnerName: string | null;
+      if (isSub) {
+        sourceKind = "of";
+        partnerName = ofInfo?.name ?? prescriber?.name ?? null;
+      } else if (referrer?.name) {
+        sourceKind = referrer.type === "of" ? "of" : "partenaire";
+        partnerName = referrer.name;
+      } else {
+        sourceKind = "direct";
+        partnerName = null;
+      }
+
+      // Durée en jours (formation, sinon calcul depuis les dates).
+      const daysOv =
+        formation?.duration_days && Number(formation.duration_days) > 0
+          ? Number(formation.duration_days)
+          : session?.start_date && session?.end_date
+            ? Math.max(
+                1,
+                Math.round(
+                  (new Date(session.end_date).getTime() -
+                    new Date(session.start_date).getTime()) /
+                    86_400_000,
+                ) + 1,
+              )
+            : 1;
+
+      // MONTANT (Gilles 2026-06-12) :
+      //  - Sous-traitance : forfait jour de l'OF × jours (montant de session).
+      //  - INTRA forfait : forfait × jours (+ extra) = montant de session.
+      //  -> mode "forfait" : affiché 1 seule fois (1re ligne) côté tableau.
+      //  - Sinon : montant PAR APPRENANT via le helper partagé
+      //    (billing/quote/dérivé) + repli catalogue × jours.
+      let amountMode: "per_learner" | "forfait" = "per_learner";
+      let sessionAmount: number | null = null;
+      let amountHt: number | null = null;
+      let amountHtEstimated = false;
+
+      if (isSub) {
+        amountMode = "forfait";
+        const rate =
+          session?.modality === "distanciel"
+            ? ofInfo?.distanciel ?? ofInfo?.presentiel
+            : ofInfo?.presentiel ?? ofInfo?.distanciel;
+        sessionAmount =
+          rate && rate > 0 ? Math.round(rate * daysOv * 100) / 100 : null;
+      } else if (session?.pricing_mode === "forfait") {
+        amountMode = "forfait";
+        const nb = session?.id
+          ? ovSessionEnrollCount.get(session.id) ?? 1
+          : 1;
+        const breakdown = computeSessionPrice(
+          {
+            mode: "forfait",
+            pricePerDayHt: null,
+            priceForfaitHt: ovNum(session.price_forfait_ht),
+            priceExtraPerDayHt: ovNum(session.price_extra_per_day_ht),
+            threshold: ovNum(session.pricing_threshold) ?? 4,
+          },
+          Math.max(nb, 1),
+          daysOv,
+        );
+        sessionAmount = breakdown.totalHt > 0 ? breakdown.totalHt : null;
+      } else {
+        const sessionCtx: DisplayAmountSessionContext = {
+          pricing_mode: session?.pricing_mode ?? null,
+          price_per_day_ht: session?.price_per_day_ht ?? null,
+          price_forfait_ht: session?.price_forfait_ht ?? null,
+          price_extra_per_day_ht: session?.price_extra_per_day_ht ?? null,
+          pricing_threshold: session?.pricing_threshold ?? null,
+          duration_days: formation?.duration_days ?? null,
+        };
+        const disp = computeInscriptionDisplayAmount(req ?? {}, sessionCtx);
+        amountHt = disp.amount;
+        amountHtEstimated = disp.isEstimated;
+        if (amountHt === null) {
+          const publicPrice =
+            formation?.price_company ?? formation?.public_price_excl_tax;
+          if (publicPrice !== null && publicPrice !== undefined) {
+            const p = Number(publicPrice);
+            if (Number.isFinite(p) && p > 0 && daysOv > 0) {
+              amountHt = p * daysOv;
+              amountHtEstimated = true;
+            }
           }
         }
       }
@@ -433,8 +539,13 @@ export default async function DashboardPage({
         durationHours: formation?.duration_hours ?? null,
         amountHt: amountHt != null && Number.isFinite(amountHt) ? amountHt : null,
         amountHtEstimated,
+        amountMode,
+        sessionAmount:
+          sessionAmount != null && Number.isFinite(sessionAmount)
+            ? sessionAmount
+            : null,
         sourceKind,
-        partnerName: referrer?.name ?? null,
+        partnerName,
       };
     })
     // Tri : sessions a venir d'abord (start_date asc), puis passees a

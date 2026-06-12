@@ -37,10 +37,16 @@ export type InscriptionOverviewRow = {
   durationDays: number | null;
   durationHours: number | null;
   /** Tarif HT applique pour cette inscription (quote_amount_ht ou
-   *  fallback prix catalogue × jours si null). */
+   *  fallback prix catalogue × jours si null). Mode "per_learner" uniquement. */
   amountHt: number | null;
   /** true si le tarif vient du fallback (pas saisi explicitement). */
   amountHtEstimated?: boolean;
+  /** Mode de facturation : "per_learner" (par apprenant) ou "forfait"
+   *  (montant global de session : forfait INTRA ou sous-traitance). */
+  amountMode?: "per_learner" | "forfait";
+  /** Montant HT du forfait de session (mode "forfait"). Affiché UNE SEULE
+   *  fois, sur la 1re ligne de la session (Gilles 2026-06-12). */
+  sessionAmount?: number | null;
   /** Source de l'inscription. */
   sourceKind: "direct" | "partenaire" | "of";
   /** Nom du partenaire si sourceKind ≠ "direct" */
@@ -112,6 +118,14 @@ export function InscriptionsOverviewTable({
       }
     }
   }
+  // 1re ligne (index) de chaque session : le forfait n'est affiché QUE là
+  // (Gilles 2026-06-12 : "forfait affiché une seule fois").
+  const firstRowIdxBySession = new Map<string, number>();
+  rows.forEach((r, i) => {
+    const sid = r.sessionId ?? `_no_session_${r.enrollmentId}`;
+    if (!firstRowIdxBySession.has(sid)) firstRowIdxBySession.set(sid, i);
+  });
+
   // Palette de 4 nuances tres claires, en rotation modulo 4
   const SESSION_BG_PALETTE = [
     "bg-white dark:bg-zinc-900",
@@ -155,13 +169,29 @@ export function InscriptionsOverviewTable({
               // visuelle : on epaissit la bordure entre deux groupes.
               const prev = idx > 0 ? rows[idx - 1] : null;
               const newSession = !prev || prev.sessionId !== r.sessionId;
+              // Mode forfait (INTRA / sous-traitance) : montant global de
+              // session affiché UNE SEULE fois (1re ligne) ; les autres lignes
+              // montrent « — forfait session » (Gilles 2026-06-12).
+              const isForfaitMode = r.amountMode === "forfait";
+              const sidAmt = r.sessionId ?? `_no_session_${r.enrollmentId}`;
+              const isFirstOfSession =
+                firstRowIdxBySession.get(sidAmt) === idx;
+              const showForfaitHere = isForfaitMode && isFirstOfSession;
+              const showForfaitPlaceholder = isForfaitMode && !isFirstOfSession;
+              // Montant affiché dans la cellule : forfait (1re ligne) ou
+              // montant par apprenant (mode per_learner).
+              const cellAmount = isForfaitMode
+                ? showForfaitHere
+                  ? (r.sessionAmount ?? null)
+                  : null
+                : r.amountHt;
               const tva =
-                r.amountHt != null
-                  ? Math.round(r.amountHt * DEFAULT_VAT_RATE * 100) / 100
+                cellAmount != null
+                  ? Math.round(cellAmount * DEFAULT_VAT_RATE * 100) / 100
                   : null;
               const ttc =
-                r.amountHt != null && tva != null
-                  ? Math.round((r.amountHt + tva) * 100) / 100
+                cellAmount != null && tva != null
+                  ? Math.round((cellAmount + tva) * 100) / 100
                   : null;
               // Le nom de la formation est cliquable :
               //   - si on a un inscription_request_id → ouvre la fiche
@@ -306,17 +336,34 @@ export function InscriptionsOverviewTable({
                     )}
                   </td>
 
-                  {/* Budget HT / TVA / TTC sur 3 lignes */}
+                  {/* Budget HT / TVA / TTC sur 3 lignes.
+                      Mode forfait : montant de session affiché 1 seule fois. */}
                   <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">
-                    {r.amountHt != null ? (
+                    {showForfaitPlaceholder ? (
+                      <span
+                        className="text-[10px] italic text-zinc-400"
+                        title="Session au forfait : le montant global est indiqué sur la 1re ligne de la session."
+                      >
+                        — forfait session
+                      </span>
+                    ) : cellAmount != null ? (
                       <div className="space-y-0.5">
-                        {r.amountHtEstimated && (
+                        {isForfaitMode ? (
                           <div
-                            className="text-[9px] uppercase tracking-wider font-bold text-amber-700"
-                            title="Estimation = prix catalogue × jours. Saisissez un montant dans la fiche inscription pour fixer le prix réel."
+                            className="text-[9px] uppercase tracking-wider font-bold text-indigo-700"
+                            title="Montant global de la session (forfait journalier ou sous-traitance), pas un tarif par apprenant."
                           >
-                            ≈ estimé
+                            Forfait session
                           </div>
+                        ) : (
+                          r.amountHtEstimated && (
+                            <div
+                              className="text-[9px] uppercase tracking-wider font-bold text-amber-700"
+                              title="Estimation = prix catalogue × jours. Saisissez un montant dans la fiche inscription pour fixer le prix réel."
+                            >
+                              ≈ estimé
+                            </div>
+                          )
                         )}
                         <div className="text-xs">
                           <span className="text-[10px] uppercase tracking-wider text-zinc-500 mr-1">
@@ -324,12 +371,12 @@ export function InscriptionsOverviewTable({
                           </span>
                           <span
                             className={
-                              r.amountHtEstimated
+                              !isForfaitMode && r.amountHtEstimated
                                 ? "font-bold text-zinc-600 dark:text-zinc-400 italic"
                                 : "font-bold text-zinc-900 dark:text-zinc-100"
                             }
                           >
-                            {currencyFormatter.format(r.amountHt)}
+                            {currencyFormatter.format(cellAmount)}
                           </span>
                         </div>
                         <div className="text-xs">
