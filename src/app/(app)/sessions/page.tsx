@@ -5,6 +5,7 @@ import {
   Building2,
   Calendar,
   CheckCircle2,
+  ChevronDown,
   Clock,
   Info,
   Layers,
@@ -68,11 +69,12 @@ type SearchParams = {
   formation_id?: string;
   period?: "past" | "current" | "upcoming" | "";
   sort?: SortMode | "";
+  /** Filtre par dates (YYYY-MM-DD). */
+  from?: string;
+  to?: string;
+  /** Saut rapide à un mois (YYYY-MM) — déduit from/to si présent. */
+  month?: string;
 };
-
-function escapeForIlike(value: string) {
-  return value.replace(/[%_,()]/g, " ").trim();
-}
 
 const currencyFormatter = new Intl.NumberFormat("fr-FR", {
   style: "currency",
@@ -125,11 +127,31 @@ export default async function SessionsListPage({
     params.sort && params.sort in SORT_LABELS
       ? (params.sort as SortMode)
       : "upcoming_first";
+
+  // Filtres par date (Gilles 2026-06-12). `month` (YYYY-MM) est un raccourci
+  // qui déduit from/to = 1er → dernier jour du mois (s'il n'y a pas déjà un
+  // from/to explicite). `from`/`to` = plage libre (YYYY-MM-DD).
+  const isoDate = (v?: string) =>
+    v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : "";
+  const monthParam =
+    params.month && /^\d{4}-\d{2}$/.test(params.month) ? params.month : "";
+  let dateFrom = isoDate(params.from);
+  let dateTo = isoDate(params.to);
+  if (monthParam && !dateFrom && !dateTo) {
+    const [my, mm] = monthParam.split("-").map(Number);
+    const lastDay = new Date(my, mm, 0).getDate(); // dernier jour du mois
+    dateFrom = `${monthParam}-01`;
+    dateTo = `${monthParam}-${String(lastDay).padStart(2, "0")}`;
+  }
+
   const isFiltered =
     Boolean(q) ||
     statusFilter !== "" ||
     formationFilter !== "" ||
     periodFilter !== "" ||
+    Boolean(dateFrom) ||
+    Boolean(dateTo) ||
+    Boolean(monthParam) ||
     sortMode !== "upcoming_first";
 
   const supabase = await createClient();
@@ -158,14 +180,10 @@ export default async function SessionsListPage({
       "*, formation:formations(id, title, public_price_excl_tax, price_company, duration_days), trainer:trainers!trainer_id(id, first_name, last_name), prescriber:companies!prescriber_company_id(id, name), quiz:quiz_templates!quiz_template_id(id, title), location_obj:formation_locations!location_id(id, name, address, postal_code, city)",
     );
 
-  if (q) {
-    const safe = escapeForIlike(q);
-    if (safe.length > 0) {
-      query = query.or(
-        `trainer_name.ilike.%${safe}%,location.ilike.%${safe}%`,
-      );
-    }
-  }
+  // Le statut et la formation se filtrent côté serveur (colonnes simples).
+  // La RECHERCHE TEXTE et le filtre PAR DATE sont appliqués en JS plus bas
+  // (Gilles 2026-06-12) : la recherche inclut désormais le NOM DE LA FORMATION
+  // (table jointe, non filtrable en .or côté serveur).
   if (statusFilter) query = query.eq("status", statusFilter);
   if (formationFilter) query = query.eq("formation_id", formationFilter);
 
@@ -174,16 +192,12 @@ export default async function SessionsListPage({
   if (periodFilter === "upcoming") query = query.gt("start_date", today);
   if (periodFilter === "current")
     query = query.lte("start_date", today).gte("end_date", today);
-  // Gilles 2026-05-22 : par défaut (pas de filtre période ni recherche),
-  // on masque les sessions terminées depuis plus de 30 jours pour
-  // alléger l'affichage. L'utilisateur peut toujours cliquer sur le
-  // bouton "Passées" pour voir TOUTES les anciennes sessions.
-  if (periodFilter === "" && !q) {
-    const cutoff = new Date(Date.now() - 30 * 24 * 3600 * 1000)
-      .toISOString()
-      .slice(0, 10);
-    query = query.gte("end_date", cutoff);
-  }
+  // Bornes de dates côté serveur quand une plage est demandée (overlap :
+  // start_date <= to ET end_date >= from). Réduit le volume rapatrié.
+  if (dateFrom) query = query.gte("end_date", dateFrom);
+  if (dateTo) query = query.lte("start_date", dateTo);
+  // Plus de masquage des sessions >30 j : la vue groupée par mois replie
+  // automatiquement les mois passés (Gilles 2026-06-12).
 
   // Phase 1 : tout ce qui ne dépend que de l'utilisateur — en parallèle.
   const [
@@ -209,7 +223,7 @@ export default async function SessionsListPage({
   // Tri appliqué côté JS pour pouvoir gérer l'ordre "upcoming_first"
   // (à venir/en cours d'abord, puis passées). Les autres modes sont
   // de simples comparaisons de chaînes ISO YYYY-MM-DD.
-  const sessions = (sessionsRaw ?? []).slice().sort((a, b) => {
+  const sessionsSorted = (sessionsRaw ?? []).slice().sort((a, b) => {
     const aStart = (a.start_date as string) ?? "";
     const bStart = (b.start_date as string) ?? "";
     const aEnd = (a.end_date as string) ?? "";
@@ -237,7 +251,113 @@ export default async function SessionsListPage({
     }
   });
 
+  // Filtres appliqués en JS (Gilles 2026-06-12) :
+  //  - recherche texte ENRICHIE : nom de la formation + formateur (texte libre
+  //    ET formateur référencé) + lieu + prescripteur.
+  //  - plage de dates (from/to) : overlap avec la session.
+  const qLower = q.toLowerCase();
+  const sessions = sessionsSorted.filter((s) => {
+    if (q) {
+      const sAny = s as Record<string, unknown>;
+      const form = sAny.formation as { title?: string | null } | null;
+      const tr = sAny.trainer as
+        | { first_name?: string; last_name?: string }
+        | Array<{ first_name?: string; last_name?: string }>
+        | null;
+      const trObj = Array.isArray(tr) ? tr[0] : tr;
+      const presc = sAny.prescriber as { name?: string | null } | null;
+      const haystack = [
+        form?.title,
+        sAny.trainer_name as string | null,
+        trObj ? `${trObj.first_name ?? ""} ${trObj.last_name ?? ""}` : null,
+        sAny.location as string | null,
+        presc?.name,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      if (!haystack.includes(qLower)) return false;
+    }
+    if (dateFrom || dateTo) {
+      const sStart = ((s.start_date as string) ?? "").slice(0, 10);
+      const sEnd = ((s.end_date as string) ?? sStart).slice(0, 10);
+      if (dateFrom && sEnd < dateFrom) return false;
+      if (dateTo && sStart > dateTo) return false;
+    }
+    return true;
+  });
+
   const sessionIds = (sessions ?? []).map((s) => s.id as string);
+
+  // Vue groupée par mois (Gilles 2026-06-12). On groupe les sessions filtrées
+  // par mois civil (clé YYYY-MM), dans l'ordre du tri courant. Les mois passés
+  // (dernier jour < aujourd'hui) sont repliés par défaut SAUF si un filtre est
+  // actif (on veut alors voir tous les résultats).
+  const MONTH_NAMES_FR = [
+    "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
+    "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre",
+  ];
+  type MonthGroup = {
+    key: string;
+    label: string;
+    items: TrainingSession[];
+    openByDefault: boolean;
+  };
+  const monthGroupMap = new Map<string, MonthGroup>();
+  for (const s of sessions as TrainingSession[]) {
+    const sd = ((s.start_date as string) ?? "").slice(0, 10);
+    const key = sd ? sd.slice(0, 7) : "0000-00";
+    let g = monthGroupMap.get(key);
+    if (!g) {
+      const [yy, mm] = key.split("-").map(Number);
+      const label =
+        yy && mm ? `${MONTH_NAMES_FR[mm - 1]} ${yy}` : "Sans date";
+      // dernier jour du mois pour décider repli (mois passé)
+      const lastDay =
+        yy && mm
+          ? `${key}-${String(new Date(yy, mm, 0).getDate()).padStart(2, "0")}`
+          : "9999-12-31";
+      g = {
+        key,
+        label,
+        items: [],
+        openByDefault: isFiltered || lastDay >= today,
+      };
+      monthGroupMap.set(key, g);
+    }
+    g.items.push(s);
+  }
+  const monthGroups = Array.from(monthGroupMap.values());
+
+  // Navigation rapide par mois (◀ / ▶) — construit des liens qui préservent
+  // les autres filtres (recherche, statut, formation, tri) et posent `month`.
+  const buildSessionsHref = (overrides: Record<string, string>) => {
+    const sp = new URLSearchParams();
+    const merged: Record<string, string> = {
+      q,
+      status: statusFilter,
+      formation_id: formationFilter,
+      period: periodFilter,
+      sort: sortMode === "upcoming_first" ? "" : sortMode,
+      from: dateFrom,
+      to: dateTo,
+      month: monthParam,
+      ...overrides,
+    };
+    for (const [k, v] of Object.entries(merged)) if (v) sp.set(k, v);
+    const qs = sp.toString();
+    return qs ? `/sessions?${qs}` : "/sessions";
+  };
+  const focusMonth = monthParam || today.slice(0, 7);
+  const [focusY, focusM] = focusMonth.split("-").map(Number);
+  const fmtMonth = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  const prevMonth = fmtMonth(new Date(focusY, focusM - 2, 1));
+  const nextMonth = fmtMonth(new Date(focusY, focusM, 1));
+  // Liens mois : on pose `month` et on efface from/to pour que `month` prime.
+  const prevMonthHref = buildSessionsHref({ month: prevMonth, from: "", to: "" });
+  const nextMonthHref = buildSessionsHref({ month: nextMonth, from: "", to: "" });
+
   // Compteur : enrollments (apprenants déjà inscrits dans la session)
   // + inscription_requests rattachées qui ne sont PAS encore converties
   // (c'est-à-dire dont le learner_id n'est pas déjà dans les enrollments).
@@ -1147,7 +1267,7 @@ export default async function SessionsListPage({
 
         <form
           method="get"
-          className="rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4"
+          className="rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 space-y-3"
         >
           <div className="grid gap-3 md:grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] items-end">
             <div className="space-y-1.5">
@@ -1158,7 +1278,7 @@ export default async function SessionsListPage({
                 id="q"
                 name="q"
                 type="search"
-                placeholder="Formateur, lieu…"
+                placeholder="Formation, formateur, lieu…"
                 defaultValue={q}
               />
             </div>
@@ -1257,6 +1377,72 @@ export default async function SessionsListPage({
                 </Button>
               )}
             </div>
+          </div>
+
+          {/* Ligne 2 : recherche par date (Du / Au) + saut rapide au mois. */}
+          <div className="flex flex-wrap items-end gap-3 pt-1 border-t border-zinc-100 dark:border-zinc-800/60">
+            <div className="space-y-1.5">
+              <Label htmlFor="from" className="text-xs">
+                Du
+              </Label>
+              <Input
+                id="from"
+                name="from"
+                type="date"
+                defaultValue={dateFrom}
+                className="w-[150px]"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="to" className="text-xs">
+                Au
+              </Label>
+              <Input
+                id="to"
+                name="to"
+                type="date"
+                defaultValue={dateTo}
+                className="w-[150px]"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="month" className="text-xs">
+                Aller au mois
+              </Label>
+              <div className="flex items-center gap-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  nativeButton={false}
+                  title="Mois précédent"
+                  render={<Link href={prevMonthHref} />}
+                >
+                  ‹
+                </Button>
+                <Input
+                  id="month"
+                  name="month"
+                  type="month"
+                  defaultValue={monthParam}
+                  className="w-[160px]"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  nativeButton={false}
+                  title="Mois suivant"
+                  render={<Link href={nextMonthHref} />}
+                >
+                  ›
+                </Button>
+              </div>
+            </div>
+            <p className="text-[11px] text-zinc-400 pb-2">
+              Astuce : pour une journée précise, mettez la même date dans
+              « Du » et « Au ».
+            </p>
           </div>
         </form>
 
@@ -1422,7 +1608,22 @@ export default async function SessionsListPage({
               );
             })()}
 
-            <div className="rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 overflow-hidden">
+            {monthGroups.map((grp) => (
+            <details
+              key={grp.key}
+              open={grp.openByDefault}
+              className="group rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 overflow-hidden"
+            >
+              <summary className="cursor-pointer select-none list-none flex items-center gap-2 px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border-b border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-900/60">
+                <ChevronDown className="h-4 w-4 text-zinc-400 shrink-0 transition-transform -rotate-90 group-open:rotate-0" />
+                <span className="text-sm font-bold text-zinc-800 dark:text-zinc-100">
+                  {grp.label}
+                </span>
+                <span className="text-xs font-normal text-zinc-400">
+                  ({grp.items.length} session{grp.items.length > 1 ? "s" : ""})
+                </span>
+              </summary>
+              <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-zinc-50 dark:bg-zinc-950 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500 border-b border-zinc-200 dark:border-zinc-800">
                   <tr>
@@ -1437,7 +1638,7 @@ export default async function SessionsListPage({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-                  {(sessions as TrainingSession[]).map((s) => {
+                  {grp.items.map((s) => {
                     // Formateur affiché : priorité au texte libre, sinon
                     // formateur référencé principal (joint), sinon liste
                     // dédupliquée des formateurs des jours.
@@ -1949,7 +2150,9 @@ export default async function SessionsListPage({
                   })}
                 </tbody>
               </table>
-            </div>
+              </div>
+            </details>
+            ))}
           </>
         )}
       </div>
