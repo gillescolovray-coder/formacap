@@ -483,20 +483,92 @@ export default async function CompaniesListPage({
         formationsByLearner.get(e.learner_id)!.push(entry);
       });
 
-      // Tri par date de début décroissante (plus récente en haut).
-      const byDateDesc = (a: FormationEntry, b: FormationEntry) =>
-        (b.startDate ?? "").localeCompare(a.startDate ?? "");
-      for (const list of formationsByCompany.values()) list.sort(byDateDesc);
-      for (const list of formationsByLearner.values()) list.sort(byDateDesc);
+      // Tri appliqué plus bas, après fusion avec les sessions prescripteur /
+      // sous-traitance.
+    }
 
-      // Le compteur entreprise = nombre de FORMATIONS distinctes (sessions),
-      // pas le nombre d'inscriptions (une formation peut avoir N participants).
-      for (const [cid, list] of formationsByCompany) {
-        const distinctSessions = new Set(
-          list.map((x) => x.sessionId ?? x.enrollmentId),
-        );
-        formationCountByCompany.set(cid, distinctSessions.size);
+    // Sessions où l'entreprise est PRESCRIPTEUR ou DONNEUR D'ORDRE
+    // (sous-traitance) — indispensable pour les OF/prescripteurs qui n'ont pas
+    // de salariés rattachés mais qui APPORTENT / GÈRENT des sessions
+    // (Gilles 2026-06-12). Sans ça la colonne Formations restait à "—".
+    const companyIdSet = new Set(companyIds);
+    const { data: orgSessions } = await supabase
+      .from("sessions")
+      .select(
+        "id, start_date, end_date, status, prescriber_company_id, subcontracting_company_id, formation:formations(title, duration_hours), trainer:trainers!trainer_id(first_name, last_name)",
+      )
+      .neq("status", "cancelled")
+      .or(
+        `prescriber_company_id.in.(${companyIds.join(",")}),subcontracting_company_id.in.(${companyIds.join(",")})`,
+      );
+
+    const pickOne = <T,>(v: unknown): T | null =>
+      (Array.isArray(v) ? (v[0] ?? null) : (v ?? null)) as T | null;
+
+    for (const row of orgSessions ?? []) {
+      const sAny = row as {
+        id: string;
+        start_date: string | null;
+        end_date: string | null;
+        prescriber_company_id: string | null;
+        subcontracting_company_id: string | null;
+        formation: unknown;
+        trainer: unknown;
+      };
+      const formation = pickOne<{
+        title: string | null;
+        duration_hours: number | null;
+      }>(sAny.formation);
+      const trainer = pickOne<{
+        first_name: string | null;
+        last_name: string | null;
+      }>(sAny.trainer);
+      const targetCids: string[] = [];
+      if (
+        sAny.prescriber_company_id &&
+        companyIdSet.has(sAny.prescriber_company_id)
+      )
+        targetCids.push(sAny.prescriber_company_id);
+      if (
+        sAny.subcontracting_company_id &&
+        companyIdSet.has(sAny.subcontracting_company_id)
+      )
+        targetCids.push(sAny.subcontracting_company_id);
+      for (const cid of targetCids) {
+        const existing = formationsByCompany.get(cid) ?? [];
+        // Pas de doublon si la session est déjà comptée via un apprenant.
+        if (existing.some((x) => x.sessionId === sAny.id)) continue;
+        const entry: FormationEntry = {
+          enrollmentId: `org-${sAny.id}-${cid}`,
+          sessionId: sAny.id,
+          startDate: sAny.start_date,
+          endDate: sAny.end_date,
+          durationHours: formation?.duration_hours ?? null,
+          title: formation?.title ?? null,
+          trainerName: trainer
+            ? `${trainer.first_name ?? ""} ${trainer.last_name ?? ""}`.trim() ||
+              null
+            : null,
+          // Pas un salarié de CET organisme : il prescrit / sous-traite.
+          learnerName: null,
+          npsScore: null,
+        };
+        if (!formationsByCompany.has(cid)) formationsByCompany.set(cid, []);
+        formationsByCompany.get(cid)!.push(entry);
       }
+    }
+
+    // Tri par date de début décroissante (plus récente en haut) + compteur =
+    // nombre de FORMATIONS distinctes (sessions), tous rôles confondus.
+    const byDateDesc = (a: FormationEntry, b: FormationEntry) =>
+      (b.startDate ?? "").localeCompare(a.startDate ?? "");
+    for (const list of formationsByCompany.values()) list.sort(byDateDesc);
+    for (const list of formationsByLearner.values()) list.sort(byDateDesc);
+    for (const [cid, list] of formationsByCompany) {
+      const distinctSessions = new Set(
+        list.map((x) => x.sessionId ?? x.enrollmentId),
+      );
+      formationCountByCompany.set(cid, distinctSessions.size);
     }
   }
 

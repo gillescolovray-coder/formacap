@@ -159,7 +159,11 @@ export function FormationsTooltip({
         byKey.set(key, g);
         out.push(g);
       }
-      g.participants.push({ name: e.learnerName ?? "—", nps: e.npsScore });
+      // Sessions prescripteur / sous-traitance : pas de salarié de cet
+      // organisme -> learnerName null -> on n'ajoute pas de participant.
+      if (e.learnerName) {
+        g.participants.push({ name: e.learnerName, nps: e.npsScore });
+      }
     }
     return out;
   };
@@ -171,6 +175,20 @@ export function FormationsTooltip({
   const realizedCount = isCompany ? realizedGroups.length : realized.length;
   const upcomingCount = isCompany ? upcomingGroups.length : upcoming.length;
   const hasRealized = realizedCount > 0;
+
+  // Récap PAR ANNÉE des formations réalisées (Gilles 2026-06-12) :
+  // « 2026 : 12 · 2025 : 15 … ». Compté sur les sessions distinctes réalisées.
+  const yearSource: Array<{ startDate: string | null }> = isCompany
+    ? realizedGroups
+    : realized;
+  const yearCounts = new Map<number, number>();
+  for (const it of yearSource) {
+    const y = Number((it.startDate ?? "").slice(0, 4));
+    if (y) yearCounts.set(y, (yearCounts.get(y) ?? 0) + 1);
+  }
+  const yearSummary = Array.from(yearCounts.entries()).sort(
+    (a, b) => b[0] - a[0],
+  );
 
   const visibleRealizedGroups = realizedGroups.slice(0, MAX_VISIBLE);
   const visibleRealizedEntries = realized.slice(0, MAX_VISIBLE);
@@ -237,6 +255,7 @@ export function FormationsTooltip({
         >
           «&nbsp;{g.title ?? "Formation"}&nbsp;»
         </p>
+        {g.participants.length > 0 && (
         <ul className="mt-1 space-y-1">
           {g.participants.map((p, i) => (
             <li
@@ -262,6 +281,7 @@ export function FormationsTooltip({
             </li>
           ))}
         </ul>
+        )}
       </li>
     );
   };
@@ -340,6 +360,26 @@ export function FormationsTooltip({
                   <X className="h-3.5 w-3.5" />
                 </button>
               </div>
+
+              {/* Récap par année (réalisées) — demandé par Gilles. */}
+              {yearSummary.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5 px-3 py-2 bg-violet-50/40 border-b border-violet-100">
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-violet-700 mr-0.5">
+                    Par année
+                  </span>
+                  {yearSummary.map(([y, n]) => (
+                    <span
+                      key={y}
+                      className="inline-flex items-center gap-1 rounded-md bg-white border border-violet-200 px-2 py-0.5 text-[11px]"
+                    >
+                      <span className="font-semibold text-zinc-700">{y}</span>
+                      <span className="font-black tabular-nums text-violet-800">
+                        {n}
+                      </span>
+                    </span>
+                  ))}
+                </div>
+              )}
 
               {realized.length === 0 && upcoming.length === 0 ? (
                 <p className="px-3 py-4 text-center text-xs text-zinc-400">
