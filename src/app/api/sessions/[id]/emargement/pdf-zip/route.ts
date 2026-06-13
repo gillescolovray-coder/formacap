@@ -309,7 +309,11 @@ export async function GET(
       const element = React.createElement(EmargementPdf as any, { data });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const pdfBuffer = await renderToBuffer(element as any);
-      const filename = `Emargement-${slug(lastName)}-${slug(firstName)}-${formationSlug}-${dateSlug}.pdf`;
+      // Société entre le nom de l'apprenant et la formation (Gilles 2026-06-13).
+      const companySlug = company?.name ? slug(company.name) : "";
+      const filename = `Emargement-${slug(lastName)}-${slug(firstName)}${
+        companySlug ? `-${companySlug}` : ""
+      }-${formationSlug}-${dateSlug}.pdf`;
       zip.file(filename, pdfBuffer);
     } catch (err) {
       console.error(

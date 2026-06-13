@@ -613,8 +613,14 @@ export default async function EmargementPrintPage({
                 : e?.learner;
               const last = slug(learner?.last_name ?? "");
               const first = slug(learner?.first_name ?? "");
+              // Société entre le nom de l'apprenant et la formation (Gilles
+              // 2026-06-13) : Emargement-NOM-Prenom-SOCIETE-Session-Date.pdf
+              const coName = e?.id ? companyByEnrollment.get(e.id)?.name : null;
+              const companySlug = coName ? slug(coName) : "";
               if (last) {
-                titleSuggestion = `Emargement-${last}-${first}-${formationSlug}-${dateSlug}`;
+                titleSuggestion = `Emargement-${last}-${first}${
+                  companySlug ? `-${companySlug}` : ""
+                }-${formationSlug}-${dateSlug}`;
               }
             }
             return <PrintButton documentTitle={titleSuggestion} />;
