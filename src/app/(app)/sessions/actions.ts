@@ -546,16 +546,35 @@ export async function toggleSessionAdminClosed(
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  const { error } = await supabase
-    .from("sessions")
-    .update({
-      admin_closed_at: closed ? new Date().toISOString() : null,
-      admin_closed_by: closed ? user?.id ?? null : null,
-    })
-    .eq("id", id);
+  // Clôturer passe AUTOMATIQUEMENT le statut en « Terminée » (Gilles
+  // 2026-06-13), SAUF si la session est Annulée/Reportée (ou pas encore
+  // engagée) : on ne force Terminée que pour une session qui a tourné
+  // (Confirmée / En cours / déjà Terminée).
+  const update: Record<string, unknown> = {
+    admin_closed_at: closed ? new Date().toISOString() : null,
+    admin_closed_by: closed ? user?.id ?? null : null,
+  };
+  let statusChanged = false;
+  if (closed) {
+    const { data: cur } = await supabase
+      .from("sessions")
+      .select("status")
+      .eq("id", id)
+      .maybeSingle<{ status: string | null }>();
+    if (
+      cur?.status === "confirmed" ||
+      cur?.status === "in_progress"
+    ) {
+      update.status = "completed";
+      statusChanged = true;
+    }
+  }
+  const { error } = await supabase.from("sessions").update(update).eq("id", id);
   if (error) return { ok: false, error: error.message };
+  if (statusChanged) await syncSessionCalendar(id);
   revalidatePath("/sessions");
   revalidatePath(`/sessions/${id}`);
+  revalidatePath("/inscriptions");
   return { ok: true };
 }
 

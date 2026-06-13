@@ -513,14 +513,20 @@ export default async function SessionsListPage({
   ]);
   const customStatuses = (customStatusesRaw ?? []) as SessionStatusDef[];
   // Options de statut pour le sélecteur inline (Gilles 2026-06-12).
+  // « Archivée » retiré des choix (Gilles 2026-06-13) : remplacé par le
+  // marqueur « Dossier clôturé ».
   const statusOptions: { code: string; label: string }[] =
     customStatuses.length > 0
-      ? customStatuses.map((st) => ({ code: st.code, label: st.label }))
+      ? customStatuses
+          .filter((st) => st.code !== "archived")
+          .map((st) => ({ code: st.code, label: st.label }))
       : (
           Object.keys(SESSION_STATUS_LABELS) as Array<
             keyof typeof SESSION_STATUS_LABELS
           >
-        ).map((key) => ({ code: key, label: SESSION_STATUS_LABELS[key] }));
+        )
+          .filter((key) => key !== "archived")
+          .map((key) => ({ code: key, label: SESSION_STATUS_LABELS[key] }));
 
   if (hasSessions) {
     stagesList = (stagesData ?? []) as typeof stagesList;
@@ -1346,20 +1352,7 @@ export default async function SessionsListPage({
                 className="flex h-9 w-[150px] rounded-md border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400"
               >
                 <option value="">Tous</option>
-                {(customStatuses.length > 0
-                  ? customStatuses.map((s) => ({
-                      code: s.code,
-                      label: s.label,
-                    }))
-                  : (
-                      Object.keys(SESSION_STATUS_LABELS) as Array<
-                        keyof typeof SESSION_STATUS_LABELS
-                      >
-                    ).map((key) => ({
-                      code: key,
-                      label: SESSION_STATUS_LABELS[key],
-                    }))
-                ).map((item) => (
+                {statusOptions.map((item) => (
                   <option key={item.code} value={item.code}>
                     {item.label}
                   </option>

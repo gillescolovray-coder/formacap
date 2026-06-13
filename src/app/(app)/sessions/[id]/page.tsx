@@ -1,6 +1,5 @@
 import {
   Archive,
-  ArchiveRestore,
   CheckCircle2,
   Copy,
   Save,
@@ -14,7 +13,6 @@ import { SessionForm } from "../_form";
 import {
   deleteSession,
   duplicateSession,
-  toggleArchiveSession,
   updateSession,
 } from "../actions";
 import { confirmSessionFormAction } from "./confirm/actions";
@@ -360,7 +358,6 @@ export default async function SessionDetailPage({
   const update = updateSession.bind(null, id);
   const remove = deleteSession.bind(null, id);
   const duplicate = duplicateSession.bind(null, id);
-  const toggleArchive = toggleArchiveSession.bind(null, id);
   const confirmAction = confirmSessionFormAction.bind(null, id);
   const isArchived = session.status === "archived";
   const isConfirmed = session.status === "confirmed";
@@ -560,30 +557,8 @@ export default async function SessionDetailPage({
                 Dupliquer
               </Button>
             </form>
-            <form action={toggleArchive}>
-              <Button
-                type="submit"
-                variant="outline"
-                size="sm"
-                title={
-                  isArchived
-                    ? "Réactiver cette session (sortie d'archive)"
-                    : "Archiver cette session (la masque du tableau d'inscriptions). La fiche reste accessible via son URL."
-                }
-              >
-                {isArchived ? (
-                  <>
-                    <ArchiveRestore className="h-4 w-4" />
-                    Désarchiver
-                  </>
-                ) : (
-                  <>
-                    <Archive className="h-4 w-4" />
-                    Archiver
-                  </>
-                )}
-              </Button>
-            </form>
+            {/* Bouton « Archiver » retiré (Gilles 2026-06-13) : remplacé par
+                le marqueur « Dossier clôturé » qui conserve le CA. */}
             <form action={remove}>
               <Button type="submit" variant="outline" size="sm">
                 <Trash2 className="h-4 w-4" />
