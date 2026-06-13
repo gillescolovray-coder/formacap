@@ -76,9 +76,9 @@ export default async function QuizProofPrintPage({
 
   const { data: org } = await supabase
     .from("organizations")
-    .select("name")
+    .select("name, logo_url")
     .limit(1)
-    .maybeSingle<{ name: string | null }>();
+    .maybeSingle<{ name: string | null; logo_url: string | null }>();
 
   const { data: quiz } = effectiveQuizId
     ? await supabase
@@ -167,9 +167,12 @@ export default async function QuizProofPrintPage({
   const progression =
     avgPre !== null && avgPost !== null ? avgPost - avgPre : null;
 
+  // Fuseau explicite Europe/Paris : le serveur Vercel tourne en UTC, sinon
+  // l'heure d'édition est décalée de 1-2 h (Gilles 2026-06-13).
   const editedAt = new Date().toLocaleString("fr-FR", {
     dateStyle: "long",
     timeStyle: "short",
+    timeZone: "Europe/Paris",
   });
 
   const metaLine = [
@@ -206,13 +209,25 @@ export default async function QuizProofPrintPage({
 
       {/* En-tête */}
       <header className="border-b-2 border-zinc-800 pb-3 mb-5">
-        <p className="text-[11px] uppercase tracking-wider font-bold text-zinc-500">
-          {org?.name ?? "Organisme de formation"} — Preuve Qualiopi (indicateur
-          11)
-        </p>
-        <h1 className="text-xl font-black mt-1">
-          Évaluation des acquis — Quiz pré-formation / post-formation
-        </h1>
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-[11px] uppercase tracking-wider font-bold text-zinc-500">
+              {org?.name ?? "Organisme de formation"} — Preuve Qualiopi
+              (indicateur 11)
+            </p>
+            <h1 className="text-xl font-black mt-1">
+              Évaluation des acquis — Quiz pré-formation / post-formation
+            </h1>
+          </div>
+          {org?.logo_url && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={org.logo_url}
+              alt={org?.name ?? "Logo"}
+              className="h-14 w-auto object-contain shrink-0"
+            />
+          )}
+        </div>
         <p className="text-sm font-semibold text-zinc-700 mt-2">{title}</p>
         <p className="text-xs text-zinc-600 mt-1">
           {metaLine}
