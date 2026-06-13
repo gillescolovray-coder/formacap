@@ -18,7 +18,6 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { SubcontractStatusControl } from "./_subcontract-status-control";
 
 export type CatalogueSession = {
   id: string;
@@ -595,17 +594,10 @@ export function CatalogueList({
                         Programme
                       </a>
                     )}
-                    {/* Dropdown statut — uniquement pour les sessions ou
-                        ce partenaire est donneur d ordre (sous-traitance)
-                        ET sur les statuts modifiables (pas draft).
-                        Gilles 2026-06-01. */}
-                    {s.is_subcontracting && s.status !== "draft" && (
-                      <SubcontractStatusControl
-                        token={token}
-                        sessionId={s.id}
-                        currentStatus={s.status}
-                      />
-                    )}
+                    {/* Dropdown statut « Statut » retiré du catalogue OF
+                        (Gilles 2026-06-13) : il n'existe pas dans le portail
+                        prescripteur -> les deux portails doivent avoir la même
+                        mise en forme. Le statut reste géré côté back-office. */}
                     {/* Bouton inscription : TOUJOURS visible (Option B —
                         Gilles 2026-05-22). Si pas de tarif négocié, le
                         bouton est en couleur secondaire avec libellé
