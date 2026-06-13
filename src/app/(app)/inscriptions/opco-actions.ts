@@ -227,9 +227,16 @@ export async function linkExistingOpcoAgreement(
 }
 
 /**
- * Répartit le montant TOTAL d'un accord OPCO à PARTS ÉGALES entre tous les
- * apprenants qui y sont rattachés (Gilles 2026-06-12). Sert à corriger les
- * accords où tout le montant avait atterri sur un seul apprenant.
+ * Répartit le montant TOTAL d'un accord OPCO à PARTS ÉGALES entre les
+ * apprenants OPCO de la MÊME ENTREPRISE présents sur la session
+ * (Gilles 2026-06-12).
+ *
+ * Comportement "intelligent" : avant de répartir, on rattache
+ * automatiquement à l'accord les apprenants de la même entreprise de la
+ * session qui sont en financement OPCO mais PAS ENCORE rattachés à un
+ * accord (déclarations provisoires "avec subrogation"). On ne touche pas
+ * aux apprenants déjà rattachés à un AUTRE accord. Puis on répartit le
+ * total à parts égales sur l'ensemble.
  */
 export async function redistributeOpcoAgreementEqually(
   inscriptionId: string,
@@ -242,9 +249,12 @@ export async function redistributeOpcoAgreementEqually(
     const supabase = await createClient();
     const { data: ag } = await supabase
       .from("opco_funding_agreements")
-      .select("total_amount_ht")
+      .select("total_amount_ht, session_id")
       .eq("id", agreementId)
-      .maybeSingle<{ total_amount_ht: number | string | null }>();
+      .maybeSingle<{
+        total_amount_ht: number | string | null;
+        session_id: string | null;
+      }>();
     const total =
       ag?.total_amount_ht !== null && ag?.total_amount_ht !== undefined
         ? Number(ag.total_amount_ht)
@@ -256,14 +266,89 @@ export async function redistributeOpcoAgreementEqually(
           "Cet accord n'a pas de montant total renseigné : impossible de répartir.",
       };
     }
+    const sessionId = ag?.session_id ?? null;
 
+    // Entreprise de l'apprenant courant (via son learner).
+    const { data: curInsc } = await supabase
+      .from("inscription_requests")
+      .select("learner_id, target_session_id, learner:learners(company_id)")
+      .eq("id", inscriptionId)
+      .maybeSingle();
+    const curInscObj = (curInsc ?? null) as {
+      learner_id?: string | null;
+      target_session_id?: string | null;
+      learner?:
+        | { company_id: string | null }
+        | Array<{ company_id: string | null }>
+        | null;
+    } | null;
+    const curLearner = curInscObj?.learner
+      ? Array.isArray(curInscObj.learner)
+        ? curInscObj.learner[0] ?? null
+        : curInscObj.learner
+      : null;
+    const companyId = curLearner?.company_id ?? null;
+    const effectiveSessionId =
+      sessionId ?? curInscObj?.target_session_id ?? null;
+
+    // Apprenants déjà rattachés à CET accord.
     const { data: links } = await supabase
       .from("inscription_opco_fundings")
       .select("inscription_id")
       .eq("agreement_id", agreementId);
-    const ids = ((links ?? []) as Array<{ inscription_id: string }>).map(
-      (l) => l.inscription_id,
+    const linkedIds = new Set(
+      ((links ?? []) as Array<{ inscription_id: string }>).map(
+        (l) => l.inscription_id,
+      ),
     );
+
+    // Candidats à rattacher automatiquement : apprenants OPCO de la même
+    // entreprise sur la session, sans aucun accord rattaché (provisoires).
+    if (companyId && effectiveSessionId) {
+      const { data: sessionInsc } = await supabase
+        .from("inscription_requests")
+        .select("id, financing_mode, learner:learners(company_id)")
+        .eq("target_session_id", effectiveSessionId)
+        .eq("financing_mode", "opco");
+      const sameCompanyIds = ((sessionInsc ?? []) as Array<{
+        id: string;
+        learner: { company_id: string | null } | Array<{ company_id: string | null }> | null;
+      }>)
+        .filter((row) => {
+          const l = Array.isArray(row.learner)
+            ? row.learner[0] ?? null
+            : row.learner;
+          return l?.company_id === companyId;
+        })
+        .map((row) => row.id);
+
+      // Ne rattacher que ceux SANS aucune funding existante (provisoires).
+      const newCandidates = sameCompanyIds.filter((id) => !linkedIds.has(id));
+      if (newCandidates.length > 0) {
+        const { data: existingFundings } = await supabase
+          .from("inscription_opco_fundings")
+          .select("inscription_id")
+          .in("inscription_id", newCandidates);
+        const alreadyFunded = new Set(
+          ((existingFundings ?? []) as Array<{ inscription_id: string }>).map(
+            (f) => f.inscription_id,
+          ),
+        );
+        const toLink = newCandidates.filter((id) => !alreadyFunded.has(id));
+        if (toLink.length > 0) {
+          await supabase.from("inscription_opco_fundings").insert(
+            toLink.map((iid) => ({
+              agreement_id: agreementId,
+              inscription_id: iid,
+              amount_ht: null,
+            })),
+          );
+          for (const iid of toLink) linkedIds.add(iid);
+        }
+      }
+    }
+
+    const ids = Array.from(linkedIds);
     if (ids.length === 0) {
       return { ok: false, error: "Aucun apprenant rattaché à cet accord." };
     }
@@ -280,7 +365,11 @@ export async function redistributeOpcoAgreementEqually(
 
     revalidatePath(`/inscriptions/${inscriptionId}`);
     revalidatePath("/inscriptions");
-    return { ok: true };
+    if (effectiveSessionId) {
+      revalidatePath(`/sessions/${effectiveSessionId}/participants`);
+      revalidatePath(`/sessions/${effectiveSessionId}`);
+    }
+    return { ok: true, agreementId };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return { ok: false, error: `Erreur inattendue : ${msg}` };

@@ -215,10 +215,13 @@ function LinkedAgreementCard({
   function redistribute() {
     if (
       !confirm(
-        `Répartir le montant total de l'accord à PARTS ÉGALES entre tous ` +
-          `les apprenants qui y sont rattachés ?\n\n` +
+        `Répartir le montant total de l'accord à PARTS ÉGALES entre les ` +
+          `apprenants OPCO de la même entreprise sur cette session ?\n\n` +
           `Total accord : ${a.total_amount_ht?.toLocaleString("fr-FR") ?? "—"} € HT\n\n` +
-          `Les montants par apprenant déjà saisis seront recalculés.`,
+          `Les apprenants de la même entreprise en financement OPCO mais ` +
+          `non encore rattachés à un accord (déclarations « avec ` +
+          `subrogation ») seront automatiquement rattachés à cet accord, ` +
+          `puis le total sera réparti équitablement.`,
       )
     )
       return;
