@@ -265,6 +265,7 @@ export default async function SessionPositionnementListPage({
               Aucun apprenant inscrit pour le moment.
             </div>
           ) : (
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-zinc-50 dark:bg-zinc-950 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500 border-b border-zinc-200 dark:border-zinc-800">
                 <tr>
@@ -407,6 +408,7 @@ export default async function SessionPositionnementListPage({
                 })}
               </tbody>
             </table>
+            </div>
           )}
         </div>
 
