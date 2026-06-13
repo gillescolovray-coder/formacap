@@ -16,6 +16,7 @@ import {
   createMirroredRequestForEnrollment,
   syncStatusChangeToRequest,
 } from "@/lib/inscriptions/sync";
+import { assertSessionEditable } from "@/lib/sessions/lock";
 
 /**
  * Pour une inscription donnée, récupère la company_id de l'apprenant et
@@ -63,6 +64,10 @@ export async function enrollLearner(sessionId: string, formData: FormData) {
   }
 
   const supabase = await createClient();
+  const lock = await assertSessionEditable(supabase, sessionId);
+  if (!lock.ok) {
+    redirect(`/sessions/${sessionId}?error=${encodeURIComponent(lock.error)}`);
+  }
 
   // Garde-fou anti-doublon : la contrainte UNIQUE(session_id, learner_id)
   // de la table session_enrollments empêcherait l'insert, mais l'erreur
@@ -145,6 +150,12 @@ export async function updateEnrollmentStatus(
     "preinscrit";
 
   const supabase = await createClient();
+  const lock = await assertSessionEditable(supabase, sessionId);
+  if (!lock.ok) {
+    redirect(
+      `/sessions/${sessionId}/participants?error=${encodeURIComponent(lock.error)}`,
+    );
+  }
   const { error } = await supabase
     .from("session_enrollments")
     .update({ status })
@@ -225,6 +236,8 @@ export async function updateEnrollmentFinancing(
       mode === "opco" ? parseText(formData.get("opco_agreement_id")) : null;
 
     const supabase = await createClient();
+    const lock = await assertSessionEditable(supabase, sessionId);
+    if (!lock.ok) return lock;
 
     // On a besoin de l'inscription_request liée
     const { data: enrollment } = await supabase
@@ -317,6 +330,8 @@ export async function updateEnrollmentChannel(
     }
 
     const supabase = await createClient();
+    const lock = await assertSessionEditable(supabase, sessionId);
+    if (!lock.ok) return lock;
     const { error } = await supabase
       .from("session_enrollments")
       .update({
@@ -360,6 +375,8 @@ export async function startSession(
 > {
   try {
     const supabase = await createClient();
+    const lock = await assertSessionEditable(supabase, sessionId);
+    if (!lock.ok) return lock;
 
     // 1. Récupérer tous les enrollments avec leur canal + nom apprenant
     const { data: enrollments, error: fetchError } = await supabase
@@ -437,6 +454,12 @@ export async function removeEnrollment(
   enrollmentId: string,
 ) {
   const supabase = await createClient();
+  const lock = await assertSessionEditable(supabase, sessionId);
+  if (!lock.ok) {
+    redirect(
+      `/sessions/${sessionId}/participants?error=${encodeURIComponent(lock.error)}`,
+    );
+  }
 
   // R1 : on lit la company_id AVANT la suppression (sinon perdue) pour
   // pouvoir invalider la convention ensuite.

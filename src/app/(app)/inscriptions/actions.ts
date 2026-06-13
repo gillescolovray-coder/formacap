@@ -14,6 +14,7 @@ import {
 } from "@/lib/inscriptions/sync";
 import { cleanupUserEmptyDrafts } from "@/lib/inscriptions/cleanup";
 import { logInscriptionDeletion } from "@/lib/inscriptions/deletion-log";
+import { assertSessionEditable } from "@/lib/sessions/lock";
 
 async function getOrgId() {
   const supabase = await createClient();
@@ -353,6 +354,16 @@ export async function createInscription(formData: FormData) {
   const payload = buildPayload(formData);
 
   const supabase = await createClient();
+
+  // Verrou : pas d'inscription dans une session clôturée (Gilles 2026-06-13).
+  if (payload.target_session_id) {
+    const lock = await assertSessionEditable(supabase, payload.target_session_id);
+    if (!lock.ok) {
+      redirect(
+        `/sessions/${payload.target_session_id}/participants?error=${encodeURIComponent(lock.error)}`,
+      );
+    }
+  }
 
   // 1) Création / rattachement d'entreprise (logique factorisée)
   const resolvedCompanyId = await resolveCompanyId(

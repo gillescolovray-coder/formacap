@@ -1636,7 +1636,6 @@ export default async function SessionsListPage({
                     <th className="px-4 py-3">Formateur</th>
                     <th className="px-4 py-3 text-right">Montant HT</th>
                     <th className="px-4 py-3 text-right">Inscrits</th>
-                    <th className="px-4 py-3">Statut</th>
                     <th className="px-4 py-3">Dossier</th>
                     <th className="px-4 py-3 w-10"></th>
                   </tr>
@@ -1869,7 +1868,7 @@ export default async function SessionsListPage({
                     >
                       <td
                         className={cn(
-                          "px-4 py-3 whitespace-nowrap",
+                          "px-4 py-3 whitespace-nowrap align-top",
                           adminClosed && "border-l-4 border-emerald-500",
                         )}
                       >
@@ -1878,6 +1877,17 @@ export default async function SessionsListPage({
                           <span className="font-semibold text-zinc-700 dark:text-zinc-300 text-xs">
                             {formatDateRange(s.start_date, s.end_date)}
                           </span>
+                        </div>
+                        {/* Statut sous la date pour faciliter la lecture
+                            (Gilles 2026-06-13). */}
+                        <div className="mt-1.5">
+                          <SessionStatusSelect
+                            sessionId={s.id}
+                            current={s.status}
+                            options={statusOptions}
+                            badgeClasses={statusInfo.badgeClasses}
+                            locked={adminClosed}
+                          />
                         </div>
                       </td>
                       <td className="px-4 py-3">
@@ -2148,27 +2158,28 @@ export default async function SessionsListPage({
                         />
                       </td>
                       <td className="px-4 py-3">
-                        <SessionStatusSelect
-                          sessionId={s.id}
-                          current={s.status}
-                          options={statusOptions}
-                          badgeClasses={statusInfo.badgeClasses}
-                        />
-                      </td>
-                      <td className="px-4 py-3">
                         <AdminClosedToggle
                           sessionId={s.id}
                           closed={adminClosed}
                         />
                       </td>
                       <td className="px-4 py-3 text-right whitespace-nowrap">
-                        <Link
-                          href={`/inscriptions/new?session_id=${s.id}`}
-                          title="Inscrire un apprenant à cette session"
-                          className="inline-flex items-center justify-center h-7 w-7 rounded-md text-zinc-500 hover:text-cyan-700 hover:bg-cyan-50 dark:hover:bg-cyan-950/30 transition-colors mr-1"
-                        >
-                          <UserPlus className="h-4 w-4" />
-                        </Link>
+                        {adminClosed ? (
+                          <span
+                            title="Session clôturée : décochez « Clôturé » pour inscrire un apprenant"
+                            className="inline-flex items-center justify-center h-7 w-7 rounded-md text-zinc-300 cursor-not-allowed mr-1"
+                          >
+                            <UserPlus className="h-4 w-4" />
+                          </span>
+                        ) : (
+                          <Link
+                            href={`/inscriptions/new?session_id=${s.id}`}
+                            title="Inscrire un apprenant à cette session"
+                            className="inline-flex items-center justify-center h-7 w-7 rounded-md text-zinc-500 hover:text-cyan-700 hover:bg-cyan-50 dark:hover:bg-cyan-950/30 transition-colors mr-1"
+                          >
+                            <UserPlus className="h-4 w-4" />
+                          </Link>
+                        )}
                         <DuplicateSessionButton
                           sessionId={s.id}
                           sessionLabel={s.formation?.title ?? undefined}

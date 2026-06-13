@@ -16,6 +16,7 @@ import {
   deleteSessionCalendarEvents,
 } from "@/lib/google-calendar/sync";
 import { isCalendarConfigured } from "@/lib/google-calendar/client";
+import { assertSessionEditable } from "@/lib/sessions/lock";
 
 async function getCurrentOrganizationId() {
   const supabase = await createClient();
@@ -413,6 +414,11 @@ export async function updateSession(id: string, formData: FormData) {
   }
 
   const supabase = await createClient();
+  // Verrou session clôturée (Gilles 2026-06-13).
+  const lock = await assertSessionEditable(supabase, id);
+  if (!lock.ok) {
+    redirect(`/sessions/${id}?error=${encodeURIComponent(lock.error)}`);
+  }
   const { error } = await supabase
     .from("sessions")
     .update(payload)
@@ -479,6 +485,10 @@ export async function updateSession(id: string, formData: FormData) {
 
 export async function deleteSession(id: string) {
   const supabase = await createClient();
+  const lock = await assertSessionEditable(supabase, id);
+  if (!lock.ok) {
+    redirect(`/sessions/${id}?error=${encodeURIComponent(lock.error)}`);
+  }
   // On récupère l'événement agenda AVANT suppression de la session.
   const { data: sess } = await supabase
     .from("sessions")
@@ -507,6 +517,8 @@ export async function updateSessionStatusQuick(
   status: SessionStatus,
 ): Promise<{ ok: boolean; error?: string }> {
   const supabase = await createClient();
+  const lock = await assertSessionEditable(supabase, id);
+  if (!lock.ok) return { ok: false, error: lock.error };
   const { error } = await supabase
     .from("sessions")
     .update({ status })

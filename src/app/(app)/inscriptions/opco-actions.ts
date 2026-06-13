@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { extractAgreementFromPdf } from "@/lib/opco/extract";
 import type { ExtractedAgreementData } from "@/lib/opco/types";
+import { assertInscriptionSessionEditable } from "@/lib/sessions/lock";
 
 const BUCKET = "opco-agreements";
 const MAX_SIZE_BYTES = 15 * 1024 * 1024; // 15 Mo
@@ -77,6 +78,8 @@ export async function createOpcoAgreement(
   try {
     const { organizationId, userId } = await getOrgId();
     const supabase = await createClient();
+    const lock = await assertInscriptionSessionEditable(supabase, inscriptionId);
+    if (!lock.ok) return lock;
 
     const opcoName = parseText(formData.get("opco_name"));
     const dossierNumber = parseText(formData.get("dossier_number"));
@@ -208,6 +211,8 @@ export async function linkExistingOpcoAgreement(
     }
 
     const supabase = await createClient();
+    const lock = await assertInscriptionSessionEditable(supabase, inscriptionId);
+    if (!lock.ok) return lock;
     const { error } = await supabase.from("inscription_opco_fundings").insert({
       agreement_id: agreementId,
       inscription_id: inscriptionId,
@@ -247,6 +252,8 @@ export async function redistributeOpcoAgreementEqually(
     if (!agreementId) return { ok: false, error: "Aucun accord sélectionné" };
 
     const supabase = await createClient();
+    const lock = await assertInscriptionSessionEditable(supabase, inscriptionId);
+    if (!lock.ok) return lock;
     const { data: ag } = await supabase
       .from("opco_funding_agreements")
       .select("total_amount_ht, session_id")
@@ -390,6 +397,8 @@ export async function undoOpcoRepartition(
     if (!agreementId) return { ok: false, error: "Aucun accord sélectionné" };
 
     const supabase = await createClient();
+    const lock = await assertInscriptionSessionEditable(supabase, inscriptionId);
+    if (!lock.ok) return lock;
     const { data: ag } = await supabase
       .from("opco_funding_agreements")
       .select("total_amount_ht, session_id")
@@ -447,6 +456,8 @@ export async function unlinkOpcoAgreement(
     }
 
     const supabase = await createClient();
+    const lock = await assertInscriptionSessionEditable(supabase, inscriptionId);
+    if (!lock.ok) return lock;
     const { error } = await supabase
       .from("inscription_opco_fundings")
       .delete()
@@ -480,6 +491,8 @@ export async function deleteOpcoAgreement(
     }
 
     const supabase = await createClient();
+    const lock = await assertInscriptionSessionEditable(supabase, inscriptionId);
+    if (!lock.ok) return lock;
     const { data: ag } = await supabase
       .from("opco_funding_agreements")
       .select("pdf_url")

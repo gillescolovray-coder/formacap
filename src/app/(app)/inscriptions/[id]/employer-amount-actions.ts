@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { assertInscriptionSessionEditable } from "@/lib/sessions/lock";
 
 /**
  * Met a jour la part employeur HT d une inscription (Gilles 2026-06-01).
@@ -21,6 +22,8 @@ export async function saveEmployerAmount(
     data: { user },
   } = await userSupabase.auth.getUser();
   if (!user) return { ok: false, error: "Non authentifié" };
+  const lock = await assertInscriptionSessionEditable(userSupabase, inscriptionId);
+  if (!lock.ok) return lock;
 
   const sanitized =
     amount === null

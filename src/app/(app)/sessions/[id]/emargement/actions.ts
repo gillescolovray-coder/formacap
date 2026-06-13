@@ -8,6 +8,7 @@ import type {
   AttendanceMoment,
   AttendanceStatus,
 } from "@/lib/attendances/types";
+import { assertSessionEditable } from "@/lib/sessions/lock";
 
 export async function setAttendance(
   sessionId: string,
@@ -26,6 +27,11 @@ export async function setAttendance(
       : null;
 
   const supabase = await createClient();
+  const lock = await assertSessionEditable(supabase, sessionId);
+  if (!lock.ok) {
+    revalidatePath(`/sessions/${sessionId}/emargement`);
+    return;
+  }
   const {
     data: { user },
   } = await supabase.auth.getUser();

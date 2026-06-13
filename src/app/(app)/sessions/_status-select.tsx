@@ -15,11 +15,14 @@ export function SessionStatusSelect({
   current,
   options,
   badgeClasses,
+  locked = false,
 }: {
   sessionId: string;
   current: string;
   options: { code: string; label: string }[];
   badgeClasses: string;
+  /** Session clôturée : statut non modifiable (Gilles 2026-06-13). */
+  locked?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -28,8 +31,12 @@ export function SessionStatusSelect({
     <span className="inline-flex items-center gap-1">
       <select
         value={current}
-        disabled={pending}
-        title="Changer le statut de la session"
+        disabled={pending || locked}
+        title={
+          locked
+            ? "Session clôturée : décochez « Clôturé » pour modifier le statut"
+            : "Changer le statut de la session"
+        }
         onChange={(e) => {
           const next = e.target.value as SessionStatus;
           if (next === current) return;

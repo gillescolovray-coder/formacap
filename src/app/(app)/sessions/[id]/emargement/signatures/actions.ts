@@ -3,6 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
+import {
+  assertSessionEditable,
+  SESSION_CLOSED_MESSAGE,
+} from "@/lib/sessions/lock";
 
 export type AttendanceMoment = "morning" | "afternoon";
 export type SignerRole = "learner" | "trainer";
@@ -37,6 +41,8 @@ export async function saveSignature(input: SaveSignatureInput) {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) throw new Error("Non authentifié");
+  const lock = await assertSessionEditable(supabase, input.sessionId);
+  if (!lock.ok) throw new Error(SESSION_CLOSED_MESSAGE);
 
   // Validation basique du data URL
   const data = sanitize(input.signatureData);
@@ -129,6 +135,8 @@ export async function clearSignature(input: ClearSignatureInput) {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) throw new Error("Non authentifié");
+  const lock = await assertSessionEditable(supabase, input.sessionId);
+  if (!lock.ok) throw new Error(SESSION_CLOSED_MESSAGE);
 
   const { error } = await supabase
     .from("attendance_signatures")

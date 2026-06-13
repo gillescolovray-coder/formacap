@@ -7,6 +7,7 @@ import {
   loadAndComputeBillingForInscription,
   persistComputedBilling,
 } from "@/lib/billing/compute-billing";
+import { assertInscriptionSessionEditable } from "@/lib/sessions/lock";
 
 /**
  * Recalcule le billing par defaut a partir des regles metier et
@@ -31,6 +32,8 @@ export async function recomputeBillingForInscription(
     data: { user },
   } = await userSupabase.auth.getUser();
   if (!user) return { ok: false, error: "Non authentifié" };
+  const lock = await assertInscriptionSessionEditable(userSupabase, inscriptionId);
+  if (!lock.ok) return lock;
 
   const supabaseAdmin = createAdminClient();
   const result = await loadAndComputeBillingForInscription(
@@ -86,6 +89,8 @@ export async function saveManualBilling(
     data: { user },
   } = await userSupabase.auth.getUser();
   if (!user) return { ok: false, error: "Non authentifié" };
+  const lock = await assertInscriptionSessionEditable(userSupabase, inscriptionId);
+  if (!lock.ok) return lock;
 
   const supabase = createAdminClient();
   const update: Record<string, unknown> = {

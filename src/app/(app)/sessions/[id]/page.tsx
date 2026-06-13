@@ -618,6 +618,25 @@ export default async function SessionDetailPage({
       />
 
       <div className="p-8 max-w-4xl space-y-6">
+        {(session as { admin_closed_at?: string | null }).admin_closed_at && (
+          <div className="rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border-2 border-emerald-300 dark:border-emerald-800 p-4 text-sm flex items-start gap-3">
+            <span className="text-lg leading-none">🔒</span>
+            <div className="flex-1">
+              <p className="font-bold text-emerald-800 dark:text-emerald-300">
+                Dossier clôturé — modifications désactivées
+              </p>
+              <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-0.5">
+                Cette session est marquée comme <strong>clôturée
+                administrativement</strong> : la fiche, le statut, les
+                participants, l&apos;émargement et les montants ne peuvent plus
+                être modifiés. La consultation et l&apos;impression/envoi des
+                documents restent possibles. Pour rouvrir, décochez{" "}
+                <strong>« Clôturé »</strong> dans la colonne « Dossier » de la
+                liste des sessions.
+              </p>
+            </div>
+          </div>
+        )}
         {isArchived && (
           <div className="rounded-xl bg-slate-100 dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-700 p-4 text-sm flex items-start gap-3">
             <Archive className="h-5 w-5 text-slate-500 shrink-0 mt-0.5" />
