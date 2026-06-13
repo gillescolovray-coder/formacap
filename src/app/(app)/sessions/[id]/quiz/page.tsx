@@ -120,9 +120,12 @@ export default async function SessionQuizDashboardPage({
   const { data: enrollments } = await supabase
     .from("session_enrollments")
     .select(
-      "id, learner:learners(civility, first_name, last_name, company:companies(name))",
+      "id, learner:learners(civility, first_name, last_name, company_name_temp, company:companies(name)), inscription_request:inscription_requests(company_name_freetext, company:companies!inscription_requests_company_id_fkey(name))",
     )
     .eq("session_id", id);
+
+  const pickOne = <T,>(v: unknown): T | null =>
+    (Array.isArray(v) ? (v[0] ?? null) : (v ?? null)) as T | null;
 
   const participants = ((enrollments ?? []) as unknown as Array<{
     id: string;
@@ -130,16 +133,49 @@ export default async function SessionQuizDashboardPage({
       civility: string | null;
       first_name: string | null;
       last_name: string | null;
-      company: { name: string } | null;
-    } | null;
-  }>).map((e) => ({
-    enrollmentId: e.id,
-    fullName: [e.learner?.first_name, e.learner?.last_name]
-      .filter(Boolean)
-      .join(" "),
-    civility: e.learner?.civility ?? null,
-    companyName: e.learner?.company?.name ?? null,
-  }));
+      company_name_temp: string | null;
+      company: { name: string } | { name: string }[] | null;
+    } | { civility: string | null; first_name: string | null; last_name: string | null; company_name_temp: string | null; company: { name: string } | { name: string }[] | null }[] | null;
+    inscription_request:
+      | {
+          company_name_freetext: string | null;
+          company: { name: string } | { name: string }[] | null;
+        }
+      | {
+          company_name_freetext: string | null;
+          company: { name: string } | { name: string }[] | null;
+        }[]
+      | null;
+  }>).map((e) => {
+    const learner = pickOne<{
+      civility: string | null;
+      first_name: string | null;
+      last_name: string | null;
+      company_name_temp: string | null;
+      company: { name: string } | { name: string }[] | null;
+    }>(e.learner);
+    const req = pickOne<{
+      company_name_freetext: string | null;
+      company: { name: string } | { name: string }[] | null;
+    }>(e.inscription_request);
+    // Entreprise (employeur) — même cascade que l'onglet Participants
+    // (Gilles 2026-06-13) : société de l'inscription -> société du learner ->
+    // company_name_temp (saisie express) -> texte libre de l'inscription.
+    const companyName =
+      pickOne<{ name: string }>(req?.company)?.name ??
+      pickOne<{ name: string }>(learner?.company)?.name ??
+      learner?.company_name_temp ??
+      req?.company_name_freetext ??
+      null;
+    return {
+      enrollmentId: e.id,
+      fullName: [learner?.first_name, learner?.last_name]
+        .filter(Boolean)
+        .join(" "),
+      civility: learner?.civility ?? null,
+      companyName,
+    };
+  });
 
   const enrollmentIds = participants.map((p) => p.enrollmentId);
 
@@ -212,7 +248,20 @@ export default async function SessionQuizDashboardPage({
           { label: title, href: `/sessions/${id}` },
           { label: "Quiz" },
         ]}
-        actions={<BackButton fallbackHref={`/sessions/${id}`} />}
+        actions={
+          <div className="flex items-center gap-2">
+            <Link
+              href={`/sessions/${id}/quiz/print`}
+              target="_blank"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md bg-cyan-600 text-white text-sm font-semibold hover:bg-cyan-700"
+              title="Imprimer / enregistrer en PDF la preuve Qualiopi (à envoyer à l'OF)"
+            >
+              <BarChart3 className="h-4 w-4" />
+              Imprimer / PDF
+            </Link>
+            <BackButton fallbackHref={`/sessions/${id}`} />
+          </div>
+        }
       />
       <SessionTabs sessionId={id} counts={{ participants: total }} />
 
