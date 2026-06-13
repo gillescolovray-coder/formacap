@@ -1841,13 +1841,21 @@ export default async function SessionsListPage({
                       s.status,
                       customStatuses,
                     );
+                    // Surcharge visuelle par statut (Gilles 2026-06-13) :
+                    //  - ANNULÉE  -> ligne GRISÉE + atténuée (opacity), bien
+                    //    identifiée comme inactive (révélée au survol).
+                    //  - CONFIRMÉE -> teinte bleue PLUS SOUTENUE.
+                    //  - autres   -> classes par couleur existantes.
+                    const rowClass =
+                      statusInfo.code === "cancelled"
+                        ? "bg-zinc-100/80 dark:bg-zinc-900/50 opacity-60 hover:opacity-100 hover:bg-zinc-200/70 dark:hover:bg-zinc-800/60"
+                        : statusInfo.code === "confirmed"
+                          ? "bg-blue-100/70 dark:bg-blue-950/30 hover:bg-blue-100 dark:hover:bg-blue-950/40"
+                          : statusInfo.rowClasses;
                     return (
                     <tr
                       key={s.id}
-                      className={cn(
-                        "transition-colors",
-                        statusInfo.rowClasses,
-                      )}
+                      className={cn("transition-colors", rowClass)}
                     >
                       <td className="px-4 py-3 whitespace-nowrap">
                         <div className="inline-flex items-center gap-1.5">
