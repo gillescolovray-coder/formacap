@@ -10,6 +10,7 @@ import {
   FileUp,
   Link2,
   Loader2,
+  Scale,
   Sparkles,
   Trash2,
   Users,
@@ -20,6 +21,7 @@ import {
   deleteOpcoAgreement,
   extractOpcoFromPdfAction,
   linkExistingOpcoAgreement,
+  redistributeOpcoAgreementEqually,
   unlinkOpcoAgreement,
 } from "./opco-actions";
 import { Button } from "@/components/ui/button";
@@ -210,6 +212,28 @@ function LinkedAgreementCard({
     });
   }
 
+  function redistribute() {
+    if (
+      !confirm(
+        `Répartir le montant total de l'accord à PARTS ÉGALES entre tous ` +
+          `les apprenants qui y sont rattachés ?\n\n` +
+          `Total accord : ${a.total_amount_ht?.toLocaleString("fr-FR") ?? "—"} € HT\n\n` +
+          `Les montants par apprenant déjà saisis seront recalculés.`,
+      )
+    )
+      return;
+    startTransition(async () => {
+      const fd = new FormData();
+      fd.append("agreement_id", a.id);
+      const res = await redistributeOpcoAgreementEqually(inscriptionId, fd);
+      if (!res.ok) {
+        alert("Répartition impossible : " + res.error);
+        return;
+      }
+      router.refresh();
+    });
+  }
+
   function deleteAgreement() {
     if (
       !confirm(
@@ -294,6 +318,20 @@ function LinkedAgreementCard({
           >
             <Download className="h-4 w-4" />
           </a>
+        )}
+        {a.total_amount_ht !== null && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            title="Répartir le montant total de l'accord à parts égales entre tous les apprenants rattachés"
+            className="text-violet-700 border-violet-200 hover:bg-violet-50"
+            onClick={redistribute}
+            disabled={pending}
+          >
+            <Scale className="h-3.5 w-3.5" />
+            Répartir
+          </Button>
         )}
         <Button
           type="button"

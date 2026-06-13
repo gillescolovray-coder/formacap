@@ -29,6 +29,21 @@ function sanitizeFileName(name: string): string {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
+/**
+ * Répartit un montant total HT en `n` parts ÉGALES (Gilles 2026-06-12).
+ * Arrondi à 2 décimales ; le reliquat d'arrondi est ajouté à la dernière
+ * part pour que la somme = total exactement.
+ */
+function equalShares(total: number, n: number): number[] {
+  if (n <= 0) return [];
+  const round2 = (x: number) => Math.round(x * 100) / 100;
+  const base = Math.floor((total / n) * 100) / 100;
+  const shares = Array.from({ length: n }, () => base);
+  const remainder = round2(total - base * n);
+  shares[n - 1] = round2(base + remainder);
+  return shares;
+}
+
 async function getOrgId() {
   const supabase = await createClient();
   const {
@@ -130,34 +145,41 @@ export async function createOpcoAgreement(
       };
     }
 
-    // Lien avec l'inscription courante
-    const { error: linkErr } = await supabase
-      .from("inscription_opco_fundings")
-      .insert({
-        agreement_id: agreement.id,
-        inscription_id: inscriptionId,
-        amount_ht: myAmountHt ?? totalAmountHt,
-      });
-    if (linkErr) {
-      return {
-        ok: false,
-        error: `Rattachement échoué : ${linkErr.message}`,
-      };
-    }
-
-    // Multi-apprenants
+    // Rattachement des apprenants : par défaut on RÉPARTIT le montant total
+    // de l'accord à parts ÉGALES entre tous les apprenants rattachés
+    // (Gilles 2026-06-12). Un montant saisi manuellement par apprenant
+    // (my_amount_ht / other_amount_{id}) reste prioritaire.
+    // Avant, l'apprenant courant recevait `myAmountHt ?? totalAmountHt`
+    // (le TOTAL de l'accord) et les autres NULL -> total faux.
     const otherInscriptionIds = (
       formData.getAll("other_inscription_ids") as string[]
     )
       .map((s) => parseText(s))
       .filter((s): s is string => Boolean(s) && s !== inscriptionId);
-    if (otherInscriptionIds.length > 0) {
-      const links = otherInscriptionIds.map((iid) => ({
+    const allIds = [inscriptionId, ...otherInscriptionIds];
+    const shares =
+      totalAmountHt !== null
+        ? equalShares(totalAmountHt, allIds.length)
+        : allIds.map(() => null as number | null);
+    const linkRows = allIds.map((iid, idx) => {
+      const manual =
+        idx === 0
+          ? myAmountHt
+          : parseAmount(formData.get(`other_amount_${iid}`));
+      return {
         agreement_id: agreement.id,
         inscription_id: iid,
-        amount_ht: parseAmount(formData.get(`other_amount_${iid}`)) ?? null,
-      }));
-      await supabase.from("inscription_opco_fundings").insert(links);
+        amount_ht: manual ?? shares[idx] ?? null,
+      };
+    });
+    const { error: linkErr } = await supabase
+      .from("inscription_opco_fundings")
+      .insert(linkRows);
+    if (linkErr) {
+      return {
+        ok: false,
+        error: `Rattachement échoué : ${linkErr.message}`,
+      };
     }
 
     revalidatePath(`/inscriptions/${inscriptionId}`);
@@ -193,6 +215,67 @@ export async function linkExistingOpcoAgreement(
     });
     if (error) {
       return { ok: false, error: error.message };
+    }
+
+    revalidatePath(`/inscriptions/${inscriptionId}`);
+    revalidatePath("/inscriptions");
+    return { ok: true };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, error: `Erreur inattendue : ${msg}` };
+  }
+}
+
+/**
+ * Répartit le montant TOTAL d'un accord OPCO à PARTS ÉGALES entre tous les
+ * apprenants qui y sont rattachés (Gilles 2026-06-12). Sert à corriger les
+ * accords où tout le montant avait atterri sur un seul apprenant.
+ */
+export async function redistributeOpcoAgreementEqually(
+  inscriptionId: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  try {
+    const agreementId = parseText(formData.get("agreement_id"));
+    if (!agreementId) return { ok: false, error: "Aucun accord sélectionné" };
+
+    const supabase = await createClient();
+    const { data: ag } = await supabase
+      .from("opco_funding_agreements")
+      .select("total_amount_ht")
+      .eq("id", agreementId)
+      .maybeSingle<{ total_amount_ht: number | string | null }>();
+    const total =
+      ag?.total_amount_ht !== null && ag?.total_amount_ht !== undefined
+        ? Number(ag.total_amount_ht)
+        : null;
+    if (total === null || !Number.isFinite(total)) {
+      return {
+        ok: false,
+        error:
+          "Cet accord n'a pas de montant total renseigné : impossible de répartir.",
+      };
+    }
+
+    const { data: links } = await supabase
+      .from("inscription_opco_fundings")
+      .select("inscription_id")
+      .eq("agreement_id", agreementId);
+    const ids = ((links ?? []) as Array<{ inscription_id: string }>).map(
+      (l) => l.inscription_id,
+    );
+    if (ids.length === 0) {
+      return { ok: false, error: "Aucun apprenant rattaché à cet accord." };
+    }
+
+    const shares = equalShares(total, ids.length);
+    for (let i = 0; i < ids.length; i++) {
+      const { error } = await supabase
+        .from("inscription_opco_fundings")
+        .update({ amount_ht: shares[i] })
+        .eq("agreement_id", agreementId)
+        .eq("inscription_id", ids[i]);
+      if (error) return { ok: false, error: error.message };
     }
 
     revalidatePath(`/inscriptions/${inscriptionId}`);
