@@ -520,6 +520,34 @@ export async function updateSessionStatusQuick(
 }
 
 /**
+ * Clôture / réouvre administrativement le DOSSIER d'une session
+ * (Gilles 2026-06-13). INDÉPENDANT du statut : la session reste
+ * Confirmée/Terminée et reste comptée dans le CA / les tableaux de bord.
+ * Sert uniquement à marquer "post-formation géré, dossier traité"
+ * (et plus tard : prêt à facturer).
+ */
+export async function toggleSessionAdminClosed(
+  id: string,
+  closed: boolean,
+): Promise<{ ok: boolean; error?: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const { error } = await supabase
+    .from("sessions")
+    .update({
+      admin_closed_at: closed ? new Date().toISOString() : null,
+      admin_closed_by: closed ? user?.id ?? null : null,
+    })
+    .eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/sessions");
+  revalidatePath(`/sessions/${id}`);
+  return { ok: true };
+}
+
+/**
  * Bascule manuellement le statut « archived » d'une session :
  *  - si déjà archivée → repasse à `completed` (statut revenu à actif)
  *  - sinon → archive la session (la masque du tableau d'inscriptions)

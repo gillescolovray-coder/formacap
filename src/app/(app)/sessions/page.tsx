@@ -23,6 +23,7 @@ import { InscriptionsCounterCell } from "./_inscriptions-tooltip";
 import { PageHeader } from "@/components/page-header";
 import { SyncCalendarButton } from "./_sync-calendar-button";
 import { SessionStatusSelect } from "./_status-select";
+import { AdminClosedToggle } from "./_admin-closed-toggle";
 import {
   computeInscriptionDisplayAmount,
   type DisplayAmountSessionContext,
@@ -1636,6 +1637,7 @@ export default async function SessionsListPage({
                     <th className="px-4 py-3 text-right">Montant HT</th>
                     <th className="px-4 py-3 text-right">Inscrits</th>
                     <th className="px-4 py-3">Statut</th>
+                    <th className="px-4 py-3">Dossier</th>
                     <th className="px-4 py-3 w-10"></th>
                   </tr>
                 </thead>
@@ -1854,12 +1856,23 @@ export default async function SessionsListPage({
                         : statusInfo.code === "confirmed"
                           ? "bg-blue-100/70 dark:bg-blue-950/30 hover:bg-blue-100 dark:hover:bg-blue-950/40"
                           : statusInfo.rowClasses;
+                    // Clôture administrative (Gilles 2026-06-13) — indépendant
+                    // du statut ; liséré vert à gauche quand le dossier est
+                    // clôturé.
+                    const adminClosed = Boolean(
+                      (s as { admin_closed_at?: string | null }).admin_closed_at,
+                    );
                     return (
                     <tr
                       key={s.id}
                       className={cn("transition-colors", rowClass)}
                     >
-                      <td className="px-4 py-3 whitespace-nowrap">
+                      <td
+                        className={cn(
+                          "px-4 py-3 whitespace-nowrap",
+                          adminClosed && "border-l-4 border-emerald-500",
+                        )}
+                      >
                         <div className="inline-flex items-center gap-1.5">
                           <Calendar className="h-3.5 w-3.5 text-zinc-400 shrink-0" />
                           <span className="font-semibold text-zinc-700 dark:text-zinc-300 text-xs">
@@ -2140,6 +2153,12 @@ export default async function SessionsListPage({
                           current={s.status}
                           options={statusOptions}
                           badgeClasses={statusInfo.badgeClasses}
+                        />
+                      </td>
+                      <td className="px-4 py-3">
+                        <AdminClosedToggle
+                          sessionId={s.id}
+                          closed={adminClosed}
                         />
                       </td>
                       <td className="px-4 py-3 text-right whitespace-nowrap">
