@@ -248,7 +248,18 @@ export default async function AttestationsPage({
                         {r.learner?.email ?? "—"}
                       </td>
                       <td className="px-4 py-3 text-xs">
-                        {rate !== null ? (
+                        {/* Priorité à l'émargement ÉLECTRONIQUE (signatures) :
+                            il fait foi même si l'appel manuel (attendances)
+                            n'a pas été mis à jour -> évite le "0 % présent"
+                            alors que l'apprenant a signé (Gilles 2026-06-13). */}
+                        {nbSignatures > 0 ? (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded font-medium bg-emerald-100 text-emerald-800"
+                            title={`Émargement électronique signé : ${nbSignatures} demi-journée${nbSignatures > 1 ? "s" : ""}`}
+                          >
+                            ✓ Émargé
+                          </span>
+                        ) : rate !== null ? (
                           <span
                             className={cn(
                               "inline-flex items-center gap-1 px-2 py-0.5 rounded font-medium",
@@ -260,13 +271,6 @@ export default async function AttestationsPage({
                             )}
                           >
                             {rate} % présent
-                          </span>
-                        ) : nbSignatures > 0 ? (
-                          <span
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded font-medium bg-emerald-100 text-emerald-800"
-                            title={`Émargement électronique : ${nbSignatures} signature${nbSignatures > 1 ? "s" : ""}`}
-                          >
-                            ✓ Émargé
                           </span>
                         ) : (
                           <span className="text-zinc-400 italic">
