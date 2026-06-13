@@ -47,10 +47,13 @@ export default async function AttestationsPage({
   const { data: enrollments } = await supabase
     .from("session_enrollments")
     .select(
-      "id, status, attestation_sent_at, learner:learners(id, civility, first_name, last_name, email)",
+      "id, status, attestation_sent_at, learner:learners(id, civility, first_name, last_name, email, company_name_temp, company:companies(name)), inscription_request:inscription_requests(company_name_freetext, company:companies!inscription_requests_company_id_fkey(name))",
     )
     .eq("session_id", id)
     .order("enrolled_at", { ascending: true });
+
+  const pickC = <T,>(v: unknown): T | null =>
+    (Array.isArray(v) ? (v[0] ?? null) : (v ?? null)) as T | null;
 
   type Row = {
     id: string;
@@ -62,9 +65,36 @@ export default async function AttestationsPage({
       first_name: string | null;
       last_name: string | null;
       email: string | null;
+      company_name_temp: string | null;
+      company: { name: string } | { name: string }[] | null;
     } | null;
+    inscription_request:
+      | {
+          company_name_freetext: string | null;
+          company: { name: string } | { name: string }[] | null;
+        }
+      | {
+          company_name_freetext: string | null;
+          company: { name: string } | { name: string }[] | null;
+        }[]
+      | null;
   };
   const rows = (enrollments ?? []) as unknown as Row[];
+  // Entreprise (employeur) — cascade alignée sur les autres écrans.
+  const companyByRow = new Map<string, string | null>();
+  for (const r of rows) {
+    const req = pickC<{
+      company_name_freetext: string | null;
+      company: unknown;
+    }>(r.inscription_request);
+    const name =
+      pickC<{ name: string }>(req?.company)?.name ??
+      pickC<{ name: string }>(r.learner?.company)?.name ??
+      r.learner?.company_name_temp ??
+      req?.company_name_freetext ??
+      null;
+    companyByRow.set(r.id, name);
+  }
   const resendOn = isResendConfigured();
   const sentCount = rows.filter((r) => r.attestation_sent_at).length;
   const pendingCount = rows.filter(
@@ -214,6 +244,7 @@ export default async function AttestationsPage({
               <thead className="bg-zinc-50 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500 border-b border-zinc-200">
                 <tr>
                   <th className="px-4 py-3">Apprenant</th>
+                  <th className="px-4 py-3">Entreprise</th>
                   <th className="px-4 py-3">Email</th>
                   <th className="px-4 py-3">Présence</th>
                   <th className="px-4 py-3 text-right">Action</th>
@@ -244,6 +275,9 @@ export default async function AttestationsPage({
                       className="hover:bg-zinc-50/60 transition-colors"
                     >
                       <td className="px-4 py-3 font-medium">{fullName}</td>
+                      <td className="px-4 py-3 text-xs text-zinc-600">
+                        {companyByRow.get(r.id) ?? "—"}
+                      </td>
                       <td className="px-4 py-3 text-xs text-zinc-600">
                         {r.learner?.email ?? "—"}
                       </td>

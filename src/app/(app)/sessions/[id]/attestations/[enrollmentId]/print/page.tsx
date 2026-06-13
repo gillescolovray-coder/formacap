@@ -66,7 +66,7 @@ export default async function AttestationPrintPage({
   const { data: enrollment } = await supabase
     .from("session_enrollments")
     .select(
-      "id, learner:learners(first_name, last_name, email, civility, birth_date, birth_place, company:companies(name))",
+      "id, learner:learners(first_name, last_name, email, civility, birth_date, birth_place, company:companies(name, siret))",
     )
     .eq("id", enrollmentId)
     .eq("session_id", id)
@@ -79,7 +79,7 @@ export default async function AttestationPrintPage({
         civility: string | null;
         birth_date: string | null;
         birth_place: string | null;
-        company: { name: string } | null;
+        company: { name: string; siret: string | null } | null;
       } | null;
     }>();
   if (!enrollment) notFound();
@@ -207,6 +207,38 @@ export default async function AttestationPrintPage({
     ? [learner.first_name, learner.last_name].filter(Boolean).join(" ")
     : "—";
   const company = learner?.company?.name ?? null;
+  const companySiret = learner?.company?.siret ?? null;
+  // Lieu (Gilles 2026-06-13) : adresse exacte si présentiel, nom de
+  // l'application de visio (sans le lien) si distanciel.
+  const sessAny = session as unknown as {
+    modality?: string | null;
+    location?: string | null;
+    video_app?: string | null;
+    location_ref?: {
+      name: string | null;
+      address: string | null;
+      postal_code: string | null;
+      city: string | null;
+    } | null;
+  };
+  let lieuLabel: string | null = null;
+  if (sessAny.modality === "distanciel") {
+    lieuLabel = sessAny.video_app?.trim() || "Classe virtuelle";
+  } else {
+    const lr = sessAny.location_ref;
+    if (lr) {
+      lieuLabel =
+        [
+          lr.name,
+          lr.address,
+          [lr.postal_code, lr.city].filter(Boolean).join(" ").trim(),
+        ]
+          .map((p) => (p ?? "").trim())
+          .filter(Boolean)
+          .join(", ") || null;
+    }
+    if (!lieuLabel && sessAny.location) lieuLabel = sessAny.location.trim();
+  }
   const birthDate = learner?.birth_date
     ? new Date(learner.birth_date).toLocaleDateString("fr-FR")
     : null;
@@ -321,6 +353,7 @@ export default async function AttestationPrintPage({
             {company && (
               <div className="text-xs text-slate-600">
                 Employeur : {company}
+                {companySiret ? ` — SIRET : ${companySiret}` : ""}
               </div>
             )}
           </div>
@@ -338,6 +371,11 @@ export default async function AttestationPrintPage({
             <strong>{endDate}</strong>
             {session.modality
               ? ` en ${MODALITY_LABELS[session.modality].toLowerCase()}`
+              : ""}
+            {lieuLabel
+              ? sessAny.modality === "distanciel"
+                ? ` via ${lieuLabel}`
+                : ` à ${lieuLabel}`
               : ""}
             {trainerName ? `, sous la responsabilité de ${trainerName}` : ""}
             .
