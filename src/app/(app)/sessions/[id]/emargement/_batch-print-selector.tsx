@@ -32,6 +32,8 @@ import { Button } from "@/components/ui/button";
 type Participant = {
   enrollmentId: string;
   name: string;
+  /** Nom de l'entreprise de l'apprenant (affiché à côté du nom). */
+  company?: string | null;
 };
 
 /** Variante du selecteur : emargement (defaut) ou attestation */
@@ -189,7 +191,15 @@ export function BatchPrintSelector({
                     onChange={() => toggle(p.enrollmentId)}
                     className="w-4 h-4 accent-cyan-600"
                   />
-                  <span className="flex-1 truncate">{p.name}</span>
+                  <span className="flex-1 min-w-0 truncate">
+                    {p.name}
+                    {p.company && (
+                      <span className="text-zinc-400 font-normal">
+                        {" — "}
+                        {p.company}
+                      </span>
+                    )}
+                  </span>
                   <a
                     href={individualPrintUrl(p.enrollmentId)}
                     target="_blank"

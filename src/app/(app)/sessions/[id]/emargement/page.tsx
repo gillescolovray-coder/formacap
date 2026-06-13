@@ -492,6 +492,7 @@ export default async function EmargementPage({
                 participants={rows.map((r) => ({
                   enrollmentId: r.enrollmentId,
                   name: r.learnerName || "Apprenant",
+                  company: r.company ?? null,
                 }))}
               />
             )}
