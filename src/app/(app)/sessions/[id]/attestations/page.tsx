@@ -279,6 +279,24 @@ export default async function AttestationsPage({
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
+                        {/* Date d'envoi de l'attestation (traçabilité Qualiopi,
+                            Gilles 2026-06-13). */}
+                        {r.attestation_sent_at && (
+                          <div className="text-[11px] text-emerald-700 mb-1 whitespace-nowrap">
+                            ✓ Envoyée le{" "}
+                            {new Date(r.attestation_sent_at).toLocaleString(
+                              "fr-FR",
+                              {
+                                day: "2-digit",
+                                month: "2-digit",
+                                year: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                timeZone: "Europe/Paris",
+                              },
+                            )}
+                          </div>
+                        )}
                         <div className="inline-flex items-center gap-1.5">
                           <Button
                             variant="outline"
