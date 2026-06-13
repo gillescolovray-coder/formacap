@@ -153,7 +153,7 @@ export function BatchPrintSelector({
           </span>
         )}
       </summary>
-      <div className="absolute right-0 top-full mt-1 w-80 max-h-96 overflow-auto bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-md shadow-lg z-50 flex flex-col">
+      <div className="absolute right-0 top-full mt-1 w-96 max-w-[90vw] max-h-96 overflow-auto bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-md shadow-lg z-50 flex flex-col">
         {/* Header : tout cocher + nb selectionnes */}
         <div className="px-3 py-2 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between gap-2 sticky top-0 bg-white dark:bg-zinc-900">
           <button
@@ -191,11 +191,13 @@ export function BatchPrintSelector({
                     onChange={() => toggle(p.enrollmentId)}
                     className="w-4 h-4 accent-cyan-600"
                   />
-                  <span className="flex-1 min-w-0 truncate">
-                    {p.name}
+                  <span className="flex-1 min-w-0">
+                    <span className="block truncate">{p.name}</span>
                     {p.company && (
-                      <span className="text-zinc-400 font-normal">
-                        {" — "}
+                      <span
+                        className="block text-[11px] text-zinc-500 truncate"
+                        title={p.company}
+                      >
                         {p.company}
                       </span>
                     )}
