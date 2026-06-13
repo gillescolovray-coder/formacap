@@ -96,6 +96,26 @@ export default async function AttestationsPage({
     attendanceByEnrollment.set(eid, stats);
   });
 
+  // Émargement ÉLECTRONIQUE (signatures) — Gilles 2026-06-13 : la colonne ne
+  // lisait que la table `attendances` (appel manuel) ; or les apprenants
+  // émargent électroniquement (table `attendance_signatures`). On compte les
+  // signatures apprenant par inscription pour ne plus afficher « Pas
+  // d'émargement » à tort.
+  const signaturesByEnrollment = new Map<string, number>();
+  if (enrollmentIds.length > 0) {
+    const { data: sigs } = await supabase
+      .from("attendance_signatures")
+      .select("enrollment_id")
+      .in("enrollment_id", enrollmentIds)
+      .eq("signer_role", "learner");
+    for (const s of (sigs ?? []) as Array<{ enrollment_id: string }>) {
+      signaturesByEnrollment.set(
+        s.enrollment_id,
+        (signaturesByEnrollment.get(s.enrollment_id) ?? 0) + 1,
+      );
+    }
+  }
+
   const title = session.formation?.title ?? "Session";
   const isCompleted = session.status === "completed";
 
@@ -217,6 +237,7 @@ export default async function AttestationsPage({
                     stats && stats.total > 0
                       ? Math.round((stats.present / stats.total) * 100)
                       : null;
+                  const nbSignatures = signaturesByEnrollment.get(r.id) ?? 0;
                   return (
                     <tr
                       key={r.id}
@@ -227,11 +248,7 @@ export default async function AttestationsPage({
                         {r.learner?.email ?? "—"}
                       </td>
                       <td className="px-4 py-3 text-xs">
-                        {rate === null ? (
-                          <span className="text-zinc-400 italic">
-                            Pas d&apos;émargement
-                          </span>
-                        ) : (
+                        {rate !== null ? (
                           <span
                             className={cn(
                               "inline-flex items-center gap-1 px-2 py-0.5 rounded font-medium",
@@ -243,6 +260,17 @@ export default async function AttestationsPage({
                             )}
                           >
                             {rate} % présent
+                          </span>
+                        ) : nbSignatures > 0 ? (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded font-medium bg-emerald-100 text-emerald-800"
+                            title={`Émargement électronique : ${nbSignatures} signature${nbSignatures > 1 ? "s" : ""}`}
+                          >
+                            ✓ Émargé
+                          </span>
+                        ) : (
+                          <span className="text-zinc-400 italic">
+                            Pas d&apos;émargement
                           </span>
                         )}
                       </td>
