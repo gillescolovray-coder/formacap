@@ -106,6 +106,10 @@ type SessionRow = {
   trainer_id: string | null;
   max_participants: number | null;
   google_calendar_event_id: string | null;
+  is_subcontracted: boolean | null;
+  subcontracting_company_id: string | null;
+  prescriber_company_id: string | null;
+  prescriber?: { name: string | null } | { name: string | null }[] | null;
   formation?: { title: string | null; internal_code: string | null } | null;
   trainer?: {
     first_name: string | null;
@@ -184,14 +188,23 @@ function buildDayEvent(
   day: EventDay,
   dayIndex: number,
   totalDays: number,
+  source: { kind: "cap" | "of" | "prescripteur"; name: string },
 ): calendar_v3.Schema$Event {
   const meta = STATUS_META[s.status] ?? { emoji: "🗓️", label: s.status };
   const title = s.formation?.title?.trim() || "Session de formation";
-  // Dans le titre : nombre de participants (à la place du code formation)
-  // + le jour si la session s'étale sur plusieurs jours.
+  // Dans le titre : nom de l'OF / prescripteur / CAP NUMÉRIQUE (Gilles
+  // 2026-06-13) ENTRE l'emoji statut et le nombre de participants, puis le
+  // jour si la session s'étale sur plusieurs jours.
   const maxPart = s.max_participants ? `/${s.max_participants}` : "";
   const dayLabel = totalDays > 1 ? ` (Jour ${dayIndex + 1}/${totalDays})` : "";
-  const summary = `${meta.emoji} 👥${participantCount}${maxPart} — ${title}${dayLabel}`;
+  const summary = `${meta.emoji} ${source.name} 👥${participantCount}${maxPart} — ${title}${dayLabel}`;
+  // Libellé source pour le contenu (avec le rôle).
+  const sourceLine =
+    source.kind === "of"
+      ? `Donneur d'ordre (OF) : ${source.name}`
+      : source.kind === "prescripteur"
+        ? `Prescripteur : ${source.name}`
+        : `Organisé par : ${source.name}`;
 
   const modalityLabel = s.modality
     ? MODALITY_LABELS[s.modality] ?? s.modality
@@ -242,6 +255,7 @@ function buildDayEvent(
       : null,
     "",
     `<b>Statut : ${esc(meta.label)}</b>`,
+    `<b>${esc(sourceLine)}</b>`,
     `Modalité : ${interLabel} · ${esc(modalityLabel)}`,
     "",
     "Horaires :",
@@ -365,7 +379,7 @@ export async function syncSessionCalendar(
     const { data: s } = await admin
       .from("sessions")
       .select(
-        "id, start_date, end_date, status, modality, is_inter, location, video_app, video_link, default_morning_start, default_afternoon_end, trainer_name, trainer_id, max_participants, google_calendar_event_id, formation:formations(title, internal_code), trainer:trainers(first_name, last_name, phone, mobile), location_full:formation_locations(name, address, postal_code, city)",
+        "id, start_date, end_date, status, modality, is_inter, location, video_app, video_link, default_morning_start, default_afternoon_end, trainer_name, trainer_id, max_participants, google_calendar_event_id, is_subcontracted, subcontracting_company_id, prescriber_company_id, prescriber:companies!prescriber_company_id(name), formation:formations(title, internal_code), trainer:trainers(first_name, last_name, phone, mobile), location_full:formation_locations(name, address, postal_code, city)",
       )
       .eq("id", sessionId)
       .maybeSingle<SessionRow>();
@@ -418,6 +432,32 @@ export async function syncSessionCalendar(
       if (portal) portalUrl = buildTrainerPortalUrl(appOrigin(), portal.token);
     }
 
+    // Source de la session (Gilles 2026-06-13) : OF (sous-traitance) /
+    // Prescripteur / CAP NUMÉRIQUE — affichée dans le titre + le contenu.
+    const prescriberObj = Array.isArray(s.prescriber)
+      ? s.prescriber[0] ?? null
+      : s.prescriber ?? null;
+    let sourceName = "CAP NUMÉRIQUE";
+    let sourceKind: "cap" | "of" | "prescripteur" = "cap";
+    if (s.is_subcontracted) {
+      sourceKind = "of";
+      const ofId = s.subcontracting_company_id ?? s.prescriber_company_id;
+      if (ofId) {
+        const { data: ofCo } = await admin
+          .from("companies")
+          .select("name")
+          .eq("id", ofId)
+          .maybeSingle<{ name: string | null }>();
+        sourceName = ofCo?.name ?? prescriberObj?.name ?? "OF (donneur d'ordre)";
+      } else {
+        sourceName = prescriberObj?.name ?? "OF (donneur d'ordre)";
+      }
+    } else if (prescriberObj?.name) {
+      sourceKind = "prescripteur";
+      sourceName = prescriberObj.name;
+    }
+    const source = { kind: sourceKind, name: sourceName };
+
     // 1 BLOC PAR JOUR (Gilles 2026-06-08) : on construit un événement par jour
     // de session et on réconcilie avec les événements déjà stockés (réutilise
     // les IDs existants par position -> mise à jour ; crée les jours en plus ;
@@ -438,6 +478,7 @@ export async function syncSessionCalendar(
         eventDays[i],
         i,
         totalDays,
+        source,
       );
       const existing = existingIds[i];
       if (existing) {
