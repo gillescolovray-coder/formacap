@@ -41,7 +41,8 @@ export async function updateSession(request: NextRequest) {
   const isBareLayout =
     /^\/formations\/[^/]+\/programme\/?$/.test(pathname) ||
     /^\/programmes\/[^/]+\/apercu\/?$/.test(pathname) ||
-    /^\/sessions\/[^/]+\/quiz\/print\/?$/.test(pathname);
+    /^\/sessions\/[^/]+\/quiz\/print\/?$/.test(pathname) ||
+    /^\/sessions\/[^/]+\/evaluation\/print\/?$/.test(pathname);
 
   // En-tête propagé au layout (app) : permet à AppShell de rendre la
   // convocation publique SANS exiger de login (sinon page blanche /login).
