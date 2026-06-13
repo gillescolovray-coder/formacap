@@ -23,6 +23,7 @@ import { DriveArchiveButton } from "./_drive-archive-button";
 import { CancelPostponeButton } from "./_cancel-postpone-modal";
 import { isDriveConfigured } from "@/lib/google-drive/client";
 import { SessionTabs } from "./_session-tabs";
+import { AdminClosedToggle } from "../_admin-closed-toggle";
 import { SessionHeaderMeta } from "./_session-header-meta";
 import { BackButton } from "@/components/back-button";
 import { PageHeader } from "@/components/page-header";
@@ -540,6 +541,14 @@ export default async function SessionDetailPage({
                 preview={cancelPreview}
               />
             )}
+            {/* Clôture administrative — synchronisé avec le tableau des
+                sessions (Gilles 2026-06-13). */}
+            <AdminClosedToggle
+              sessionId={id}
+              closed={Boolean(
+                (session as { admin_closed_at?: string | null }).admin_closed_at,
+              )}
+            />
             <form action={duplicate}>
               <Button
                 type="submit"
