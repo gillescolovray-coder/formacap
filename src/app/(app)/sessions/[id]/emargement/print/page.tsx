@@ -139,7 +139,7 @@ export default async function EmargementPrintPage({
     supabase
       .from("session_enrollments")
       .select(
-        "id, learner:learners(first_name, last_name, company:companies(name, siret))",
+        "id, learner:learners(first_name, last_name, company_name_temp, company:companies(name, siret)), inscription_request:inscription_requests(company_name_freetext, company:companies!inscription_requests_company_id_fkey(name, siret))",
       )
       .eq("session_id", id)
       .order("enrolled_at", { ascending: true }),
@@ -157,6 +157,38 @@ export default async function EmargementPrintPage({
   const enrollmentIds = filteredEnrollments.map((e) => e.id as string);
   // Surcharge la variable principale pour le rendu
   const enrollmentsForRender = filteredEnrollments;
+
+  // Entreprise (employeur) par inscription — cascade alignée sur l'onglet
+  // Participants (Gilles 2026-06-13) : société de l'inscription -> société du
+  // learner -> company_name_temp (saisie express). Avant, on ne lisait que
+  // learner.company -> "—" quand le learner n'avait pas de company_id.
+  const pickCo = (v: unknown): { name: string; siret?: string | null } | null =>
+    (Array.isArray(v) ? (v[0] ?? null) : (v ?? null)) as {
+      name: string;
+      siret?: string | null;
+    } | null;
+  const unwrap = (v: unknown): Record<string, unknown> | null =>
+    (Array.isArray(v) ? (v[0] ?? null) : (v ?? null)) as Record<
+      string,
+      unknown
+    > | null;
+  const companyByEnrollment = new Map<
+    string,
+    { name: string; siret: string | null }
+  >();
+  for (const e of filteredEnrollments) {
+    const eAny = e as Record<string, unknown>;
+    const learnerObj = unwrap(eAny.learner);
+    const reqObj = unwrap(eAny.inscription_request);
+    const insCompany = pickCo(reqObj?.company);
+    const learnerCompany = pickCo(learnerObj?.company);
+    const tempName = (learnerObj?.company_name_temp as string | null) ?? null;
+    const freetext = (reqObj?.company_name_freetext as string | null) ?? null;
+    const name =
+      insCompany?.name ?? learnerCompany?.name ?? tempName ?? freetext ?? null;
+    const siret = insCompany?.siret ?? learnerCompany?.siret ?? null;
+    if (name) companyByEnrollment.set(e.id as string, { name, siret });
+  }
 
   // Détection du financement FSE : si au moins une demande d'inscription
   // rattachée à cette session a `financing_mode = 'fse'`, on affichera le
@@ -223,6 +255,34 @@ export default async function EmargementPrintPage({
       trainerSignaturesByDateMoment.set(key, row);
     }
   });
+
+  // Repli signature formateur (Gilles 2026-06-13) : si le formateur n'a pas
+  // signé l'émargement demi-journée par demi-journée mais a SIGNÉ son BILAN
+  // FORMATEUR, on réutilise cette signature comme attestation du formateur.
+  let trainerFallbackSig: { signature_data: string; signer_name: string } | null =
+    null;
+  try {
+    const { data: report } = await supabase
+      .from("session_trainer_reports")
+      .select("signature_data, signer_name, signed_at")
+      .eq("session_id", id)
+      .not("signature_data", "is", null)
+      .order("signed_at", { ascending: false })
+      .limit(1)
+      .maybeSingle<{
+        signature_data: string | null;
+        signer_name: string | null;
+        signed_at: string | null;
+      }>();
+    if (report?.signature_data) {
+      trainerFallbackSig = {
+        signature_data: report.signature_data,
+        signer_name: report.signer_name ?? "",
+      };
+    }
+  } catch {
+    // table absente / non migrée -> pas de repli
+  }
 
   // On utilise UNIQUEMENT les jours réellement planifiés (table session_days)
   // pour éviter d'afficher de fausses cases pour les jours du calendrier
@@ -786,12 +846,19 @@ export default async function EmargementPrintPage({
                         !isLast && "border-b",
                       )}
                     >
-                      <div>{learner?.company?.name ?? "—"}</div>
-                      {learner?.company?.siret && (
-                        <div className="text-[9px] text-slate-400 mt-0.5">
-                          SIRET : {learner.company.siret}
-                        </div>
-                      )}
+                      {(() => {
+                        const co = companyByEnrollment.get(e.id as string);
+                        return (
+                          <>
+                            <div>{co?.name ?? "—"}</div>
+                            {co?.siret && (
+                              <div className="text-[9px] text-slate-400 mt-0.5">
+                                SIRET : {co.siret}
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
                     </td>
                     {page.pageDates.flatMap((d) =>
                       MOMENTS.map((m) => {
@@ -849,9 +916,11 @@ export default async function EmargementPrintPage({
                 </td>
                 {page.pageDates.flatMap((d) =>
                   MOMENTS.map((m) => {
-                    const sig = trainerSignaturesByDateMoment.get(
-                      `${d}|${m}`,
-                    );
+                    // Signature demi-journée si recueillie, sinon repli sur la
+                    // signature du bilan formateur (Gilles 2026-06-13).
+                    const sig =
+                      trainerSignaturesByDateMoment.get(`${d}|${m}`) ??
+                      trainerFallbackSig;
                     return (
                       <td
                         key={`trainer-${d}-${m}`}
@@ -909,11 +978,25 @@ export default async function EmargementPrintPage({
                   {trainerDisplayName ?? ""}
                 </span>
                 <br />
-                <span className="text-slate-500 text-[11px] italic">
-                  {trainerSignaturesByDateMoment.size > 0
-                    ? "Signature électronique recueillie ci-dessus."
-                    : "Signature et date :"}
-                </span>
+                {trainerSignaturesByDateMoment.size > 0 ? (
+                  <span className="text-slate-500 text-[11px] italic">
+                    Signature électronique recueillie ci-dessus.
+                  </span>
+                ) : trainerFallbackSig ? (
+                  <span className="text-slate-500 text-[11px] italic">
+                    Signature recueillie via le bilan formateur :
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={trainerFallbackSig.signature_data}
+                      alt="Signature formateur"
+                      className="mt-1 h-10 max-w-[180px] object-contain"
+                    />
+                  </span>
+                ) : (
+                  <span className="text-slate-500 text-[11px] italic">
+                    Signature et date :
+                  </span>
+                )}
               </div>
             </div>
             <div>
