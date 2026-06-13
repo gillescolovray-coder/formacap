@@ -296,6 +296,63 @@ export default async function InscriptionDetailPage({
     }),
   ]);
 
+  // Détecte, par accord rattaché, s'il est déjà RÉPARTI ÉQUITABLEMENT
+  // (≥2 apprenants liés, montants égaux, somme ≈ total) — pour griser le
+  // bouton "Répartir" et proposer "Annuler" (Gilles 2026-06-13).
+  const linkedAgreementIds = Array.from(
+    new Set(
+      (linkedFundings ?? [])
+        .map((row) => {
+          const ag = row.agreement as unknown as { id?: string } | null;
+          return ag?.id ?? null;
+        })
+        .filter((x): x is string => Boolean(x)),
+    ),
+  );
+  const evenlyDistributedAgreements = new Set<string>();
+  if (linkedAgreementIds.length > 0) {
+    const { data: allLinks } = await supabase
+      .from("inscription_opco_fundings")
+      .select("agreement_id, amount_ht")
+      .in("agreement_id", linkedAgreementIds);
+    const byAgreement = new Map<string, number[]>();
+    for (const l of (allLinks ?? []) as Array<{
+      agreement_id: string;
+      amount_ht: number | string | null;
+    }>) {
+      const arr = byAgreement.get(l.agreement_id) ?? [];
+      arr.push(
+        l.amount_ht !== null && l.amount_ht !== undefined
+          ? Number(l.amount_ht)
+          : NaN,
+      );
+      byAgreement.set(l.agreement_id, arr);
+    }
+    const totalByAgreement = new Map<string, number | null>();
+    for (const row of linkedFundings ?? []) {
+      const ag = row.agreement as unknown as {
+        id?: string;
+        total_amount_ht?: number | string | null;
+      } | null;
+      if (ag?.id)
+        totalByAgreement.set(
+          ag.id,
+          ag.total_amount_ht !== null && ag.total_amount_ht !== undefined
+            ? Number(ag.total_amount_ht)
+            : null,
+        );
+    }
+    for (const [aid, amounts] of byAgreement) {
+      if (amounts.length < 2) continue; // 1 seul apprenant -> pas réparti
+      if (amounts.some((a) => !Number.isFinite(a))) continue; // montant non défini
+      const total = totalByAgreement.get(aid) ?? null;
+      const sum = amounts.reduce((s, a) => s + a, 0);
+      const allEqual = Math.max(...amounts) - Math.min(...amounts) <= 0.02;
+      const sumMatches = total === null || Math.abs(sum - total) <= 0.05;
+      if (allEqual && sumMatches) evenlyDistributedAgreements.add(aid);
+    }
+  }
+
   // Si la fiche vient juste d'être créée comme brouillon depuis
   // /inscriptions/new (query.fresh === "1"), on affiche un titre
   // dédié pour que l'utilisateur sache qu'il est en mode "création"
@@ -585,6 +642,8 @@ export default async function InscriptionDetailPage({
                             row.amount_ht !== undefined
                               ? Number(row.amount_ht)
                               : null,
+                          isEvenlyDistributed:
+                            evenlyDistributedAgreements.has(ag.id),
                         },
                       ];
                     })}

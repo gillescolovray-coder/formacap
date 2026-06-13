@@ -377,6 +377,62 @@ export async function redistributeOpcoAgreementEqually(
 }
 
 /**
+ * Annule une répartition à parts égales (Gilles 2026-06-13) : remet le
+ * montant TOTAL de l'accord sur l'apprenant courant et 0 (NULL) sur les
+ * autres apprenants rattachés. Réversible via « Répartir ».
+ */
+export async function undoOpcoRepartition(
+  inscriptionId: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  try {
+    const agreementId = parseText(formData.get("agreement_id"));
+    if (!agreementId) return { ok: false, error: "Aucun accord sélectionné" };
+
+    const supabase = await createClient();
+    const { data: ag } = await supabase
+      .from("opco_funding_agreements")
+      .select("total_amount_ht, session_id")
+      .eq("id", agreementId)
+      .maybeSingle<{
+        total_amount_ht: number | string | null;
+        session_id: string | null;
+      }>();
+    const total =
+      ag?.total_amount_ht !== null && ag?.total_amount_ht !== undefined
+        ? Number(ag.total_amount_ht)
+        : null;
+
+    // Tous les autres apprenants -> NULL
+    const { error: e1 } = await supabase
+      .from("inscription_opco_fundings")
+      .update({ amount_ht: null })
+      .eq("agreement_id", agreementId)
+      .neq("inscription_id", inscriptionId);
+    if (e1) return { ok: false, error: e1.message };
+
+    // Apprenant courant -> total de l'accord
+    const { error: e2 } = await supabase
+      .from("inscription_opco_fundings")
+      .update({ amount_ht: total })
+      .eq("agreement_id", agreementId)
+      .eq("inscription_id", inscriptionId);
+    if (e2) return { ok: false, error: e2.message };
+
+    revalidatePath(`/inscriptions/${inscriptionId}`);
+    revalidatePath("/inscriptions");
+    if (ag?.session_id) {
+      revalidatePath(`/sessions/${ag.session_id}/participants`);
+      revalidatePath(`/sessions/${ag.session_id}`);
+    }
+    return { ok: true };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, error: `Erreur inattendue : ${msg}` };
+  }
+}
+
+/**
  * Détache un accord d'une inscription (sans supprimer l'accord
  * lui-même, qui peut être lié à d'autres apprenants).
  */

@@ -22,6 +22,7 @@ import {
   extractOpcoFromPdfAction,
   linkExistingOpcoAgreement,
   redistributeOpcoAgreementEqually,
+  undoOpcoRepartition,
   unlinkOpcoAgreement,
 } from "./opco-actions";
 import { Button } from "@/components/ui/button";
@@ -43,6 +44,8 @@ type ExistingAgreement = {
 
 type LinkedAgreement = ExistingAgreement & {
   amount_ht: number | null;
+  /** true si l'accord est déjà réparti à parts égales entre ≥2 apprenants. */
+  isEvenlyDistributed?: boolean;
 };
 
 type SessionInscription = {
@@ -237,6 +240,28 @@ function LinkedAgreementCard({
     });
   }
 
+  function undoRedistribution() {
+    if (
+      !confirm(
+        `Annuler la répartition à parts égales ?\n\n` +
+          `Le montant total de l'accord sera replacé sur l'apprenant courant, ` +
+          `et remis à zéro pour les autres apprenants rattachés. Vous pourrez ` +
+          `ensuite re-répartir ou saisir les montants manuellement.`,
+      )
+    )
+      return;
+    startTransition(async () => {
+      const fd = new FormData();
+      fd.append("agreement_id", a.id);
+      const res = await undoOpcoRepartition(inscriptionId, fd);
+      if (!res.ok) {
+        alert("Annulation impossible : " + res.error);
+        return;
+      }
+      router.refresh();
+    });
+  }
+
   function deleteAgreement() {
     if (
       !confirm(
@@ -322,20 +347,42 @@ function LinkedAgreementCard({
             <Download className="h-4 w-4" />
           </a>
         )}
-        {a.total_amount_ht !== null && (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            title="Répartir le montant total de l'accord à parts égales entre tous les apprenants rattachés"
-            className="text-violet-700 border-violet-200 hover:bg-violet-50"
-            onClick={redistribute}
-            disabled={pending}
-          >
-            <Scale className="h-3.5 w-3.5" />
-            Répartir
-          </Button>
-        )}
+        {a.total_amount_ht !== null &&
+          (a.isEvenlyDistributed ? (
+            <>
+              <span
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold"
+                title="Le montant de l'accord est réparti à parts égales entre les apprenants rattachés."
+              >
+                <Scale className="h-3.5 w-3.5" />
+                Réparti ✓
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                title="Annuler la répartition (remettre le total sur l'apprenant courant)"
+                className="text-amber-700"
+                onClick={undoRedistribution}
+                disabled={pending}
+              >
+                Annuler
+              </Button>
+            </>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              title="Répartir le montant total de l'accord à parts égales entre les apprenants OPCO de l'entreprise sur la session"
+              className="text-violet-700 border-violet-200 hover:bg-violet-50"
+              onClick={redistribute}
+              disabled={pending}
+            >
+              <Scale className="h-3.5 w-3.5" />
+              Répartir
+            </Button>
+          ))}
         <Button
           type="button"
           variant="ghost"
