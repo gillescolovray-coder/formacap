@@ -11,6 +11,7 @@ import {
   Layers,
   ListChecks,
   Plus,
+  Search,
   User,
   UserPlus,
   Video,
@@ -1269,28 +1270,61 @@ export default async function SessionsListPage({
           method="get"
           className="rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 space-y-3"
         >
-          <div className="grid gap-3 md:grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] items-end">
-            <div className="space-y-1.5">
-              <Label htmlFor="q" className="text-xs">
-                Rechercher
-              </Label>
+          {/* La PÉRIODE (À venir / En cours / Passées) est pilotée par les
+              cartes cliquables ci-dessus — on la préserve via un champ caché
+              pour ne pas la perdre en filtrant (Gilles 2026-06-13 : suppression
+              du menu Période redondant avec « Du → Au »). */}
+          {periodFilter && (
+            <input type="hidden" name="period" value={periodFilter} />
+          )}
+
+          {/* Ligne 1 : grande recherche + bouton coloré bien visible. */}
+          <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400 pointer-events-none" />
               <Input
                 id="q"
                 name="q"
                 type="search"
-                placeholder="Formation, formateur, lieu…"
+                placeholder="Rechercher une formation, un formateur, un lieu…"
                 defaultValue={q}
+                className="h-11 pl-9 text-base"
               />
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="formation_id" className="text-xs">
+            <div className="flex gap-2 shrink-0">
+              <Button
+                type="submit"
+                className="h-11 px-6 bg-cyan-600 hover:bg-cyan-700 text-white font-semibold shadow-sm"
+              >
+                <Search className="h-4 w-4" />
+                Rechercher
+              </Button>
+              {isFiltered && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11"
+                  nativeButton={false}
+                  render={<Link href="/sessions" />}
+                >
+                  Réinitialiser
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* Ligne 2 : filtres secondaires compacts (formation / statut / tri
+              + dates). */}
+          <div className="flex flex-wrap items-end gap-x-3 gap-y-2 pt-3 border-t border-zinc-100 dark:border-zinc-800/60">
+            <div className="space-y-1">
+              <Label htmlFor="formation_id" className="text-[11px] text-zinc-500 uppercase tracking-wider">
                 Formation
               </Label>
               <select
                 id="formation_id"
                 name="formation_id"
                 defaultValue={formationFilter}
-                className="flex h-9 w-full rounded-md border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-400"
+                className="flex h-9 w-[200px] max-w-[60vw] rounded-md border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400"
               >
                 <option value="">Toutes</option>
                 {(formations ?? []).map((f) => (
@@ -1300,15 +1334,15 @@ export default async function SessionsListPage({
                 ))}
               </select>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="status" className="text-xs">
+            <div className="space-y-1">
+              <Label htmlFor="status" className="text-[11px] text-zinc-500 uppercase tracking-wider">
                 Statut
               </Label>
               <select
                 id="status"
                 name="status"
                 defaultValue={statusFilter}
-                className="flex h-9 w-full rounded-md border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-400"
+                className="flex h-9 w-[150px] rounded-md border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400"
               >
                 <option value="">Tous</option>
                 {(customStatuses.length > 0
@@ -1331,31 +1365,15 @@ export default async function SessionsListPage({
                 ))}
               </select>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="period" className="text-xs">
-                Période
-              </Label>
-              <select
-                id="period"
-                name="period"
-                defaultValue={periodFilter}
-                className="flex h-9 w-full rounded-md border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-400"
-              >
-                <option value="">Toutes</option>
-                <option value="upcoming">À venir</option>
-                <option value="current">En cours</option>
-                <option value="past">Passées</option>
-              </select>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="sort" className="text-xs">
+            <div className="space-y-1">
+              <Label htmlFor="sort" className="text-[11px] text-zinc-500 uppercase tracking-wider">
                 Tri
               </Label>
               <select
                 id="sort"
                 name="sort"
                 defaultValue={sortMode}
-                className="flex h-9 w-full rounded-md border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-400"
+                className="flex h-9 w-[190px] rounded-md border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400"
               >
                 {(Object.keys(SORT_LABELS) as SortMode[]).map((key) => (
                   <option key={key} value={key}>
@@ -1364,50 +1382,14 @@ export default async function SessionsListPage({
                 ))}
               </select>
             </div>
-            <div className="flex gap-2">
-              <Button type="submit">Filtrer</Button>
-              {isFiltered && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  nativeButton={false}
-                  render={<Link href="/sessions" />}
-                >
-                  Réinitialiser
-                </Button>
-              )}
-            </div>
-          </div>
 
-          {/* Ligne 2 : recherche par date (Du / Au) + saut rapide au mois. */}
-          <div className="flex flex-wrap items-end gap-3 pt-1 border-t border-zinc-100 dark:border-zinc-800/60">
-            <div className="space-y-1.5">
-              <Label htmlFor="from" className="text-xs">
-                Du
-              </Label>
-              <Input
-                id="from"
-                name="from"
-                type="date"
-                defaultValue={dateFrom}
-                className="w-[150px]"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="to" className="text-xs">
-                Au
-              </Label>
-              <Input
-                id="to"
-                name="to"
-                type="date"
-                defaultValue={dateTo}
-                className="w-[150px]"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="month" className="text-xs">
-                Aller au mois
+            {/* Séparateur visuel */}
+            <div className="hidden md:block w-px self-stretch bg-zinc-200 dark:bg-zinc-700 mx-1" />
+
+            {/* Dates : saut rapide au mois (◀ ▶) + plage précise Du / Au. */}
+            <div className="space-y-1">
+              <Label htmlFor="month" className="text-[11px] text-zinc-500 uppercase tracking-wider">
+                Mois
               </Label>
               <div className="flex items-center gap-1">
                 <Button
@@ -1425,7 +1407,7 @@ export default async function SessionsListPage({
                   name="month"
                   type="month"
                   defaultValue={monthParam}
-                  className="w-[160px]"
+                  className="h-9 w-[150px]"
                 />
                 <Button
                   type="button"
@@ -1439,10 +1421,30 @@ export default async function SessionsListPage({
                 </Button>
               </div>
             </div>
-            <p className="text-[11px] text-zinc-400 pb-2">
-              Astuce : pour une journée précise, mettez la même date dans
-              « Du » et « Au ».
-            </p>
+            <div className="space-y-1">
+              <Label htmlFor="from" className="text-[11px] text-zinc-500 uppercase tracking-wider">
+                Du
+              </Label>
+              <Input
+                id="from"
+                name="from"
+                type="date"
+                defaultValue={dateFrom}
+                className="h-9 w-[150px]"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="to" className="text-[11px] text-zinc-500 uppercase tracking-wider">
+                Au
+              </Label>
+              <Input
+                id="to"
+                name="to"
+                type="date"
+                defaultValue={dateTo}
+                className="h-9 w-[150px]"
+              />
+            </div>
           </div>
         </form>
 
