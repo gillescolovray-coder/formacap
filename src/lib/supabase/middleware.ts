@@ -6,6 +6,7 @@ const PUBLIC_PATHS = [
   "/signup",
   "/auth",
   "/c/", // Catalogue de vente publié — accessible sans connexion
+  "/portail", // Portail public de catalogue + fiches formation (sans login)
   "/api/catalog/", // Téléchargement PDF du catalogue public
   "/signer/", // Signature à distance émargement (apprenants non connectés)
   "/conventions/", // Signature à distance convention (RH non connecté)
