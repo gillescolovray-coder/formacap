@@ -103,6 +103,12 @@ export default async function PartnerCataloguePage({
       )
       .eq("organization_id", ctx.company.organization_id)
       .eq("is_inter", true)
+      // FIX Gilles 2026-06-15 : le catalogue distanciel PARTAGÉ ne doit
+      // contenir QUE les sessions proposées par CAP NUMÉRIQUE en direct.
+      // Les sessions sous-traitées à un OF appartiennent à CET OF (elles
+      // remontent via le 3e bloc subcontracting_company_id = lui) et ne
+      // doivent jamais fuiter vers un autre OF.
+      .is("subcontracting_company_id", null)
       .gte("start_date", today)
       .in("status", ["confirmed", "draft", "planned", "cancelled", "postponed"])
       .order("start_date", { ascending: true });
