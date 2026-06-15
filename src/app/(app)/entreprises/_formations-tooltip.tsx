@@ -14,8 +14,9 @@
  * le survol n'existe pas sur smartphone — choix Gilles 2026-06-04).
  */
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { BookOpen, Calendar, Clock, Star, X } from "lucide-react";
+import { BookOpen, Calendar, Clock, ExternalLink, Star, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type FormationEntry = {
@@ -137,6 +138,7 @@ export function FormationsTooltip({
   // formation, puis la liste des participants (+ reco si réalisée).
   type Group = {
     key: string;
+    sessionId: string | null;
     title: string | null;
     startDate: string | null;
     durationHours: number | null;
@@ -151,6 +153,7 @@ export function FormationsTooltip({
       if (!g) {
         g = {
           key,
+          sessionId: e.sessionId,
           title: e.title,
           startDate: e.startDate,
           durationHours: e.durationHours,
@@ -210,11 +213,31 @@ export function FormationsTooltip({
           {formatDate(f.startDate)}
           {hours ? ` · ${hours}` : ""}
         </p>
-        <p
-          className={cn("text-xs italic", muted ? "text-zinc-400" : "text-zinc-600")}
-        >
-          «&nbsp;{f.title ?? "Formation"}&nbsp;»
-        </p>
+        {f.sessionId ? (
+          <Link
+            href={`/sessions/${f.sessionId}`}
+            onClick={() => setOpen(false)}
+            className={cn(
+              "group/sess inline-flex items-center gap-1 text-xs italic hover:underline",
+              muted
+                ? "text-zinc-400 hover:text-zinc-600"
+                : "text-cyan-700 hover:text-cyan-900",
+            )}
+            title="Ouvrir la fiche de la session"
+          >
+            «&nbsp;{f.title ?? "Formation"}&nbsp;»
+            <ExternalLink className="h-3 w-3 opacity-0 group-hover/sess:opacity-100 transition-opacity" />
+          </Link>
+        ) : (
+          <p
+            className={cn(
+              "text-xs italic",
+              muted ? "text-zinc-400" : "text-zinc-600",
+            )}
+          >
+            «&nbsp;{f.title ?? "Formation"}&nbsp;»
+          </p>
+        )}
         {!muted && (
           <p className="text-[11px] mt-0.5">
             {f.npsScore != null ? (
@@ -247,14 +270,33 @@ export function FormationsTooltip({
           {formatDate(g.startDate)}
           {hours ? ` · ${hours}` : ""}
         </p>
-        <p
-          className={cn(
-            "text-xs italic",
-            muted ? "text-zinc-400 font-medium" : "text-zinc-900 font-semibold",
-          )}
-        >
-          «&nbsp;{g.title ?? "Formation"}&nbsp;»
-        </p>
+        {g.sessionId ? (
+          <Link
+            href={`/sessions/${g.sessionId}`}
+            onClick={() => setOpen(false)}
+            className={cn(
+              "group/sess inline-flex items-center gap-1 text-xs italic hover:underline",
+              muted
+                ? "text-zinc-400 font-medium hover:text-zinc-600"
+                : "text-cyan-700 font-semibold hover:text-cyan-900",
+            )}
+            title="Ouvrir la fiche de la session"
+          >
+            «&nbsp;{g.title ?? "Formation"}&nbsp;»
+            <ExternalLink className="h-3 w-3 opacity-0 group-hover/sess:opacity-100 transition-opacity" />
+          </Link>
+        ) : (
+          <p
+            className={cn(
+              "text-xs italic",
+              muted
+                ? "text-zinc-400 font-medium"
+                : "text-zinc-900 font-semibold",
+            )}
+          >
+            «&nbsp;{g.title ?? "Formation"}&nbsp;»
+          </p>
+        )}
         {g.participants.length > 0 && (
         <ul className="mt-1 space-y-1">
           {g.participants.map((p, i) => (
