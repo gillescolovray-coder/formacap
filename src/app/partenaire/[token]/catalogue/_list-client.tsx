@@ -167,6 +167,13 @@ export function CatalogueList({
           s.formation?.title ?? "",
           s.formation?.subtitle ?? "",
           s.reference ?? "",
+          // Recherche aussi sur le LIEU (présentiel) et l'appli visio
+          // (distanciel) — Gilles 2026-06-15.
+          s.location_detail?.name ?? "",
+          s.location_detail?.address ?? "",
+          s.location_detail?.postal_code ?? "",
+          s.location_detail?.city ?? "",
+          s.visio?.app ?? "",
         ].join(" "),
       );
       return haystack.includes(q);
@@ -229,7 +236,7 @@ export function CatalogueList({
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Rechercher une formation, un sujet, une référence…"
+            placeholder="Rechercher une formation, un sujet, un lieu, une référence…"
             className="w-full h-10 pl-9 pr-9 rounded-md border border-zinc-300 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-200 focus:border-cyan-400"
           />
           {query && (
