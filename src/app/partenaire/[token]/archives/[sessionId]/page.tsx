@@ -11,9 +11,32 @@ import {
 } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolvePartnerContext } from "../../_resolve";
+import { SupportViewerButton } from "../../_support-viewer-button";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Transforme un lien Google Drive / Docs en URL d'aperçu intégrable (iframe)
+ * en consultation seule. Renvoie null si non exploitable.
+ */
+function toDrivePreviewUrl(raw: string | null | undefined): string | null {
+  const url = (raw ?? "").trim();
+  if (!url) return null;
+  const idMatch =
+    url.match(/\/d\/([a-zA-Z0-9_-]+)/) || url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (idMatch) {
+    const id = idMatch[1];
+    const docKind = url.match(
+      /docs\.google\.com\/(document|presentation|spreadsheets)/,
+    );
+    if (docKind) {
+      return `https://docs.google.com/${docKind[1]}/d/${id}/preview`;
+    }
+    return `https://drive.google.com/file/d/${id}/preview`;
+  }
+  return url;
+}
 
 /**
  * Fiche detail d une session archivee dans le portail partenaire OF
@@ -46,7 +69,7 @@ export default async function ArchiveSessionDetailPage({
   const { data: session } = await supabase
     .from("sessions")
     .select(
-      "id, internal_code, start_date, end_date, is_inter, modality, subcontracting_company_id, prescriber_company_id, location, location_obj:formation_locations!location_id(name, address, postal_code, city), formation:formations(title, duration_hours, duration_days)",
+      "id, internal_code, start_date, end_date, is_inter, modality, support_drive_url, subcontracting_company_id, prescriber_company_id, location, location_obj:formation_locations!location_id(name, address, postal_code, city), formation:formations(title, duration_hours, duration_days, support_drive_url)",
     )
     .eq("id", sessionId)
     .eq("organization_id", orgId)
@@ -60,6 +83,7 @@ export default async function ArchiveSessionDetailPage({
     end_date: string | null;
     is_inter: boolean | null;
     modality: string | null;
+    support_drive_url: string | null;
     subcontracting_company_id: string | null;
     prescriber_company_id: string | null;
     location: string | null;
@@ -69,7 +93,11 @@ export default async function ArchiveSessionDetailPage({
       postal_code: string | null;
       city: string | null;
     } | null;
-    formation: { title: string; duration_hours: number | null } | null;
+    formation: {
+      title: string;
+      duration_hours: number | null;
+      support_drive_url?: string | null;
+    } | null;
   };
   const formation = Array.isArray(sess.formation)
     ? sess.formation[0]
@@ -77,6 +105,12 @@ export default async function ArchiveSessionDetailPage({
   const locationObj = Array.isArray(sess.location_obj)
     ? sess.location_obj[0]
     : sess.location_obj;
+
+  // Support pédagogique : priorité au support spécifique de la session, sinon
+  // celui de la formation. Affiché en consultation seule (Gilles 2026-06-15).
+  const supportPreviewUrl = toDrivePreviewUrl(
+    sess.support_drive_url ?? formation?.support_drive_url ?? null,
+  );
 
   // Strategie de chargement (Gilles 2026-06-01) :
   //   - Si cet OF/Prescripteur est subcontracting OU prescriber de la
@@ -275,6 +309,18 @@ export default async function ArchiveSessionDetailPage({
           </div>
         </div>
       </div>
+
+      {/* Support de formation — consultation seule (Gilles 2026-06-15).
+          Visible dès qu'un support est rattaché (session ou formation),
+          indépendamment du nombre d'apprenants. */}
+      {supportPreviewUrl && (
+        <div className="flex flex-wrap gap-2">
+          <SupportViewerButton
+            previewUrl={supportPreviewUrl}
+            title={formation?.title ?? "Session"}
+          />
+        </div>
+      )}
 
       {/* Boutons telechargements */}
       {rows.length > 0 && enrollmentIdsCsv.length > 0 && (
