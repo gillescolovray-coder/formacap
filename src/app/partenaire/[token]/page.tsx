@@ -82,19 +82,16 @@ export default async function PartnerDashboardPage({
     }
   }
 
-  const seenPairs = new Set<string>();
-  let total = 0;
-  let inProgress = 0;
-  let finished = 0;
+  // « Apprenants inscrits » = nombre de personnes DISTINCTES.
+  // « En cours / à venir » et « Formations terminées » = nombre de
+  // SESSIONS distinctes (formations) où ce partenaire a des apprenants,
+  // réparties selon la date de fin (Gilles 2026-06-15 : une session de 14
+  // apprenants = 1 formation terminée, pas 14).
+  const distinctPersons = new Set<string>();
+  const relevantSessions = new Set<string>();
   const addPair = (sessionId: string | null, personKey: string) => {
-    if (!sessionId) return;
-    const key = `${sessionId}|${personKey}`;
-    if (seenPairs.has(key)) return;
-    seenPairs.add(key);
-    total += 1;
-    const end = sessionEnd.get(sessionId);
-    if (end && end < today) finished += 1;
-    else inProgress += 1;
+    distinctPersons.add(personKey);
+    if (sessionId) relevantSessions.add(sessionId);
   };
 
   // (a) Inscrits (enrollments) sur les sessions propres du partenaire.
@@ -125,6 +122,16 @@ export default async function PartnerDashboardPage({
       ? `l:${r.learner_id}`
       : `p:${(r.prospect_email ?? "").trim().toLowerCase() || `${r.prospect_first_name ?? ""}|${r.prospect_last_name ?? ""}`}`;
     addPair(r.target_session_id, personKey);
+  }
+
+  // Total personnes + répartition des SESSIONS (formations) terminées / à venir.
+  const total = distinctPersons.size;
+  let inProgress = 0;
+  let finished = 0;
+  for (const sid of relevantSessions) {
+    const end = sessionEnd.get(sid);
+    if (end && end < today) finished += 1;
+    else inProgress += 1;
   }
 
   // Nombre de sessions visibles dans le catalogue du partenaire. On réutilise
@@ -195,16 +202,16 @@ export default async function PartnerDashboardPage({
           color="cyan"
         />
         <Kpi
+          icon={Clock}
+          label="Formations en cours / à venir"
+          value={inProgress}
+          color="amber"
+        />
+        <Kpi
           icon={Users}
           label="Apprenants inscrits"
           value={total}
           color="indigo"
-        />
-        <Kpi
-          icon={Clock}
-          label="En cours / à venir"
-          value={inProgress}
-          color="amber"
         />
         <Kpi
           icon={CheckCircle2}
