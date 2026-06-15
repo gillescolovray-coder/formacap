@@ -224,6 +224,9 @@ export default async function SessionsListPage({
     supabase
       .from("formations")
       .select("id, title, modality")
+      // On masque les formations ARCHIVÉES du filtre (Gilles 2026-06-15) :
+      // elles polluaient la liste (ex. doublon présentiel archivé).
+      .neq("status", "archived")
       .order("title", { ascending: true }),
     query,
     // Liste de TOUTES les sources (prescripteurs + OF sous-traitance) sur
