@@ -7,9 +7,11 @@ import {
   CheckCircle2,
   ChevronDown,
   Clock,
+  ExternalLink,
   Info,
   Layers,
   ListChecks,
+  MapPin,
   Plus,
   Search,
   User,
@@ -69,6 +71,8 @@ type SearchParams = {
   q?: string;
   status?: SessionStatus | "";
   formation_id?: string;
+  /** Filtre par source : "cap" | "presc:<companyId>" | "ofname:<nom OF>". */
+  source?: string;
   period?: "past" | "current" | "upcoming" | "";
   sort?: SortMode | "";
   /** Filtre par dates (YYYY-MM-DD). */
@@ -124,6 +128,7 @@ export default async function SessionsListPage({
   const q = (params.q ?? "").trim();
   const statusFilter = params.status ?? "";
   const formationFilter = params.formation_id ?? "";
+  const sourceFilter = (params.source ?? "").trim();
   const periodFilter = params.period ?? "";
   const sortMode: SortMode =
     params.sort && params.sort in SORT_LABELS
@@ -150,6 +155,7 @@ export default async function SessionsListPage({
     Boolean(q) ||
     statusFilter !== "" ||
     formationFilter !== "" ||
+    sourceFilter !== "" ||
     periodFilter !== "" ||
     Boolean(dateFrom) ||
     Boolean(dateTo) ||
@@ -206,6 +212,7 @@ export default async function SessionsListPage({
     { data: membership },
     { data: formations },
     { data: sessionsRaw, error },
+    { data: sourceRows },
   ] = await Promise.all([
     supabase
       .from("organization_members")
@@ -219,8 +226,42 @@ export default async function SessionsListPage({
       .select("id, title")
       .order("title", { ascending: true }),
     query,
+    // Liste de TOUTES les sources (prescripteurs + OF sous-traitance) sur
+    // l'ensemble des sessions — indépendante des filtres en cours — pour
+    // peupler le menu déroulant « Source » (Gilles 2026-06-15).
+    supabase
+      .from("sessions")
+      .select(
+        "prescriber_company_id, subcontractor_name, is_subcontracted, prescriber:companies!prescriber_company_id(id, name)",
+      ),
   ]);
   const organizationId = membership?.organization_id as string | undefined;
+
+  // Construction des options du filtre Source. Trois familles :
+  //   • CAP NUMÉRIQUE (sessions sans prescripteur ni sous-traitance) ;
+  //   • un prescripteur précis (clé presc:<companyId>) ;
+  //   • un OF donneur d'ordre précis (clé ofname:<nom>, le nom étant le
+  //     champ affiché dans la liste — toujours renseigné en sous-traitance).
+  const prescSourceMap = new Map<string, string>();
+  const ofSourceSet = new Set<string>();
+  for (const row of (sourceRows ?? []) as Array<Record<string, unknown>>) {
+    const prescRaw = row.prescriber as
+      | { id?: string; name?: string }
+      | Array<{ id?: string; name?: string }>
+      | null;
+    const presc = Array.isArray(prescRaw) ? prescRaw[0] : prescRaw;
+    if (presc?.id && presc?.name) prescSourceMap.set(presc.id, presc.name);
+    const scName = ((row.subcontractor_name as string | null) ?? "").trim();
+    if (scName && (row.is_subcontracted === true || scName.length > 0)) {
+      ofSourceSet.add(scName);
+    }
+  }
+  const prescSourceOptions = Array.from(prescSourceMap.entries())
+    .map(([id, name]) => ({ value: `presc:${id}`, name }))
+    .sort((a, b) => a.name.localeCompare(b.name, "fr"));
+  const ofSourceOptions = Array.from(ofSourceSet)
+    .map((name) => ({ value: `ofname:${name}`, name }))
+    .sort((a, b) => a.name.localeCompare(b.name, "fr"));
 
   // Tri appliqué côté JS pour pouvoir gérer l'ordre "upcoming_first"
   // (à venir/en cours d'abord, puis passées). Les autres modes sont
@@ -279,6 +320,29 @@ export default async function SessionsListPage({
         .join(" ")
         .toLowerCase();
       if (!haystack.includes(qLower)) return false;
+    }
+    if (sourceFilter) {
+      const sAny = s as Record<string, unknown>;
+      const prescRaw = sAny.prescriber as
+        | { id?: string }
+        | Array<{ id?: string }>
+        | null;
+      const presc = Array.isArray(prescRaw) ? prescRaw[0] : prescRaw;
+      const prescId =
+        (sAny.prescriber_company_id as string | null) ?? presc?.id ?? null;
+      const scName = ((sAny.subcontractor_name as string | null) ?? "").trim();
+      const isSub =
+        sAny.is_subcontracted === true ||
+        Boolean(sAny.subcontracting_company_id) ||
+        scName.length > 0;
+      if (sourceFilter === "cap") {
+        // CAP NUMÉRIQUE en direct : aucune source partenaire.
+        if (prescId || isSub) return false;
+      } else if (sourceFilter.startsWith("presc:")) {
+        if (prescId !== sourceFilter.slice("presc:".length)) return false;
+      } else if (sourceFilter.startsWith("ofname:")) {
+        if (scName !== sourceFilter.slice("ofname:".length)) return false;
+      }
     }
     if (dateFrom || dateTo) {
       const sStart = ((s.start_date as string) ?? "").slice(0, 10);
@@ -339,6 +403,7 @@ export default async function SessionsListPage({
       q,
       status: statusFilter,
       formation_id: formationFilter,
+      source: sourceFilter,
       period: periodFilter,
       sort: sortMode === "upcoming_first" ? "" : sortMode,
       from: dateFrom,
@@ -1341,6 +1406,41 @@ export default async function SessionsListPage({
                 ))}
               </select>
             </div>
+            {/* Filtre Source (CAP / Prescripteur / OF) — permet de consulter
+                toutes les sessions, passées comme à venir, d'un partenaire
+                donné (Gilles 2026-06-15). */}
+            <div className="space-y-1">
+              <Label htmlFor="source" className="text-[11px] text-zinc-500 uppercase tracking-wider">
+                Source
+              </Label>
+              <select
+                id="source"
+                name="source"
+                defaultValue={sourceFilter}
+                className="flex h-9 w-[200px] max-w-[60vw] rounded-md border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400"
+              >
+                <option value="">Toutes les sources</option>
+                <option value="cap">CAP NUMÉRIQUE (en direct)</option>
+                {prescSourceOptions.length > 0 && (
+                  <optgroup label="Prescripteurs">
+                    {prescSourceOptions.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {ofSourceOptions.length > 0 && (
+                  <optgroup label="OF (sous-traitance)">
+                    {ofSourceOptions.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+            </div>
             <div className="space-y-1">
               <Label htmlFor="status" className="text-[11px] text-zinc-500 uppercase tracking-wider">
                 Statut
@@ -1833,6 +1933,45 @@ export default async function SessionsListPage({
                       }
                       return parts.join("\n");
                     })();
+                    // Adresse complète (présentiel) affichée directement dans
+                    // la colonne Formation (Gilles 2026-06-15).
+                    const addressLine = (() => {
+                      const rawLocCell = (
+                        s as unknown as {
+                          location_obj?:
+                            | {
+                                name: string | null;
+                                address: string | null;
+                                postal_code: string | null;
+                                city: string | null;
+                              }
+                            | Array<{
+                                name: string | null;
+                                address: string | null;
+                                postal_code: string | null;
+                                city: string | null;
+                              }>
+                            | null;
+                        }
+                      ).location_obj;
+                      const locCell = Array.isArray(rawLocCell)
+                        ? rawLocCell[0] ?? null
+                        : rawLocCell ?? null;
+                      const addr = [
+                        locCell?.address,
+                        [locCell?.postal_code, locCell?.city]
+                          .filter(Boolean)
+                          .join(" "),
+                      ]
+                        .filter((x) => x && x.length > 0)
+                        .join(", ");
+                      const namePart = locCell?.name ?? null;
+                      if (namePart && addr) return `${namePart} — ${addr}`;
+                      if (namePart) return namePart;
+                      if (addr) return addr;
+                      if (s.location) return s.location;
+                      return null;
+                    })();
                     const statusInfo = resolveSessionStatus(
                       s.status,
                       customStatuses,
@@ -1842,18 +1981,22 @@ export default async function SessionsListPage({
                     //    identifiée comme inactive (révélée au survol).
                     //  - CONFIRMÉE -> teinte bleue PLUS SOUTENUE.
                     //  - autres   -> classes par couleur existantes.
-                    const rowClass =
-                      statusInfo.code === "cancelled"
-                        ? "bg-zinc-100/80 dark:bg-zinc-900/50 opacity-60 hover:opacity-100 hover:bg-zinc-200/70 dark:hover:bg-zinc-800/60"
-                        : statusInfo.code === "confirmed"
-                          ? "bg-blue-100/70 dark:bg-blue-950/30 hover:bg-blue-100 dark:hover:bg-blue-950/40"
-                          : statusInfo.rowClasses;
                     // Clôture administrative (Gilles 2026-06-13) — indépendant
                     // du statut ; liséré vert à gauche quand le dossier est
                     // clôturé.
                     const adminClosed = Boolean(
                       (s as { admin_closed_at?: string | null }).admin_closed_at,
                     );
+                    // Surcharge visuelle (Gilles 2026-06-15) : un dossier
+                    // CLÔTURÉ prend un fond VERT plus soutenu (prioritaire sur
+                    // le statut). Sinon, mise en forme par statut.
+                    const rowClass = adminClosed
+                      ? "bg-emerald-200/60 dark:bg-emerald-900/40 hover:bg-emerald-200 dark:hover:bg-emerald-900/60"
+                      : statusInfo.code === "cancelled"
+                        ? "bg-zinc-100/80 dark:bg-zinc-900/50 opacity-60 hover:opacity-100 hover:bg-zinc-200/70 dark:hover:bg-zinc-800/60"
+                        : statusInfo.code === "confirmed"
+                          ? "bg-blue-100/70 dark:bg-blue-950/30 hover:bg-blue-100 dark:hover:bg-blue-950/40"
+                          : statusInfo.rowClasses;
                     return (
                     <tr
                       key={s.id}
@@ -1971,6 +2114,60 @@ export default async function SessionsListPage({
                                 return null;
                               })()}
                             </div>
+                            {/* Lieu présentiel (adresse complète) / visio
+                                distanciel (appli + lien) — Gilles 2026-06-15.
+                                Distinction nette entre lien visio renseigné ou
+                                non. */}
+                            {(s.modality === "presentiel" ||
+                              s.modality === "hybride" ||
+                              s.modality === "distanciel") && (
+                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-[11px]">
+                                {(s.modality === "presentiel" ||
+                                  s.modality === "hybride") && (
+                                  <span
+                                    className={cn(
+                                      "inline-flex items-center gap-1 max-w-[280px]",
+                                      addressLine
+                                        ? "text-zinc-500 dark:text-zinc-400"
+                                        : "text-amber-600 dark:text-amber-500",
+                                    )}
+                                    title={addressLine ?? undefined}
+                                  >
+                                    <MapPin className="h-3 w-3 shrink-0" />
+                                    <span className="truncate">
+                                      {addressLine ?? "Adresse non renseignée"}
+                                    </span>
+                                  </span>
+                                )}
+                                {(s.modality === "distanciel" ||
+                                  s.modality === "hybride") && (
+                                  <span className="inline-flex items-center gap-1 text-zinc-500 dark:text-zinc-400">
+                                    <Video className="h-3 w-3 shrink-0" />
+                                    <span className="truncate max-w-[160px]">
+                                      {s.video_app || "Visio"}
+                                    </span>
+                                    {s.video_link ? (
+                                      <a
+                                        href={s.video_link}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        title={`Ouvrir le lien visio : ${s.video_link}`}
+                                        className="inline-flex items-center justify-center h-5 w-5 rounded text-cyan-600 hover:text-cyan-800 hover:bg-cyan-50 dark:hover:bg-cyan-950/40"
+                                      >
+                                        <ExternalLink className="h-3.5 w-3.5" />
+                                      </a>
+                                    ) : (
+                                      <span
+                                        title="Lien visio non renseigné"
+                                        className="inline-flex items-center justify-center h-5 w-5 rounded text-zinc-300 dark:text-zinc-600 cursor-not-allowed"
+                                      >
+                                        <ExternalLink className="h-3.5 w-3.5" />
+                                      </span>
+                                    )}
+                                  </span>
+                                )}
+                              </div>
+                            )}
                             {(() => {
                               const breakdown = stageBreakdown.get(s.id);
                               if (!breakdown || breakdown.size === 0)
