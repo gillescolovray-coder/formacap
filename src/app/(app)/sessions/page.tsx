@@ -223,7 +223,7 @@ export default async function SessionsListPage({
       .maybeSingle(),
     supabase
       .from("formations")
-      .select("id, title")
+      .select("id, title, modality")
       .order("title", { ascending: true }),
     query,
     // Liste de TOUTES les sources (prescripteurs + OF sous-traitance) sur
@@ -1399,11 +1399,22 @@ export default async function SessionsListPage({
                 className="flex h-9 w-[200px] max-w-[60vw] rounded-md border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400"
               >
                 <option value="">Toutes</option>
-                {(formations ?? []).map((f) => (
-                  <option key={f.id as string} value={f.id as string}>
-                    {f.title as string}
-                  </option>
-                ))}
+                {(formations ?? []).map((f) => {
+                  // Modalité accolée au titre : la même formation peut exister
+                  // en présentiel ET en distanciel → on évite l'ambiguïté de
+                  // deux libellés identiques (Gilles 2026-06-15).
+                  const mod = (f as { modality?: string | null }).modality;
+                  const modLabel =
+                    mod && mod in MODALITY_LABELS
+                      ? MODALITY_LABELS[mod as keyof typeof MODALITY_LABELS]
+                      : null;
+                  return (
+                    <option key={f.id as string} value={f.id as string}>
+                      {f.title as string}
+                      {modLabel ? ` — ${modLabel}` : ""}
+                    </option>
+                  );
+                })}
               </select>
             </div>
             {/* Filtre Source (CAP / Prescripteur / OF) — permet de consulter
