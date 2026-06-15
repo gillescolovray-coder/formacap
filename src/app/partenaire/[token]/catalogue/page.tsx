@@ -8,6 +8,7 @@ import {
 import { resolvePartnerContext } from "../_resolve";
 import { InviteBlock } from "../_invite-block";
 import { CatalogueList, type CatalogueSession } from "./_list-client";
+import { loadPartnerCatalogueSessions } from "@/lib/portal/partner-catalogue";
 
 // Rendu toujours frais : reflète immédiatement les tarifs de Paramètres
 // (grille prescripteur/OF) — Gilles 2026-06-09.
@@ -85,99 +86,19 @@ export default async function PartnerCataloguePage({
   const showInter = !isPrescripteur || ctx.company.show_inter_catalog;
   const showOwn = isPrescripteur && ctx.company.show_own_intra;
 
-  type RawRow = SessionRow;
-  const collected: RawRow[] = [];
-
-  if (showInter) {
-    // On ne filtre PAS sur formation.modality dans la requete Supabase
-    // (le client JS a un bug avec les filtres sur relations aliasees
-    // qui retourne silencieusement 0). On filtre en JS apres.
-    const { data: rows } = await supabase
-      .from("sessions")
-      .select(
-        `
-      id, internal_code, start_date, end_date, status, is_inter, modality, max_participants, prescriber_company_id, subcontracting_company_id, location, video_app, video_link,
-      formation:formations!inner(id, title, duration_hours, duration_days, subtitle, modality, programme_pdf_url),
-      location_obj:formation_locations!location_id(id, name, address, postal_code, city)
-    `,
-      )
-      .eq("organization_id", ctx.company.organization_id)
-      .eq("is_inter", true)
-      // FIX Gilles 2026-06-15 : le catalogue distanciel PARTAGÉ ne doit
-      // contenir QUE les sessions proposées par CAP NUMÉRIQUE en direct.
-      // Les sessions sous-traitées à un OF appartiennent à CET OF (elles
-      // remontent via le 3e bloc subcontracting_company_id = lui) et ne
-      // doivent jamais fuiter vers un autre OF.
-      .is("subcontracting_company_id", null)
-      .gte("start_date", today)
-      .in("status", ["confirmed", "draft", "planned", "cancelled", "postponed"])
-      .order("start_date", { ascending: true });
-    if (rows) {
-      // Filtre JS : ne garder que les formations DISTANCIEL
-      const filtered = (rows as unknown as RawRow[]).filter((s) => {
-        const f = Array.isArray(s.formation) ? s.formation[0] : s.formation;
-        return f?.modality === "distanciel";
-      });
-      collected.push(...filtered);
-    }
-  }
-
-  if (showOwn) {
-    // Toutes les sessions rattachées au prescripteur (INTER + INTRA, toutes
-    // modalités) — quel que soit le statut public du catalogue.
-    const { data: rows } = await supabase
-      .from("sessions")
-      .select(
-        `
-      id, internal_code, start_date, end_date, status, is_inter, modality, max_participants, prescriber_company_id, subcontracting_company_id, location, video_app, video_link,
-      formation:formations!inner(id, title, duration_hours, duration_days, subtitle, modality, programme_pdf_url),
-      location_obj:formation_locations!location_id(id, name, address, postal_code, city)
-    `,
-      )
-      .eq("organization_id", ctx.company.organization_id)
-      .eq("prescriber_company_id", ctx.company.id)
-      .gte("start_date", today)
-      .in("status", ["confirmed", "draft", "planned", "cancelled", "postponed"])
-      .order("start_date", { ascending: true });
-    if (rows) collected.push(...(rows as unknown as RawRow[]));
-  }
-
-  // 3e source : sessions ou cet OF/Prescripteur est SOUS-TRAITANT donneur
-  // d ordre (Gilles 2026-06-01). Toutes les sessions ou
-  // subcontracting_company_id = cette company. Quelle que soit la modalite
-  // / INTER ou INTRA / statut public.
-  {
-    const { data: rows } = await supabase
-      .from("sessions")
-      .select(
-        `
-      id, internal_code, start_date, end_date, status, is_inter, modality, max_participants, prescriber_company_id, subcontracting_company_id, location, video_app, video_link,
-      formation:formations!inner(id, title, duration_hours, duration_days, subtitle, modality, programme_pdf_url),
-      location_obj:formation_locations!location_id(id, name, address, postal_code, city)
-    `,
-      )
-      .eq("organization_id", ctx.company.organization_id)
-      .eq("subcontracting_company_id", ctx.company.id)
-      .gte("start_date", today)
-      .in("status", ["confirmed", "draft", "planned", "cancelled", "postponed"])
-      .order("start_date", { ascending: true });
-    if (rows) collected.push(...(rows as unknown as RawRow[]));
-  }
-
-  // Déduplique + retrie par date croissante (au cas où on aurait mixé
-  // 2 requetes INTER + INTRA, l'ordre serait perdu).
-  const seen = new Set<string>();
-  const sessions = collected
-    .filter((s) => {
-      if (seen.has(s.id)) return false;
-      seen.add(s.id);
-      return true;
-    })
-    .sort((a, b) => {
-      const da = a.start_date ?? "9999-12-31";
-      const db = b.start_date ?? "9999-12-31";
-      return da.localeCompare(db);
-    });
+  // Source UNIQUE partagée avec le Tableau de bord (KPI « Sessions au
+  // catalogue ») pour garantir des chiffres identiques (Gilles 2026-06-15).
+  const sessions = (await loadPartnerCatalogueSessions(
+    supabase,
+    {
+      organizationId: ctx.company.organization_id,
+      companyId: ctx.company.id,
+      companyType: ctx.company.type,
+      showInterCatalog: ctx.company.show_inter_catalog,
+      showOwnIntra: ctx.company.show_own_intra,
+    },
+    today,
+  )) as unknown as SessionRow[];
 
   // Overrides spécifiques par formation
   const { data: pricingRows } = await supabase

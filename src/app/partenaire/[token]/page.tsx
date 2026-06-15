@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolvePartnerContext } from "./_resolve";
+import { loadPartnerCatalogueSessions } from "@/lib/portal/partner-catalogue";
 
 type Params = { token: string };
 
@@ -67,46 +68,28 @@ export default async function PartnerDashboardPage({
     }
   }
 
-  // Nombre de sessions visibles dans le catalogue du partenaire (a venir).
-  // Pour les OF : uniquement INTER distanciel.
-  // Pour les prescripteurs : INTER distanciel + INTRA propres (selon flags),
-  // ce qui reflete exactement ce qui est affiche dans /catalogue.
-  // NOTE: le filtre sur formations.modality cote Supabase a un bug connu
-  // sur les relations aliasees → on filtre en JS comme dans page.tsx du
-  // catalogue.
+  // Nombre de sessions visibles dans le catalogue du partenaire. On réutilise
+  // EXACTEMENT la même source que la page /catalogue (helper partagé) pour que
+  // le KPI du tableau de bord et le compteur du catalogue soient identiques
+  // (Gilles 2026-06-15). Inclut donc les sessions de sous-traitance du
+  // partenaire et exclut celles confiées à un autre OF.
   const today = new Date().toISOString().slice(0, 10);
   const isOfPartner = ctx.company.type === "of";
-  const showInterCatalog =
-    !isOfPartner ? ctx.company.show_inter_catalog : true;
   const showOwnIntraCatalog = !isOfPartner && ctx.company.show_own_intra;
 
-  const catalogSessionIds = new Set<string>();
-  if (showInterCatalog) {
-    const { data: interRows } = await supabase
-      .from("sessions")
-      .select("id, formations!inner(modality)")
-      .eq("organization_id", ctx.company.organization_id)
-      .eq("is_inter", true)
-      .gte("start_date", today)
-      .in("status", ["confirmed", "draft", "planned"]);
-    (interRows ?? []).forEach((r) => {
-      const f = Array.isArray(r.formations) ? r.formations[0] : r.formations;
-      if (f && (f as { modality: string }).modality === "distanciel") {
-        catalogSessionIds.add(r.id as string);
-      }
-    });
-  }
-  if (showOwnIntraCatalog) {
-    const { data: intraRows } = await supabase
-      .from("sessions")
-      .select("id")
-      .eq("organization_id", ctx.company.organization_id)
-      .eq("prescriber_company_id", ctx.company.id)
-      .gte("start_date", today)
-      .in("status", ["confirmed", "draft", "planned"]);
-    (intraRows ?? []).forEach((r) => catalogSessionIds.add(r.id as string));
-  }
-  const catalogCount = catalogSessionIds.size;
+  const catalogCount = (
+    await loadPartnerCatalogueSessions(
+      supabase,
+      {
+        organizationId: ctx.company.organization_id,
+        companyId: ctx.company.id,
+        companyType: ctx.company.type,
+        showInterCatalog: ctx.company.show_inter_catalog,
+        showOwnIntra: ctx.company.show_own_intra,
+      },
+      today,
+    )
+  ).length;
 
   return (
     <div className="space-y-6">
