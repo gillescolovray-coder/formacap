@@ -130,7 +130,8 @@ export default async function ArchiveSessionDetailPage({
       id: string;
       first_name: string | null;
       last_name: string | null;
-      email: string | null;
+      company: { name: string | null } | { name: string | null }[] | null;
+      company_name_temp: string | null;
     } | null;
   };
 
@@ -141,7 +142,7 @@ export default async function ArchiveSessionDetailPage({
     const { data } = await supabase
       .from("session_enrollments")
       .select(
-        "id, learner_id, status, learner:learners(id, first_name, last_name, email)",
+        "id, learner_id, status, learner:learners(id, first_name, last_name, company:companies(name), company_name_temp)",
       )
       .eq("session_id", sessionId)
       .neq("status", "cancelled");
@@ -165,7 +166,7 @@ export default async function ArchiveSessionDetailPage({
       const { data } = await supabase
         .from("session_enrollments")
         .select(
-          "id, learner_id, status, learner:learners(id, first_name, last_name, email)",
+          "id, learner_id, status, learner:learners(id, first_name, last_name, company:companies(name), company_name_temp)",
         )
         .eq("session_id", sessionId)
         .in("learner_id", learnerIds)
@@ -224,7 +225,9 @@ export default async function ArchiveSessionDetailPage({
     const learner = Array.isArray(e.learner) ? e.learner[0] : e.learner;
     const lastName = learner?.last_name ?? "";
     const firstName = learner?.first_name ?? "";
-    const email = learner?.email ?? null;
+    const companyRaw = learner?.company;
+    const companyObj = Array.isArray(companyRaw) ? companyRaw[0] : companyRaw;
+    const companyName = companyObj?.name ?? learner?.company_name_temp ?? null;
     const scores = scoresByEnrollment.get(e.id) ?? null;
     const prePct = scores?.pre
       ? pct(scores.pre.score, scores.pre.max_score)
@@ -237,7 +240,7 @@ export default async function ArchiveSessionDetailPage({
     return {
       enrollmentId: e.id,
       fullName: [firstName, lastName].filter(Boolean).join(" ").trim() || "—",
-      email,
+      companyName,
       prePct,
       postPct,
       progression,
@@ -381,9 +384,10 @@ export default async function ArchiveSessionDetailPage({
                     <div className="font-semibold text-zinc-900">
                       {r.fullName}
                     </div>
-                    {r.email && (
-                      <div className="text-[11px] text-zinc-500">
-                        {r.email}
+                    {r.companyName && (
+                      <div className="text-[11px] text-zinc-500 inline-flex items-center gap-1">
+                        <Building2 className="h-2.5 w-2.5" />
+                        {r.companyName}
                       </div>
                     )}
                   </td>
