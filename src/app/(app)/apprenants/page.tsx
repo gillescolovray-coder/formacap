@@ -18,6 +18,10 @@ import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import type { Learner } from "@/lib/learners/types";
 import { LearnerPortalButtons } from "../entreprises/_learner-portal-buttons";
+import {
+  FormationsTooltip,
+  type FormationEntry,
+} from "../entreprises/_formations-tooltip";
 import type { Company } from "@/lib/companies/types";
 
 type SearchParams = {
@@ -79,6 +83,73 @@ export default async function LearnersListPage({
   if (activeFilter === "no") query = query.eq("is_active", false);
 
   const { data: learners, error } = await query;
+
+  // Formations engagées par apprenant — compteur « réalisées / à venir »
+  // cliquable (détail + récap par année + reco NPS), réutilise le composant
+  // de la vue Entreprises (Gilles 2026-06-15).
+  const formationsByLearner = new Map<string, FormationEntry[]>();
+  const learnerIds = (learners ?? []).map((l) => l.id as string);
+  if (learnerIds.length > 0) {
+    const { data: enrollments } = await supabase
+      .from("session_enrollments")
+      .select(
+        "id, learner_id, session:sessions(id, start_date, end_date, trainer:trainers!trainer_id(first_name, last_name), formation:formations(title, duration_hours)), evaluation_responses(nps_score, evaluation_type)",
+      )
+      .in("learner_id", learnerIds)
+      .neq("status", "cancelled");
+
+    const pick = <T,>(v: unknown): T | null =>
+      (Array.isArray(v) ? (v[0] ?? null) : (v ?? null)) as T | null;
+
+    for (const row of enrollments ?? []) {
+      const e = row as unknown as {
+        id: string;
+        learner_id: string;
+        session: unknown;
+        evaluation_responses:
+          | Array<{ nps_score: number | null; evaluation_type: string }>
+          | null;
+      };
+      const s = pick<{
+        id: string | null;
+        start_date: string | null;
+        end_date: string | null;
+        trainer: unknown;
+        formation: unknown;
+      }>(e.session);
+      const trainer = pick<{
+        first_name: string | null;
+        last_name: string | null;
+      }>(s?.trainer);
+      const formation = pick<{
+        title: string | null;
+        duration_hours: number | null;
+      }>(s?.formation);
+      const hot = (e.evaluation_responses ?? []).find(
+        (r) => r.evaluation_type === "hot",
+      );
+      const entry: FormationEntry = {
+        enrollmentId: e.id,
+        sessionId: s?.id ?? null,
+        startDate: s?.start_date ?? null,
+        endDate: s?.end_date ?? null,
+        durationHours: formation?.duration_hours ?? null,
+        title: formation?.title ?? null,
+        trainerName: trainer
+          ? `${trainer.first_name ?? ""} ${trainer.last_name ?? ""}`.trim() ||
+            null
+          : null,
+        learnerName: null,
+        npsScore: hot?.nps_score ?? null,
+      };
+      if (!formationsByLearner.has(e.learner_id))
+        formationsByLearner.set(e.learner_id, []);
+      formationsByLearner.get(e.learner_id)!.push(entry);
+    }
+    // Plus récente en haut (le composant sépare ensuite réalisées / à venir).
+    for (const list of formationsByLearner.values())
+      list.sort((a, b) => (b.startDate ?? "").localeCompare(a.startDate ?? ""));
+  }
 
   // Compteurs globaux pour les stat cards
   const [
@@ -345,6 +416,7 @@ export default async function LearnersListPage({
                     <th className="px-4 py-3">Email</th>
                     <th className="px-4 py-3">Société</th>
                     <th className="px-4 py-3">CP &amp; Ville</th>
+                    <th className="px-4 py-3 text-center">Formations</th>
                     <th className="px-4 py-3">État</th>
                     <th className="px-4 py-3">Portail apprenant</th>
                   </tr>
@@ -479,6 +551,21 @@ export default async function LearnersListPage({
                           ) : (
                             <span className="text-zinc-300">—</span>
                           )}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          {(() => {
+                            const entries =
+                              formationsByLearner.get(l.id) ?? [];
+                            if (entries.length === 0)
+                              return <span className="text-zinc-300">—</span>;
+                            return (
+                              <FormationsTooltip
+                                variant="learner"
+                                entries={entries}
+                                headerLabel={`${l.first_name ?? ""} ${l.last_name ?? ""}`.trim()}
+                              />
+                            );
+                          })()}
                         </td>
                         <td className="px-4 py-3">
                           {l.is_active ? (
