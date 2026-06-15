@@ -1277,9 +1277,9 @@ export default async function SessionsListPage({
         {/* Stat cards par période */}
         <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
           <Link
-            href="/sessions"
+            href={buildSessionsHref({ period: "" })}
             className={statCardClass(
-              periodFilter === "" && !isFiltered,
+              periodFilter === "",
               "bg-white dark:bg-zinc-900",
             )}
           >
@@ -1292,7 +1292,7 @@ export default async function SessionsListPage({
             </div>
           </Link>
           <Link
-            href="/sessions?period=upcoming"
+            href={buildSessionsHref({ period: "upcoming" })}
             className={statCardClass(
               periodFilter === "upcoming",
               "bg-amber-50/50 dark:bg-amber-950/20",
@@ -1307,7 +1307,7 @@ export default async function SessionsListPage({
             </div>
           </Link>
           <Link
-            href="/sessions?period=current"
+            href={buildSessionsHref({ period: "current" })}
             className={statCardClass(
               periodFilter === "current",
               "bg-cyan-50/50 dark:bg-cyan-950/20",
@@ -1322,7 +1322,7 @@ export default async function SessionsListPage({
             </div>
           </Link>
           <Link
-            href="/sessions?period=past"
+            href={buildSessionsHref({ period: "past" })}
             className={statCardClass(
               periodFilter === "past",
               "bg-zinc-100 dark:bg-zinc-900",
