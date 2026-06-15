@@ -23,49 +23,108 @@ export default async function PartnerDashboardPage({
   if (!ctx) notFound();
 
   const supabase = createAdminClient();
+  const today = new Date().toISOString().slice(0, 10);
 
-  // Inscriptions soumises par ce partenaire (via portail OU saisies en admin
-  // avec referrer_company_id = ce partenaire).
+  // ── KPI d'activité réelle du partenaire (Gilles 2026-06-15) ──────────────
+  // On compte les apprenants présents :
+  //   (a) sur les sessions où ce partenaire est DONNEUR D'ORDRE (sous-
+  //       traitance) ou PRESCRIPTEUR référent — toutes leurs inscriptions lui
+  //       « appartiennent » (session_enrollments non annulés) ;
+  //   (b) + les inscriptions qu'il a faites VIA le portail (referrer_company_id)
+  //       sur n'importe quelle session (ex. une session distanciel CAP).
+  // Déduplication par couple (session, personne) pour ne pas compter 2× un
+  // apprenant présent dans les deux sources. Le total se répartit ensuite en
+  // « en cours / à venir » (session non terminée) et « terminées ».
+
+  // Sessions « du partenaire » (donneur d'ordre OU prescripteur).
+  const { data: ownSessions } = await supabase
+    .from("sessions")
+    .select("id, end_date")
+    .or(
+      `subcontracting_company_id.eq.${ctx.company.id},prescriber_company_id.eq.${ctx.company.id}`,
+    )
+    .neq("status", "cancelled");
+  const sessionEnd = new Map<string, string | null>();
+  for (const s of (ownSessions ?? []) as Array<{
+    id: string;
+    end_date: string | null;
+  }>) {
+    sessionEnd.set(s.id, s.end_date ?? null);
+  }
+  const ownSessionIds = Array.from(sessionEnd.keys());
+
+  // Inscriptions portail (referrer = ce partenaire), toutes sessions cibles.
   const { data: requests } = await supabase
     .from("inscription_requests")
     .select(
-      "id, target_session_id, prospect_first_name, prospect_last_name, learner_id, received_at",
+      "id, target_session_id, prospect_first_name, prospect_last_name, prospect_email, learner_id",
     )
     .eq("referrer_company_id", ctx.company.id);
 
-  const total = requests?.length ?? 0;
+  // end_date des sessions cibles des inscriptions portail non déjà connues.
+  const extraSessionIds = Array.from(
+    new Set(
+      (requests ?? [])
+        .map((r) => r.target_session_id)
+        .filter((x): x is string => !!x && !sessionEnd.has(x)),
+    ),
+  );
+  if (extraSessionIds.length > 0) {
+    const { data: extra } = await supabase
+      .from("sessions")
+      .select("id, end_date")
+      .in("id", extraSessionIds);
+    for (const s of (extra ?? []) as Array<{
+      id: string;
+      end_date: string | null;
+    }>) {
+      sessionEnd.set(s.id, s.end_date ?? null);
+    }
+  }
 
-  // Pour KPI "en cours / terminé", on regarde les session_enrollments liés.
-  // On considère qu'une inscription qui a une session passée est "terminée".
+  const seenPairs = new Set<string>();
+  let total = 0;
   let inProgress = 0;
   let finished = 0;
-  if (requests && requests.length > 0) {
-    const sessionIds = Array.from(
-      new Set(
-        requests.map((r) => r.target_session_id).filter((x): x is string => !!x),
-      ),
-    );
-    if (sessionIds.length > 0) {
-      const { data: sessions } = await supabase
-        .from("sessions")
-        .select("id, end_date")
-        .in("id", sessionIds);
-      const today = new Date().toISOString().slice(0, 10);
-      const finishedSet = new Set(
-        (sessions ?? [])
-          .filter((s) => s.end_date && s.end_date < today)
-          .map((s) => s.id as string),
-      );
-      for (const r of requests) {
-        if (r.target_session_id && finishedSet.has(r.target_session_id)) {
-          finished += 1;
-        } else {
-          inProgress += 1;
-        }
-      }
-    } else {
-      inProgress = total;
+  const addPair = (sessionId: string | null, personKey: string) => {
+    if (!sessionId) return;
+    const key = `${sessionId}|${personKey}`;
+    if (seenPairs.has(key)) return;
+    seenPairs.add(key);
+    total += 1;
+    const end = sessionEnd.get(sessionId);
+    if (end && end < today) finished += 1;
+    else inProgress += 1;
+  };
+
+  // (a) Inscrits (enrollments) sur les sessions propres du partenaire.
+  if (ownSessionIds.length > 0) {
+    const { data: enr } = await supabase
+      .from("session_enrollments")
+      .select("id, session_id, learner_id")
+      .in("session_id", ownSessionIds)
+      .neq("status", "cancelled");
+    for (const e of (enr ?? []) as Array<{
+      id: string;
+      session_id: string;
+      learner_id: string | null;
+    }>) {
+      addPair(e.session_id, `l:${e.learner_id ?? e.id}`);
     }
+  }
+  // (b) Inscriptions faites via le portail (toutes sessions).
+  for (const r of (requests ?? []) as Array<{
+    id: string;
+    target_session_id: string | null;
+    learner_id: string | null;
+    prospect_email: string | null;
+    prospect_first_name: string | null;
+    prospect_last_name: string | null;
+  }>) {
+    const personKey = r.learner_id
+      ? `l:${r.learner_id}`
+      : `p:${(r.prospect_email ?? "").trim().toLowerCase() || `${r.prospect_first_name ?? ""}|${r.prospect_last_name ?? ""}`}`;
+    addPair(r.target_session_id, personKey);
   }
 
   // Nombre de sessions visibles dans le catalogue du partenaire. On réutilise
@@ -73,7 +132,6 @@ export default async function PartnerDashboardPage({
   // le KPI du tableau de bord et le compteur du catalogue soient identiques
   // (Gilles 2026-06-15). Inclut donc les sessions de sous-traitance du
   // partenaire et exclut celles confiées à un autre OF.
-  const today = new Date().toISOString().slice(0, 10);
   const isOfPartner = ctx.company.type === "of";
   const showOwnIntraCatalog = !isOfPartner && ctx.company.show_own_intra;
 
