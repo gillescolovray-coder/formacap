@@ -42,8 +42,28 @@ export function SessionStatusSelect({
           if (next === current) return;
           startTransition(async () => {
             const res = await updateSessionStatusQuick(sessionId, next);
-            if (res.ok) router.refresh();
-            else window.alert(res.error ?? "Changement de statut impossible.");
+            if (!res.ok) {
+              window.alert(res.error ?? "Changement de statut impossible.");
+              return;
+            }
+            // Retour clair sur la convocation formateur (passage en Confirmée).
+            const conv = res.trainerConvocation;
+            if (conv) {
+              if (conv.sent) {
+                window.alert(
+                  `Session confirmée. Convocation formateur envoyée à ${conv.to ?? "l'animateur"}.`,
+                );
+              } else if (conv.reason === "no_email") {
+                window.alert(
+                  "Session confirmée, mais le formateur n'a pas d'email renseigné — convocation non envoyée. Renseignez son email sur sa fiche.",
+                );
+              } else {
+                window.alert(
+                  `Session confirmée, mais la convocation formateur n'a pas pu être envoyée : ${conv.error ?? "raison inconnue"}.`,
+                );
+              }
+            }
+            router.refresh();
           });
         }}
         className={

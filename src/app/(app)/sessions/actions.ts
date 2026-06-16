@@ -17,6 +17,10 @@ import {
 } from "@/lib/google-calendar/sync";
 import { isCalendarConfigured } from "@/lib/google-calendar/client";
 import { assertSessionEditable } from "@/lib/sessions/lock";
+import {
+  sendTrainerConvocation,
+  type TrainerConvocationResult,
+} from "@/lib/sessions/trainer-convocation";
 
 async function getCurrentOrganizationId() {
   const supabase = await createClient();
@@ -515,7 +519,14 @@ export async function deleteSession(id: string) {
 export async function updateSessionStatusQuick(
   id: string,
   status: SessionStatus,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{
+  ok: boolean;
+  error?: string;
+  /** Résultat de l'envoi de la convocation formateur quand on passe en
+   *  « Confirmée » (Gilles 2026-06-16) — permet au tableau d'afficher un
+   *  retour clair (« convocation envoyée à X » / « formateur sans email »). */
+  trainerConvocation?: TrainerConvocationResult;
+}> {
   const supabase = await createClient();
   const lock = await assertSessionEditable(supabase, id);
   if (!lock.ok) return { ok: false, error: lock.error };
@@ -525,10 +536,19 @@ export async function updateSessionStatusQuick(
     .eq("id", id);
   if (error) return { ok: false, error: error.message };
   await syncSessionCalendar(id);
+
+  // Passage en « Confirmée » depuis le tableau : on envoie AUSSI la
+  // convocation formateur (même logique que la fiche) pour un comportement
+  // identique partout. Best-effort : on ne bloque pas le changement de statut.
+  let trainerConvocation: TrainerConvocationResult | undefined;
+  if (status === "confirmed") {
+    trainerConvocation = await sendTrainerConvocation(supabase, id);
+  }
+
   revalidatePath("/sessions");
   revalidatePath(`/sessions/${id}`);
   revalidatePath("/inscriptions");
-  return { ok: true };
+  return { ok: true, trainerConvocation };
 }
 
 /**

@@ -469,6 +469,28 @@ export default async function SessionDetailPage({
     (session.status === "in_progress" || session.status === "completed") &&
     isDriveConfigured();
 
+  // Convocation formateur — état RÉEL (Gilles 2026-06-16) : on ne se base
+  // plus sur le seul statut « confirmée » mais sur la trace persistée.
+  const trainerHasEmail = !!trainerRow?.email;
+  const sessTrace = session as unknown as {
+    trainer_convocation_sent_at?: string | null;
+    trainer_convocation_to?: string | null;
+    trainer_convocation_error?: string | null;
+  };
+  const trainerConvSentAt = sessTrace.trainer_convocation_sent_at ?? null;
+  const trainerConvTo = sessTrace.trainer_convocation_to ?? null;
+  const trainerConvError = sessTrace.trainer_convocation_error ?? null;
+  const trainerConvSentLabel = trainerConvSentAt
+    ? new Date(trainerConvSentAt).toLocaleString("fr-FR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone: "Europe/Paris",
+      })
+    : null;
+
   const title = session.formation?.title ?? "Session";
   const notifs = Object.entries(query)
     .filter(([key, value]) => value && MESSAGES[key])
@@ -493,35 +515,60 @@ export default async function SessionDetailPage({
           <>
             <BackButton fallbackHref="/sessions" />
             {canConfirm && (
-              <form action={confirmAction}>
-                <Button
-                  type="submit"
-                  variant={isConfirmed ? "outline" : "default"}
-                  size="sm"
-                  className={
-                    isConfirmed
-                      ? ""
-                      : "bg-emerald-600 hover:bg-emerald-700 text-white"
-                  }
-                  title={
-                    isConfirmed
-                      ? "Renvoyer la convocation au formateur (et conserver le statut confirmé)"
-                      : "Passer le statut en 'confirmée' et envoyer la convocation au formateur par email"
-                  }
-                >
-                  {isConfirmed ? (
-                    <>
-                      <Send className="h-4 w-4" />
-                      Renvoyer convocation formateur
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle2 className="h-4 w-4" />
-                      Confirmer la session
-                    </>
-                  )}
-                </Button>
-              </form>
+              <div className="flex flex-col items-start gap-1">
+                <form action={confirmAction}>
+                  <Button
+                    type="submit"
+                    variant={isConfirmed ? "outline" : "default"}
+                    size="sm"
+                    // Garde-fou : renvoyer une convocation à un formateur sans
+                    // email ne sert à rien -> bouton désactivé avec explication.
+                    disabled={isConfirmed && !trainerHasEmail}
+                    className={
+                      isConfirmed
+                        ? ""
+                        : "bg-emerald-600 hover:bg-emerald-700 text-white"
+                    }
+                    title={
+                      isConfirmed && !trainerHasEmail
+                        ? "Le formateur n'a pas d'email — renseignez-le sur sa fiche pour pouvoir envoyer la convocation"
+                        : isConfirmed
+                          ? "Renvoyer la convocation au formateur (et conserver le statut confirmé)"
+                          : "Passer le statut en 'confirmée' et envoyer la convocation au formateur par email"
+                    }
+                  >
+                    {isConfirmed ? (
+                      <>
+                        <Send className="h-4 w-4" />
+                        Renvoyer convocation formateur
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="h-4 w-4" />
+                        Confirmer la session
+                      </>
+                    )}
+                  </Button>
+                </form>
+                {/* État RÉEL de la convocation formateur (Gilles 2026-06-16) */}
+                {trainerConvSentLabel ? (
+                  <span
+                    className="text-[11px] text-emerald-700 dark:text-emerald-400"
+                    title={trainerConvTo ? `Envoyée à ${trainerConvTo}` : undefined}
+                  >
+                    ✅ Convocation envoyée le {trainerConvSentLabel}
+                    {trainerConvTo ? ` à ${trainerConvTo}` : ""}
+                  </span>
+                ) : trainerConvError ? (
+                  <span className="text-[11px] text-red-600 dark:text-red-400 max-w-[280px]">
+                    ❌ Convocation non envoyée : {trainerConvError}
+                  </span>
+                ) : isConfirmed ? (
+                  <span className="text-[11px] text-amber-600 dark:text-amber-500">
+                    ⚠️ Convocation formateur pas encore envoyée
+                  </span>
+                ) : null}
+              </div>
             )}
             {canCancelPostpone && (
               <CancelPostponeButton
