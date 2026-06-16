@@ -319,6 +319,40 @@ async function reconcileSessionDays(
       );
     }
   }
+
+  // Resynchro du formateur PRINCIPAL de la session sur le formateur du
+  // PLANNING (Gilles 2026-06-17). L'UI « formateur principal » a été
+  // supprimée : le formateur du jour est la source de vérité. On aligne
+  // sessions.trainer_id (et on efface trainer_name) sur le 1er jour ayant
+  // un formateur, pour que la convocation ET l'affichage pointent vers le
+  // bon formateur (et plus vers l'ancien trainer_id figé).
+  await syncPrincipalTrainerFromDays(supabase, sessionId);
+}
+
+/**
+ * Aligne sessions.trainer_id sur le formateur du 1er jour (chronologique)
+ * ayant un formateur défini. Efface trainer_name (texte libre) pour que
+ * l'affichage utilise la jointure formateur. Ne touche à rien si aucun
+ * jour n'a de formateur (sessions legacy sans planning détaillé).
+ */
+async function syncPrincipalTrainerFromDays(
+  supabase: SupabaseClient,
+  sessionId: string,
+) {
+  const { data: days } = await supabase
+    .from("session_days")
+    .select("trainer_id")
+    .eq("session_id", sessionId)
+    .not("trainer_id", "is", null)
+    .order("day_date", { ascending: true })
+    .limit(1);
+  const dayTrainerId = (days?.[0]?.trainer_id as string | null) ?? null;
+  if (dayTrainerId) {
+    await supabase
+      .from("sessions")
+      .update({ trainer_id: dayTrainerId, trainer_name: null })
+      .eq("id", sessionId);
+  }
 }
 
 export async function createSession(formData: FormData) {
