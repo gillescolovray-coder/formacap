@@ -93,12 +93,15 @@ export function AppShellClient({ sidebar, children }: AppShellClientProps) {
         <NavigationProgress />
       </Suspense>
       <div className="flex min-h-screen bg-slate-50">
-        {/* === SIDEBAR DESKTOP (md:+) ===
+        {/* === SIDEBAR DESKTOP (lg:+) ===
             Réduite à 64px en mode collapsed (icônes seules avec
-            tooltip), 288px en mode étendu. Cachée sur mobile (hidden md:block). */}
+            tooltip), 288px en mode étendu. Cachée sous lg (1024px) — donc
+            téléphones, PLIABLES, tablettes et paysage utilisent le drawer.
+            (Gilles 2026-06-17 : seuil relevé de md→lg car les pliables ~780px
+            tombaient en mode bureau et écrasaient le contenu.) */}
         <aside
           className={cn(
-            "hidden md:block shrink-0 sticky top-0 h-screen overflow-hidden transition-[width] duration-300 ease-out",
+            "hidden lg:block shrink-0 sticky top-0 h-screen overflow-hidden transition-[width] duration-300 ease-out",
             isCollapsed ? "w-16" : "w-72",
           )}
         >
@@ -112,19 +115,19 @@ export function AppShellClient({ sidebar, children }: AppShellClientProps) {
           </div>
         </aside>
 
-        {/* === DRAWER MOBILE (< md) ===
+        {/* === DRAWER MOBILE / TABLETTE / PLIABLE (< lg) ===
             Overlay sombre + sidebar slide-in depuis la gauche.
             Visible uniquement quand mobileOpen=true. */}
         {mobileOpen && (
           <div
-            className="md:hidden fixed inset-0 z-40 bg-black/50"
+            className="lg:hidden fixed inset-0 z-40 bg-black/50"
             onClick={() => setMobileOpen(false)}
             aria-hidden
           />
         )}
         <aside
           className={cn(
-            "md:hidden fixed top-0 left-0 z-50 h-screen w-72 max-w-[85vw] bg-white shadow-xl transition-transform duration-300 ease-out",
+            "lg:hidden fixed top-0 left-0 z-50 h-screen w-72 max-w-[85vw] bg-white shadow-xl transition-transform duration-300 ease-out",
             mobileOpen ? "translate-x-0" : "-translate-x-full",
           )}
           aria-hidden={!mobileOpen}
@@ -153,7 +156,7 @@ export function AppShellClient({ sidebar, children }: AppShellClientProps) {
             onClick={() => setMobileOpen(true)}
             title="Ouvrir le menu"
             aria-label="Ouvrir le menu"
-            className="md:hidden sticky top-4 left-4 z-30 ml-4 mt-4 h-11 w-11 inline-flex items-center justify-center rounded-full bg-white border border-slate-200 shadow-md hover:shadow-lg hover:bg-slate-50 transition-all text-slate-700"
+            className="lg:hidden sticky top-4 left-4 z-30 ml-4 mt-4 h-11 w-11 inline-flex items-center justify-center rounded-full bg-white border border-slate-200 shadow-md hover:shadow-lg hover:bg-slate-50 transition-all text-slate-700"
             style={{ float: "left" }}
           >
             <Menu className="h-5 w-5" />
@@ -165,7 +168,7 @@ export function AppShellClient({ sidebar, children }: AppShellClientProps) {
             aria-label={
               isCollapsed ? "Afficher le menu" : "Masquer le menu"
             }
-            className="hidden md:inline-flex sticky top-4 left-4 z-30 ml-4 mt-4 h-9 w-9 items-center justify-center rounded-full bg-white border border-slate-200 shadow-md hover:shadow-lg hover:bg-slate-50 transition-all text-slate-700"
+            className="hidden lg:inline-flex sticky top-4 left-4 z-30 ml-4 mt-4 h-9 w-9 items-center justify-center rounded-full bg-white border border-slate-200 shadow-md hover:shadow-lg hover:bg-slate-50 transition-all text-slate-700"
             style={{ float: "left" }}
           >
             {isCollapsed ? (

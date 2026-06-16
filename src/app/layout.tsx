@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import NextTopLoader from "nextjs-toploader";
 import "./globals.css";
 
@@ -8,6 +8,18 @@ export const metadata: Metadata = {
   other: {
     google: "notranslate",
   },
+};
+
+/**
+ * Viewport explicite (Gilles 2026-06-17) : garantit un rendu mobile correct
+ * sur TOUS les appareils (téléphones, pliables, tablettes). Sans ça, les
+ * breakpoints responsive pouvaient se calculer sur une largeur erronée.
+ * `viewport-fit=cover` gère les encoches / écrans pliables.
+ */
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 /**

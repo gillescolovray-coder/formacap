@@ -23,10 +23,11 @@ export function PageHeader({
 }: PageHeaderProps) {
   return (
     <header className="bg-white/80 backdrop-blur-xl border-b border-zinc-200/80 sticky top-0 z-10">
-      {/* Responsive (Gilles 2026-06-16) : padding réduit sur mobile, passage
-          en colonne, et décalage à gauche (pl-16) pour ne pas passer sous le
-          bouton « hamburger » flottant (md:hidden) de la coquille. */}
-      <div className="px-4 py-4 pl-16 sm:px-10 sm:py-8 sm:pl-10 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 sm:gap-6">
+      {/* Responsive (Gilles 2026-06-17) : padding réduit sur mobile/tablette,
+          passage en colonne, et décalage à gauche (pl-16) pour ne pas passer
+          sous le bouton « hamburger » flottant (lg:hidden) de la coquille.
+          La purge pl-16 s'applique jusqu'à lg (le burger est visible < lg). */}
+      <div className="px-4 py-4 sm:px-10 sm:py-8 pl-16 lg:pl-10 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 sm:gap-6">
         <div className="min-w-0 flex-1">
           {breadcrumbs && breadcrumbs.length > 0 && (
             <nav
