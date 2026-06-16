@@ -276,6 +276,10 @@ export async function sendTrainerConvocation(
     html,
     text,
     replyTo: org?.email ?? undefined,
+    // Copie (CC) à l'organisation (Paramètres → Organisation) pour que
+    // l'OF garde une trace de chaque convocation envoyée au formateur
+    // (Gilles 2026-06-17). En mode test (EMAIL_REDIRECT_TO) le CC est ignoré.
+    cc: org?.email ? [org.email] : undefined,
   });
 
   if (!result.ok) {
