@@ -118,8 +118,9 @@ export function SyncCalendarButton({
         </button>
       </div>
 
-      {/* Explication de la fonctionnalité */}
-      <p className="text-[11px] leading-tight text-zinc-500 inline-flex items-start gap-1">
+      {/* Explication de la fonctionnalité — masquée sur mobile pour alléger
+          l'en-tête (l'info reste dans l'info-bulle du bouton). Gilles 2026-06-16. */}
+      <p className="hidden sm:inline-flex text-[11px] leading-tight text-zinc-500 items-start gap-1">
         <Info className="h-3 w-3 mt-0.5 shrink-0 text-zinc-400" />
         <span>
           À cliquer <strong>une fois</strong> : les sessions sont envoyées vers

@@ -1249,7 +1249,7 @@ export default async function SessionsListPage({
         }
       />
 
-      <div className="p-8 space-y-4">
+      <div className="p-4 sm:p-8 space-y-4">
         {/* Info masquage automatique des sessions > 30 jours
             (Gilles 2026-05-22) : on alerte l'utilisateur quand des
             sessions sont cachees, et on propose un raccourci. */}
@@ -1390,8 +1390,8 @@ export default async function SessionsListPage({
 
           {/* Ligne 2 : filtres secondaires compacts (formation / statut / tri
               + dates). */}
-          <div className="flex flex-wrap items-end gap-x-3 gap-y-2 pt-3 border-t border-zinc-100 dark:border-zinc-800/60">
-            <div className="space-y-1">
+          <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-end gap-3 sm:gap-x-3 sm:gap-y-2 pt-3 border-t border-zinc-100 dark:border-zinc-800/60">
+            <div className="space-y-1 w-full sm:w-auto">
               <Label htmlFor="formation_id" className="text-[11px] text-zinc-500 uppercase tracking-wider">
                 Formation
               </Label>
@@ -1399,7 +1399,7 @@ export default async function SessionsListPage({
                 id="formation_id"
                 name="formation_id"
                 defaultValue={formationFilter}
-                className="flex h-9 w-[200px] max-w-[60vw] rounded-md border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400"
+                className="flex h-9 w-full sm:w-[200px] rounded-md border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400"
               >
                 <option value="">Toutes</option>
                 {(formations ?? []).map((f) => {
@@ -1423,7 +1423,7 @@ export default async function SessionsListPage({
             {/* Filtre Source (CAP / Prescripteur / OF) — permet de consulter
                 toutes les sessions, passées comme à venir, d'un partenaire
                 donné (Gilles 2026-06-15). */}
-            <div className="space-y-1">
+            <div className="space-y-1 w-full sm:w-auto">
               <Label htmlFor="source" className="text-[11px] text-zinc-500 uppercase tracking-wider">
                 Source
               </Label>
@@ -1431,7 +1431,7 @@ export default async function SessionsListPage({
                 id="source"
                 name="source"
                 defaultValue={sourceFilter}
-                className="flex h-9 w-[200px] max-w-[60vw] rounded-md border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400"
+                className="flex h-9 w-full sm:w-[200px] rounded-md border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400"
               >
                 <option value="">Toutes les sources</option>
                 <option value="cap">CAP NUMÉRIQUE (en direct)</option>
@@ -1455,7 +1455,7 @@ export default async function SessionsListPage({
                 )}
               </select>
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1 w-full sm:w-auto">
               <Label htmlFor="status" className="text-[11px] text-zinc-500 uppercase tracking-wider">
                 Statut
               </Label>
@@ -1463,7 +1463,7 @@ export default async function SessionsListPage({
                 id="status"
                 name="status"
                 defaultValue={statusFilter}
-                className="flex h-9 w-[150px] rounded-md border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400"
+                className="flex h-9 w-full sm:w-[150px] rounded-md border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400"
               >
                 <option value="">Tous</option>
                 {statusOptions.map((item) => (
@@ -1473,7 +1473,7 @@ export default async function SessionsListPage({
                 ))}
               </select>
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1 w-full sm:w-auto">
               <Label htmlFor="sort" className="text-[11px] text-zinc-500 uppercase tracking-wider">
                 Tri
               </Label>
@@ -1481,7 +1481,7 @@ export default async function SessionsListPage({
                 id="sort"
                 name="sort"
                 defaultValue={sortMode}
-                className="flex h-9 w-[190px] rounded-md border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400"
+                className="flex h-9 w-full sm:w-[190px] rounded-md border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400"
               >
                 {(Object.keys(SORT_LABELS) as SortMode[]).map((key) => (
                   <option key={key} value={key}>
@@ -1495,7 +1495,7 @@ export default async function SessionsListPage({
             <div className="hidden md:block w-px self-stretch bg-zinc-200 dark:bg-zinc-700 mx-1" />
 
             {/* Dates : saut rapide au mois (◀ ▶) + plage précise Du / Au. */}
-            <div className="space-y-1">
+            <div className="space-y-1 w-full sm:w-auto">
               <Label htmlFor="month" className="text-[11px] text-zinc-500 uppercase tracking-wider">
                 Mois
               </Label>
@@ -1515,7 +1515,7 @@ export default async function SessionsListPage({
                   name="month"
                   type="month"
                   defaultValue={monthParam}
-                  className="h-9 w-[150px]"
+                  className="h-9 w-full sm:w-[150px]"
                 />
                 <Button
                   type="button"
@@ -1529,7 +1529,7 @@ export default async function SessionsListPage({
                 </Button>
               </div>
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1 w-full sm:w-auto">
               <Label htmlFor="from" className="text-[11px] text-zinc-500 uppercase tracking-wider">
                 Du
               </Label>
@@ -1538,10 +1538,10 @@ export default async function SessionsListPage({
                 name="from"
                 type="date"
                 defaultValue={dateFrom}
-                className="h-9 w-[150px]"
+                className="h-9 w-full sm:w-[150px]"
               />
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1 w-full sm:w-auto">
               <Label htmlFor="to" className="text-[11px] text-zinc-500 uppercase tracking-wider">
                 Au
               </Label>
@@ -1550,7 +1550,7 @@ export default async function SessionsListPage({
                 name="to"
                 type="date"
                 defaultValue={dateTo}
-                className="h-9 w-[150px]"
+                className="h-9 w-full sm:w-[150px]"
               />
             </div>
           </div>
