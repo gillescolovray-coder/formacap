@@ -237,21 +237,23 @@ export function MonthlyStats({
                   <div
                     key={m.month}
                     className="flex-1 flex flex-col items-center justify-end gap-1"
-                    title={`${m.monthLabel}\n${m.participantsCount} participants\n${currencyFormatterPrecise.format(m.amountHt)} HT`}
                   >
                     <div
                       className="flex items-end gap-0.5 w-full justify-center"
                       style={{ height: BAR_AREA }}
                     >
-                      {/* Barre participants (cyan) */}
+                      {/* Barre participants (cyan) — info-bulle propre à la
+                          barre (Gilles 2026-06-19). */}
                       <div
                         className="flex-1 bg-cyan-500 rounded-t-sm transition-all hover:bg-cyan-600"
                         style={{ height: partPx }}
+                        title={`${m.monthLabel} : ${m.participantsCount} participant${m.participantsCount > 1 ? "s" : ""}`}
                       />
-                      {/* Barre montant HT (amber) */}
+                      {/* Barre montant HT (amber) — info-bulle propre. */}
                       <div
                         className="flex-1 bg-amber-500 rounded-t-sm transition-all hover:bg-amber-600"
                         style={{ height: amtPx }}
+                        title={`${m.monthLabel} : ${currencyFormatterPrecise.format(m.amountHt)} HT`}
                       />
                     </div>
                     <div className="text-[10px] text-zinc-500 font-medium">
@@ -271,6 +273,10 @@ export function MonthlyStats({
           <span className="inline-flex items-center gap-1">
             <span className="h-2 w-2 rounded-sm bg-amber-500" />
             Montant HT
+          </span>
+          <span className="text-zinc-400 italic">
+            (échelles indépendantes : la hauteur des barres bleues et oranges
+            n&apos;est pas comparable entre elles)
           </span>
         </div>
       </div>
