@@ -300,6 +300,9 @@ export async function registerSupportDocument(
     sizeBytes: number;
     description: string | null;
     clientRequestId: string | null;
+    /** "shared_with_learners" (support apprenant, défaut) ou "internal"
+     *  (pièce du bilan, visible UNIQUEMENT par CAP — Gilles 2026-06-19). */
+    visibility?: "shared_with_learners" | "internal";
   },
 ): Promise<{ ok: boolean; error?: string }> {
   const supabase = createAdminClient();
@@ -339,7 +342,7 @@ export async function registerSupportDocument(
       mime_type: input.mimeType,
       size_bytes: input.sizeBytes,
       description: input.description,
-      visibility: "shared_with_learners",
+      visibility: input.visibility ?? "shared_with_learners",
       is_training_program: false,
       uploaded_by: null,
       client_request_id: input.clientRequestId,

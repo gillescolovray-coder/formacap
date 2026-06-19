@@ -601,7 +601,7 @@ export default async function FormateurSessionDetailPage({
   const { data: docs } = await supabase
     .from("session_documents")
     .select(
-      "id, file_name, mime_type, size_bytes, visibility, is_training_program, uploaded_at, uploaded_by",
+      "id, file_name, mime_type, size_bytes, visibility, is_training_program, uploaded_at, uploaded_by, description",
     )
     .eq("session_id", sessionId)
     .order("uploaded_at", { ascending: false });
@@ -615,10 +615,14 @@ export default async function FormateurSessionDetailPage({
     is_training_program: boolean;
     uploaded_at: string;
     uploaded_by: string | null;
+    description: string | null;
   }>;
   const sharedDocs = allDocs.filter(
     (d) => d.visibility === "shared_with_learners",
   );
+  // Pièces du BILAN déposées par le formateur pour CAP (non partagées aux
+  // apprenants) — Gilles 2026-06-19. Visibilité "internal".
+  const internalDocs = allDocs.filter((d) => d.visibility === "internal");
 
   // ============================================================
   // Render
@@ -1813,6 +1817,7 @@ export default async function FormateurSessionDetailPage({
               Editor Supabase pour activer cette section.
             </p>
           ) : (
+            <>
             <details className="group" open={isReportEmpty(trainerReportRow?.report)}>
               <summary className="cursor-pointer list-none flex items-center justify-between gap-2 py-1 text-xs font-semibold text-zinc-700 hover:text-zinc-900">
                 <span className="inline-flex items-center gap-1.5">
@@ -1860,6 +1865,70 @@ export default async function FormateurSessionDetailPage({
                 initialSignature={trainerReportRow?.signature_data ?? null}
               />
             </details>
+
+            {/* Pièces jointes au bilan, à destination de CAP NUMÉRIQUE —
+                NON partagées aux apprenants (Gilles 2026-06-19). */}
+            <div className="mt-4 pt-3 border-t border-zinc-200">
+              <p className="text-xs font-bold text-zinc-800 inline-flex items-center gap-1.5">
+                <FileText className="h-3.5 w-3.5 text-violet-600" />
+                Pièces pour CAP NUMÉRIQUE (non partagées aux apprenants)
+              </p>
+              <p className="text-[11px] text-zinc-500 mt-0.5">
+                Joignez ici des documents destinés UNIQUEMENT à l&apos;organisme
+                (feuille de route, notes, justificatifs…). Les apprenants ne les
+                voient pas.
+              </p>
+              {internalDocs.length > 0 && (
+                <ul className="mt-2 space-y-1 text-xs">
+                  {internalDocs.map((d) => {
+                    const deleteInternal = deleteSupportAsTrainer.bind(
+                      null,
+                      token,
+                      sessionId,
+                      d.id,
+                    );
+                    return (
+                      <li
+                        key={d.id}
+                        className="flex items-start justify-between gap-2 rounded-md bg-violet-50/60 border border-violet-100 px-2 py-1.5"
+                      >
+                        <span className="min-w-0">
+                          <span className="flex items-center gap-1.5 text-zinc-800 font-medium">
+                            <FileText className="h-3 w-3 text-violet-500 shrink-0" />
+                            <span className="truncate">{d.file_name}</span>
+                          </span>
+                          {d.description && (
+                            <span className="block text-[11px] text-zinc-500 pl-4.5">
+                              {d.description}
+                            </span>
+                          )}
+                        </span>
+                        <form action={deleteInternal} className="shrink-0">
+                          <button
+                            type="submit"
+                            className="text-red-500 hover:text-red-700"
+                            title="Supprimer cette pièce"
+                            aria-label="Supprimer"
+                          >
+                            ✕
+                          </button>
+                        </form>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              <div className="mt-1">
+                <UploadSupportForm
+                  token={token}
+                  sessionId={sessionId}
+                  visibility="internal"
+                  title="Joindre un document pour CAP (non partagé aux apprenants)"
+                  successText="Pièce ajoutée au bilan (visible uniquement par CAP NUMÉRIQUE)."
+                />
+              </div>
+            </div>
+            </>
           )}
         </Module>
       </div>

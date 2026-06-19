@@ -12,6 +12,13 @@ import {
 type Props = {
   token: string;
   sessionId: string;
+  /** "shared_with_learners" (support apprenant, défaut) ou "internal"
+   *  (pièce du bilan, visible uniquement par CAP). Gilles 2026-06-19. */
+  visibility?: "shared_with_learners" | "internal";
+  /** Libellé de la zone de dépôt. */
+  title?: string;
+  /** Message de succès personnalisé. */
+  successText?: string;
 };
 
 /**
@@ -35,7 +42,13 @@ function newRequestId(): string {
 
 const MAX_SIZE = 50 * 1024 * 1024; // 50 Mo
 
-export function UploadSupportForm({ token, sessionId }: Props) {
+export function UploadSupportForm({
+  token,
+  sessionId,
+  visibility = "shared_with_learners",
+  title = "Ajouter un support (partagé automatiquement avec les apprenants)",
+  successText = "Support ajouté et partagé avec les apprenants.",
+}: Props) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const descRef = useRef<HTMLInputElement>(null);
@@ -92,6 +105,7 @@ export function UploadSupportForm({ token, sessionId }: Props) {
         sizeBytes: file.size,
         description: descRef.current?.value?.trim() || null,
         clientRequestId: requestId,
+        visibility,
       });
       if (!regRes.ok) {
         setMsg({ t: "err", m: regRes.error ?? "Erreur d'enregistrement." });
@@ -101,7 +115,7 @@ export function UploadSupportForm({ token, sessionId }: Props) {
       setFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
       if (descRef.current) descRef.current.value = "";
-      setMsg({ t: "ok", m: "Support ajouté et partagé avec les apprenants." });
+      setMsg({ t: "ok", m: successText });
       router.refresh();
     } catch (e) {
       setMsg({ t: "err", m: (e as Error).message || "Erreur inattendue." });
@@ -112,9 +126,7 @@ export function UploadSupportForm({ token, sessionId }: Props) {
 
   return (
     <div className="mt-4 pt-3 border-t border-zinc-100 space-y-2">
-      <label className="text-xs font-medium text-zinc-700 block">
-        Ajouter un support (partagé automatiquement avec les apprenants)
-      </label>
+      <label className="text-xs font-medium text-zinc-700 block">{title}</label>
 
       {/* Zone glisser-déposer + clic pour choisir */}
       <div
