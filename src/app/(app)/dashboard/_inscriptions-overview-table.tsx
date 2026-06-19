@@ -1,4 +1,6 @@
-import { Fragment } from "react";
+"use client";
+
+import { Fragment, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Briefcase,
@@ -10,7 +12,6 @@ import {
   Mail,
   MapPin,
   Phone,
-  Users,
 } from "lucide-react";
 
 export type InscriptionOverviewRow = {
@@ -81,29 +82,81 @@ function formatDate(s: string | null): string {
 }
 
 export function InscriptionsOverviewTable({
-  rows,
+  rows: allRows,
 }: {
   rows: InscriptionOverviewRow[];
 }) {
+  // ── Filtre mois / année (Gilles 2026-06-19) — agrégation côté client ─────
+  const years = useMemo(() => {
+    const set = new Set<number>();
+    for (const r of allRows) {
+      const y = r.startDate ? Number(r.startDate.slice(0, 4)) : NaN;
+      if (Number.isFinite(y)) set.add(y);
+    }
+    if (set.size === 0) set.add(new Date().getFullYear());
+    return Array.from(set).sort((a, b) => b - a);
+  }, [allRows]);
+  const [mode, setMode] = useState<"month" | "year">("month");
+  const [year, setYear] = useState<number>(years[0]!);
+  const [month, setMonth] = useState<number>(new Date().getMonth()); // 0-11
+
+  // Lignes filtrées sur la période choisie (par date de session).
+  const rows = useMemo(
+    () =>
+      allRows.filter((r) => {
+        if (!r.startDate) return false;
+        if (Number(r.startDate.slice(0, 4)) !== year) return false;
+        if (mode === "month" && Number(r.startDate.slice(5, 7)) - 1 !== month)
+          return false;
+        return true;
+      }),
+    [allRows, mode, year, month],
+  );
+
+  // Totaux de la période. Le forfait (INTRA/sous-traitance) est compté UNE
+  // fois par session ; le per_learner est sommé par apprenant.
+  const totals = useMemo(() => {
+    let directHt = 0;
+    let ofHt = 0;
+    let totalHours = 0;
+    const seenForfait = new Set<string>();
+    for (const r of rows) {
+      totalHours += r.durationHours ?? 0;
+      const isOf = r.sourceKind === "of";
+      let amt = 0;
+      if (r.amountMode === "forfait") {
+        const sid = r.sessionId ?? r.enrollmentId;
+        if (seenForfait.has(sid)) continue;
+        seenForfait.add(sid);
+        amt = r.sessionAmount ?? 0;
+      } else {
+        amt = r.amountHt ?? 0;
+      }
+      if (isOf) ofHt += amt;
+      else directHt += amt;
+    }
+    return {
+      directHt,
+      ofHt,
+      totalHt: directHt + ofHt,
+      nbApprenants: rows.length,
+      totalHours,
+    };
+  }, [rows]);
+
+  const MONTHS_FR = [
+    "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
+    "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre",
+  ];
+  const periodLabel =
+    mode === "month" ? `${MONTHS_FR[month]} ${year}` : `Année ${year}`;
+
   // Index du 1er apprenant d'une session deja PASSEE (start_date < aujourd'hui).
-  // Le tri amont place les a-venir en tete, les passees a la fin.
-  // On insere un bandeau separateur juste avant ce 1er apprenant passe.
   const todayIso = new Date().toISOString().slice(0, 10);
   const firstPastIdx = rows.findIndex(
     (r) => r.startDate !== null && r.startDate < todayIso,
   );
   const pastCount = firstPastIdx === -1 ? 0 : rows.length - firstPastIdx;
-
-  if (rows.length === 0) {
-    return (
-      <div className="rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-8 text-center">
-        <Users className="h-10 w-10 text-zinc-300 mx-auto mb-3" />
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Aucune inscription pour le moment.
-        </p>
-      </div>
-    );
-  }
 
   // Index unique par session pour la coloration alternee (groupement
   // visuel : tous les apprenants d'une meme session partagent la meme
@@ -136,20 +189,103 @@ export function InscriptionsOverviewTable({
 
   return (
     <div className="rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 overflow-hidden">
-      <div className="flex items-center justify-between gap-2 p-4 border-b border-zinc-200 dark:border-zinc-800">
-        <h2 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 inline-flex items-center gap-2">
-          <ListChecks className="h-4 w-4 text-cyan-600" />
-          Apprenants inscrits par session
-          <span className="text-xs font-medium text-zinc-500">
-            ({rows.length})
+      <div className="flex items-start justify-between gap-2 p-4 border-b border-zinc-200 dark:border-zinc-800 flex-wrap">
+        <div>
+          <h2 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 inline-flex items-center gap-2">
+            <ListChecks className="h-4 w-4 text-cyan-600" />
+            Apprenants inscrits par session
+            <span className="text-xs font-medium text-zinc-500">
+              ({rows.length} · {periodLabel})
+            </span>
+          </h2>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Filtre Par mois / Par année + sélecteurs */}
+          <div className="inline-flex rounded-lg border border-zinc-300 overflow-hidden text-xs font-semibold">
+            <button
+              type="button"
+              onClick={() => setMode("month")}
+              className={
+                mode === "month"
+                  ? "px-2.5 py-1 bg-cyan-600 text-white"
+                  : "px-2.5 py-1 text-zinc-600 hover:bg-zinc-50"
+              }
+            >
+              Par mois
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("year")}
+              className={
+                mode === "year"
+                  ? "px-2.5 py-1 bg-cyan-600 text-white"
+                  : "px-2.5 py-1 text-zinc-600 hover:bg-zinc-50"
+              }
+            >
+              Par année
+            </button>
+          </div>
+          {mode === "month" && (
+            <select
+              value={month}
+              onChange={(e) => setMonth(Number(e.target.value))}
+              className="h-7 rounded-md border border-zinc-300 text-xs px-2"
+            >
+              {MONTHS_FR.map((m, i) => (
+                <option key={i} value={i}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          )}
+          <select
+            value={year}
+            onChange={(e) => setYear(Number(e.target.value))}
+            className="h-7 rounded-md border border-zinc-300 text-xs px-2"
+          >
+            {years.map((y) => (
+              <option key={y} value={y}>
+                {y}
+              </option>
+            ))}
+          </select>
+          <Link
+            href="/inscriptions"
+            className="text-xs text-cyan-700 hover:underline"
+          >
+            Voir toutes →
+          </Link>
+        </div>
+      </div>
+
+      {/* Bandeau de totaux de la période */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/60 dark:bg-zinc-950/40 text-xs">
+        <span className="inline-flex items-center gap-1">
+          <span className="text-zinc-500">Apprenants :</span>
+          <span className="font-bold tabular-nums">{totals.nbApprenants}</span>
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="text-zinc-500">Heures :</span>
+          <span className="font-bold tabular-nums">{totals.totalHours} h</span>
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="text-zinc-500">HT direct (CAP + presc.) :</span>
+          <span className="font-bold tabular-nums text-cyan-700">
+            {currencyFormatter.format(totals.directHt)}
           </span>
-        </h2>
-        <Link
-          href="/inscriptions"
-          className="text-xs text-cyan-700 hover:underline"
-        >
-          Voir toutes →
-        </Link>
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="text-zinc-500">Sous-total OF :</span>
+          <span className="font-bold tabular-nums text-indigo-700">
+            {currencyFormatter.format(totals.ofHt)}
+          </span>
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="text-zinc-500">Total HT :</span>
+          <span className="font-black tabular-nums text-zinc-900 dark:text-zinc-100">
+            {currencyFormatter.format(totals.totalHt)}
+          </span>
+        </span>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
@@ -158,12 +294,23 @@ export function InscriptionsOverviewTable({
               <th className="px-3 py-2.5">Date session</th>
               <th className="px-3 py-2.5">Formation</th>
               <th className="px-3 py-2.5">Apprenant</th>
+              <th className="px-3 py-2.5 text-right">Heures</th>
               <th className="px-3 py-2.5 text-right">Budget</th>
               <th className="px-3 py-2.5">Entreprise</th>
               <th className="px-3 py-2.5">Source</th>
             </tr>
           </thead>
           <tbody>
+            {rows.length === 0 && (
+              <tr>
+                <td
+                  colSpan={7}
+                  className="p-6 text-center text-sm text-zinc-500"
+                >
+                  Aucune inscription pour {periodLabel}.
+                </td>
+              </tr>
+            )}
             {rows.map((r, idx) => {
               // Detection du changement de session pour la separation
               // visuelle : on epaissit la bordure entre deux groupes.
@@ -219,7 +366,7 @@ export function InscriptionsOverviewTable({
                   {isFirstPast && (
                     <tr>
                       <td
-                        colSpan={6}
+                        colSpan={7}
                         className="px-3 py-2 bg-zinc-200 dark:bg-zinc-800 text-[11px] uppercase tracking-wider font-bold text-zinc-700 dark:text-zinc-300 border-y-2 border-zinc-400 dark:border-zinc-600"
                       >
                         <span className="inline-flex items-center gap-1.5">
@@ -333,6 +480,16 @@ export function InscriptionsOverviewTable({
                         <Mail className="h-3 w-3 inline mr-1 text-zinc-400" />
                         {r.learnerEmail}
                       </a>
+                    )}
+                  </td>
+
+                  {/* Heures par apprenant (durée de la session) — Gilles
+                      2026-06-19. */}
+                  <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap text-zinc-700 dark:text-zinc-300">
+                    {r.durationHours != null && r.durationHours > 0 ? (
+                      <span className="font-semibold">{r.durationHours} h</span>
+                    ) : (
+                      <span className="text-zinc-400">—</span>
                     )}
                   </td>
 
