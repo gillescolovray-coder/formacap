@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { CalendarCheck, Loader2, Info, RotateCcw } from "lucide-react";
+import { CalendarCheck, Loader2, RotateCcw } from "lucide-react";
 import {
   syncAllSessionsToCalendar,
   resetAndResyncCalendar,
@@ -118,17 +118,8 @@ export function SyncCalendarButton({
         </button>
       </div>
 
-      {/* Explication de la fonctionnalité — masquée sur mobile pour alléger
-          l'en-tête (l'info reste dans l'info-bulle du bouton). Gilles 2026-06-16. */}
-      <p className="hidden sm:inline-flex text-[11px] leading-tight text-zinc-500 items-start gap-1">
-        <Info className="h-3 w-3 mt-0.5 shrink-0 text-zinc-400" />
-        <span>
-          À cliquer <strong>une fois</strong> : les sessions sont envoyées vers
-          Google Agenda « Sessions CAP ». Ensuite tout se met à jour{" "}
-          <strong>automatiquement</strong> à chaque modification. En cas de
-          doute, recliquez pour tout resynchroniser.
-        </span>
-      </p>
+      {/* Paragraphe explicatif retiré pour un en-tête épuré et aligné
+          (Gilles 2026-06-19). L'info reste dans l'info-bulle des boutons. */}
 
       {/* Message de résultat */}
       {msg && (

@@ -210,7 +210,6 @@ export default async function SessionsListPage({
   // Phase 1 : tout ce qui ne dépend que de l'utilisateur — en parallèle.
   const [
     { data: membership },
-    { data: formations },
     { data: sessionsRaw, error },
     { data: sourceRows },
   ] = await Promise.all([
@@ -221,13 +220,6 @@ export default async function SessionsListPage({
       .eq("is_active", true)
       .limit(1)
       .maybeSingle(),
-    supabase
-      .from("formations")
-      .select("id, title, modality")
-      // On masque les formations ARCHIVÉES du filtre (Gilles 2026-06-15) :
-      // elles polluaient la liste (ex. doublon présentiel archivé).
-      .neq("status", "archived")
-      .order("title", { ascending: true }),
     query,
     // Liste de TOUTES les sources (prescripteurs + OF sous-traitance) sur
     // l'ensemble des sessions — indépendante des filtres en cours — pour
@@ -1366,19 +1358,19 @@ export default async function SessionsListPage({
                 className="h-11 pl-9 text-base"
               />
             </div>
-            <div className="flex gap-2 shrink-0">
+            <div className="flex gap-2 shrink-0 w-full sm:w-auto">
               <Button
                 type="submit"
-                className="h-11 px-6 bg-cyan-600 hover:bg-cyan-700 text-white font-semibold shadow-sm"
+                className="h-12 flex-1 sm:flex-none px-8 bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-base shadow-md"
               >
-                <Search className="h-4 w-4" />
+                <Search className="h-5 w-5" />
                 Rechercher
               </Button>
               {isFiltered && (
                 <Button
                   type="button"
                   variant="outline"
-                  className="h-11"
+                  className="h-12"
                   nativeButton={false}
                   render={<Link href="/sessions" />}
                 >
@@ -1391,35 +1383,9 @@ export default async function SessionsListPage({
           {/* Ligne 2 : filtres secondaires compacts (formation / statut / tri
               + dates). */}
           <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-end gap-3 sm:gap-x-3 sm:gap-y-2 pt-3 border-t border-zinc-100 dark:border-zinc-800/60">
-            <div className="space-y-1 w-full sm:w-auto">
-              <Label htmlFor="formation_id" className="text-[11px] text-zinc-500 uppercase tracking-wider">
-                Formation
-              </Label>
-              <select
-                id="formation_id"
-                name="formation_id"
-                defaultValue={formationFilter}
-                className="flex h-9 w-full sm:w-[200px] rounded-md border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400"
-              >
-                <option value="">Toutes</option>
-                {(formations ?? []).map((f) => {
-                  // Modalité accolée au titre : la même formation peut exister
-                  // en présentiel ET en distanciel → on évite l'ambiguïté de
-                  // deux libellés identiques (Gilles 2026-06-15).
-                  const mod = (f as { modality?: string | null }).modality;
-                  const modLabel =
-                    mod && mod in MODALITY_LABELS
-                      ? MODALITY_LABELS[mod as keyof typeof MODALITY_LABELS]
-                      : null;
-                  return (
-                    <option key={f.id as string} value={f.id as string}>
-                      {f.title as string}
-                      {modLabel ? ` — ${modLabel}` : ""}
-                    </option>
-                  );
-                })}
-              </select>
-            </div>
+            {/* Filtres Formation / Statut / Tri retirés (Gilles 2026-06-19) —
+                allègement : la recherche texte couvre la formation, les cartes
+                de période couvrent le statut. */}
             {/* Filtre Source (CAP / Prescripteur / OF) — permet de consulter
                 toutes les sessions, passées comme à venir, d'un partenaire
                 donné (Gilles 2026-06-15). */}
@@ -1455,42 +1421,6 @@ export default async function SessionsListPage({
                 )}
               </select>
             </div>
-            <div className="space-y-1 w-full sm:w-auto">
-              <Label htmlFor="status" className="text-[11px] text-zinc-500 uppercase tracking-wider">
-                Statut
-              </Label>
-              <select
-                id="status"
-                name="status"
-                defaultValue={statusFilter}
-                className="flex h-9 w-full sm:w-[150px] rounded-md border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400"
-              >
-                <option value="">Tous</option>
-                {statusOptions.map((item) => (
-                  <option key={item.code} value={item.code}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-1 w-full sm:w-auto">
-              <Label htmlFor="sort" className="text-[11px] text-zinc-500 uppercase tracking-wider">
-                Tri
-              </Label>
-              <select
-                id="sort"
-                name="sort"
-                defaultValue={sortMode}
-                className="flex h-9 w-full sm:w-[190px] rounded-md border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400"
-              >
-                {(Object.keys(SORT_LABELS) as SortMode[]).map((key) => (
-                  <option key={key} value={key}>
-                    {SORT_LABELS[key]}
-                  </option>
-                ))}
-              </select>
-            </div>
-
             {/* Séparateur visuel */}
             <div className="hidden md:block w-px self-stretch bg-zinc-200 dark:bg-zinc-700 mx-1" />
 
@@ -1602,121 +1532,8 @@ export default async function SessionsListPage({
                 : ""}
             </p>
 
-            {/* Récap des totaux HT par statut. Calculé sur les sessions
-                de la page courante (donc respecte les filtres actifs). */}
-            {(() => {
-              type Bucket = {
-                code: string;
-                label: string;
-                color: string;
-                badgeClasses: string;
-                totalHT: number;
-                count: number;
-              };
-              const buckets = new Map<string, Bucket>();
-              let grandTotal = 0;
-              let withAmount = 0;
-              for (const s of sessions as TrainingSession[]) {
-                const info = resolveSessionStatus(s.status, customStatuses);
-                const key = info.code;
-                if (!buckets.has(key)) {
-                  buckets.set(key, {
-                    code: info.code,
-                    label: info.label,
-                    color: info.color,
-                    badgeClasses: info.badgeClasses,
-                    totalHT: 0,
-                    count: 0,
-                  });
-                }
-                const b = buckets.get(key)!;
-                b.count += 1;
-                // Refonte tarification 2026-05-31 (Gilles) : cascade
-                // corrigee pour totaux session :
-                //   1. amount_ht saisi sur la session (réel)
-                //   2. somme inscriptionAmounts (CA reel = billing_total_ht
-                //      > quote_amount_ht — tarifs negocies inclus)
-                //   3. fallback estimation = tarif public × nb d'inscrits
-                //      (ou max_participants a defaut)
-                let amount = 0;
-                if (s.amount_ht !== null && s.amount_ht !== undefined) {
-                  amount = Number(s.amount_ht);
-                } else if (subcontractAmount(s) !== null) {
-                  // Sous-traitance : forfait jour de l'OF (prioritaire).
-                  amount = subcontractAmount(s) as number;
-                } else {
-                  // Tarification R7 propre à la session. En mode forfait
-                  // (INTRA), le forfait est un PRIX FIXE qui prime sur la
-                  // somme des inscriptions (Gilles 2026-06-08).
-                  const r7 = r7SessionAmount(s);
-                  const isForfait =
-                    sessionCtxById.get(s.id)?.pricing_mode === "forfait";
-                  const fromInscriptions = inscriptionAmounts.get(s.id) ?? 0;
-                  if (isForfait && r7 !== null) {
-                    amount = r7;
-                  } else if (fromInscriptions > 0) {
-                    amount = fromInscriptions;
-                  } else if (r7 !== null) {
-                    amount = r7;
-                  } else {
-                    const pub = publicUnitBySession.get(s.id);
-                    if (pub && pub > 0) {
-                      const nb =
-                        totalPersons.get(s.id) ??
-                        enrollmentCount.get(s.id) ??
-                        inscriptionCount.get(s.id) ??
-                        0;
-                      const effectiveNb =
-                        nb > 0 ? nb : Number(s.max_participants ?? 0);
-                      if (effectiveNb > 0) amount = pub * effectiveNb;
-                    }
-                  }
-                }
-                if (amount > 0) {
-                  b.totalHT += amount;
-                  grandTotal += amount;
-                  withAmount += 1;
-                }
-              }
-              const bucketsArr = Array.from(buckets.values());
-              if (withAmount === 0) return null;
-              return (
-                <div className="rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-xs uppercase tracking-wider font-bold text-zinc-500 mr-1">
-                      Total HT
-                    </span>
-                    <span className="inline-flex items-center px-3 py-1 rounded-md bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 text-sm font-black tabular-nums">
-                      {currencyFormatter.format(grandTotal)}
-                    </span>
-                    <span className="text-xs text-zinc-400">
-                      ({withAmount} session{withAmount > 1 ? "s" : ""}{" "}
-                      avec montant)
-                    </span>
-                    <span className="mx-2 text-zinc-200 dark:text-zinc-700">
-                      |
-                    </span>
-                    {bucketsArr
-                      .filter((b) => b.totalHT > 0)
-                      .map((b) => (
-                        <span
-                          key={b.code}
-                          className={cn(
-                            "inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs whitespace-nowrap",
-                            b.badgeClasses,
-                          )}
-                          title={`${b.count} session${b.count > 1 ? "s" : ""} en « ${b.label} »`}
-                        >
-                          <span className="font-medium">{b.label}</span>
-                          <span className="font-black tabular-nums">
-                            {currencyFormatter.format(b.totalHT)}
-                          </span>
-                        </span>
-                      ))}
-                  </div>
-                </div>
-              );
-            })()}
+            {/* Bloc récap « Total HT » retiré (Gilles 2026-06-19) — allègement
+                de la page Sessions. */}
 
             {monthGroups.map((grp) => (
             <details
