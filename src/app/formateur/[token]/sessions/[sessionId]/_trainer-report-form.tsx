@@ -17,6 +17,9 @@ type Props = {
   trainerName: string;
   initial: TrainerReport;
   initialSignedAt: string | null;
+  /** Signature déjà enregistrée (data URL) — réaffichée pour rassurer le
+   *  formateur qui revient sur un bilan signé (Gilles 2026-06-19). */
+  initialSignature?: string | null;
 };
 
 /**
@@ -34,6 +37,7 @@ export function TrainerReportForm({
   trainerName,
   initial,
   initialSignedAt,
+  initialSignature = null,
 }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -104,17 +108,42 @@ export function TrainerReportForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-3 mt-2">
       {initialSignedAt && (
-        <div className="rounded-md bg-emerald-50 border border-emerald-200 p-2.5 text-xs text-emerald-800 flex items-center gap-1.5">
-          <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-          Bilan signé le{" "}
-          {new Date(initialSignedAt).toLocaleDateString("fr-FR", {
-            day: "numeric",
-            month: "long",
-            year: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
-          . Vous pouvez le mettre à jour et re-signer si besoin.
+        <div className="rounded-lg bg-emerald-50 border-2 border-emerald-300 p-3.5 text-sm text-emerald-900">
+          <div className="flex items-start gap-2">
+            <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600 mt-0.5" />
+            <div className="space-y-1">
+              <p className="font-bold">
+                ✅ Vous avez signé votre bilan le{" "}
+                {new Date(initialSignedAt).toLocaleDateString("fr-FR", {
+                  day: "numeric",
+                  month: "long",
+                  year: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+                .
+              </p>
+              <p className="text-emerald-800 leading-relaxed">
+                Vous n&apos;avez plus rien à faire. Si vous souhaitez{" "}
+                <strong>modifier</strong> ce bilan, apportez vos changements
+                ci-dessous puis <strong>re-signez</strong> en bas pour valider
+                la nouvelle version.
+              </p>
+            </div>
+          </div>
+          {initialSignature && (
+            <div className="mt-2.5 pt-2.5 border-t border-emerald-200">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700 mb-1">
+                Votre signature enregistrée
+              </p>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={initialSignature}
+                alt="Votre signature"
+                className="h-20 w-auto max-w-[260px] bg-white rounded border border-emerald-200 p-1"
+              />
+            </div>
+          )}
         </div>
       )}
 
@@ -215,6 +244,15 @@ export function TrainerReportForm({
           Signez ci-dessous pour valider le bilan. La signature est tracée en
           direct (preuve Qualiopi R9). Sans signature, le bilan est enregistré
           en brouillon.
+          {initialSignedAt && (
+            <>
+              {" "}
+              <span className="text-amber-700 font-medium">
+                Ce cadre est volontairement vide : re-signez ici uniquement si
+                vous venez de modifier le bilan.
+              </span>
+            </>
+          )}
         </p>
         <div className="flex justify-center">
           <SignaturePad

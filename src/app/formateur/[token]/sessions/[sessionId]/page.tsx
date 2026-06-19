@@ -553,17 +553,19 @@ export default async function FormateurSessionDetailPage({
     report: TrainerReport;
     signer_name: string | null;
     signed_at: string | null;
+    signature_data: string | null;
   } | null = null;
   let trainerReportTableMissing = false;
   try {
     const { data: r, error: rErr } = await supabase
       .from("session_trainer_reports")
-      .select("report, signer_name, signed_at")
+      .select("report, signer_name, signed_at, signature_data")
       .eq("session_id", sessionId)
       .maybeSingle<{
         report: TrainerReport;
         signer_name: string | null;
         signed_at: string | null;
+        signature_data: string | null;
       }>();
     if (rErr && /relation .* does not exist/i.test(rErr.message)) {
       trainerReportTableMissing = true;
@@ -1791,6 +1793,7 @@ export default async function FormateurSessionDetailPage({
                 trainerName={trainerFullName}
                 initial={trainerReportRow?.report ?? {}}
                 initialSignedAt={trainerReportRow?.signed_at ?? null}
+                initialSignature={trainerReportRow?.signature_data ?? null}
               />
             </details>
           )}

@@ -665,21 +665,25 @@ export function PlanningSection({
                       </select>
                     </div>
                   </div>
-                  {/* Consignes formateur du jour */}
-                  <div className="space-y-0.5 flex-1 min-w-[180px]">
+                  {/* Consignes formateur du jour — champ agrandi (Gilles
+                      2026-06-19) : sur sa propre ligne, en zone de saisie
+                      multi-lignes. Ces consignes remontent dans le portail
+                      formateur ET dans son agenda. */}
+                  <div className="space-y-0.5 w-full">
                     <Label className="text-[10px] text-slate-500">
-                      Consignes formateur
+                      Consignes formateur (code salle, accès, matériel… —
+                      transmises au formateur)
                     </Label>
-                    <Input
-                      type="text"
+                    <textarea
                       value={d.trainer_notes}
                       disabled={!d.enabled}
                       onChange={(e) =>
                         updateDay(d.key, { trainer_notes: e.target.value })
                       }
-                      placeholder="Ex : Apporter le support v2…"
-                      className="h-7 text-xs"
-                      title="Consignes/recommandations destinées au formateur pour ce jour"
+                      placeholder="Ex : Code salle 1234 · parking visiteurs au sous-sol · apporter le support v2…"
+                      rows={3}
+                      className="w-full rounded-md border border-slate-300 dark:border-slate-700 bg-transparent px-2 py-1.5 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400 disabled:opacity-50 resize-y min-h-[4.5rem]"
+                      title="Consignes/recommandations destinées au formateur pour ce jour (affichées dans son portail et son agenda)"
                     />
                   </div>
                   {/* Total du jour */}

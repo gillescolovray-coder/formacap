@@ -177,6 +177,15 @@ export function UploadSupportForm({ token, sessionId }: Props) {
         </p>
       )}
 
+      {/* Indicateur d'attente bien visible pendant l'envoi (Gilles 2026-06-19) :
+          l'upload peut être long, on rassure le formateur. */}
+      {pending && (
+        <div className="flex items-center gap-2 rounded-md bg-indigo-50 border border-indigo-200 px-3 py-2 text-[11px] font-semibold text-indigo-800">
+          <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+          Téléversement en cours, veuillez patienter… Ne fermez pas la page.
+        </div>
+      )}
+
       <button
         type="button"
         onClick={handleUpload}
