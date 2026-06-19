@@ -162,13 +162,63 @@ export async function sendTrainerConvocation(
     };
   }
 
-  const trainerName = `${session.trainer.first_name} ${session.trainer.last_name}`;
+  const { subject, html, text, orgEmail } = await composeConvocation(
+    supabase,
+    session,
+  );
+
+  const result = await sendEmail({
+    to: session.trainer.email,
+    toName: `${session.trainer.first_name} ${session.trainer.last_name}`,
+    subject,
+    html,
+    text,
+    replyTo: orgEmail ?? undefined,
+    // Copie (CC) à l'organisation (Paramètres → Organisation) pour que
+    // l'OF garde une trace de chaque convocation envoyée au formateur
+    // (Gilles 2026-06-17). En mode test (EMAIL_REDIRECT_TO) le CC est ignoré.
+    cc: orgEmail ? [orgEmail] : undefined,
+  });
+
+  if (!result.ok) {
+    await recordTrace(supabase, sessionId, {
+      error: `Échec de l'envoi : ${result.error}`,
+    });
+    return {
+      sent: false,
+      reason: "send_failed",
+      error: result.error,
+      to: session.trainer.email,
+    };
+  }
+
+  await recordTrace(supabase, sessionId, {
+    sent_at: new Date().toISOString(),
+    to: session.trainer.email,
+    error: null,
+  });
+  return { sent: true, reason: "ok", to: session.trainer.email };
+}
+
+/**
+ * Compose le contenu de la convocation formateur (sujet + HTML + texte) à
+ * partir des DONNÉES ACTUELLES de la session. Utilisé pour l'envoi email ET
+ * pour l'affichage « Voir ma convocation » dans le portail formateur
+ * (Gilles 2026-06-19) — donc toujours à jour si la session est modifiée.
+ */
+async function composeConvocation(
+  supabase: Db,
+  session: SessionForConvocation,
+): Promise<{ subject: string; html: string; text: string; orgEmail: string | null }> {
+  const trainerName = session.trainer
+    ? `${session.trainer.first_name} ${session.trainer.last_name}`
+    : "Formateur";
   const formationTitle = session.formation?.title ?? "—";
 
   const { data: enrollments } = await supabase
     .from("session_enrollments")
     .select("learner:learners(company:companies(name))")
-    .eq("session_id", sessionId);
+    .eq("session_id", session.id);
   const companyNames = Array.from(
     new Set(
       ((enrollments ?? []) as unknown as Array<{
@@ -186,13 +236,10 @@ export async function sendTrainerConvocation(
     .select(
       "day_date, morning_start, morning_end, afternoon_start, afternoon_end",
     )
-    .eq("session_id", sessionId)
+    .eq("session_id", session.id)
     .order("day_date", { ascending: true });
 
-  const sessionDateLabel = formatDateRange(
-    session.start_date,
-    session.end_date,
-  );
+  const sessionDateLabel = formatDateRange(session.start_date, session.end_date);
   const sessionHoursLabel = computeHoursLabel(
     days as Array<{
       morning_start: string | null;
@@ -239,7 +286,9 @@ export async function sendTrainerConvocation(
     .maybeSingle<{ name: string; email: string | null }>();
   const orgName = org?.name ?? "—";
 
-  const portal = await getTrainerPortalToken(supabase, session.trainer.id);
+  const portal = session.trainer
+    ? await getTrainerPortalToken(supabase, session.trainer.id)
+    : null;
   const origin = await getAppOrigin();
   const portalUrl = portal ? buildTrainerPortalUrl(origin, portal.token) : "";
 
@@ -268,38 +317,21 @@ export async function sendTrainerConvocation(
     substituteVars(blocks.closing_html, vars),
   ].join("\n");
   const text = htmlToText(html);
+  return { subject, html, text, orgEmail: org?.email ?? null };
+}
 
-  const result = await sendEmail({
-    to: session.trainer.email,
-    toName: trainerName,
-    subject,
-    html,
-    text,
-    replyTo: org?.email ?? undefined,
-    // Copie (CC) à l'organisation (Paramètres → Organisation) pour que
-    // l'OF garde une trace de chaque convocation envoyée au formateur
-    // (Gilles 2026-06-17). En mode test (EMAIL_REDIRECT_TO) le CC est ignoré.
-    cc: org?.email ? [org.email] : undefined,
-  });
-
-  if (!result.ok) {
-    await recordTrace(supabase, sessionId, {
-      error: `Échec de l'envoi : ${result.error}`,
-    });
-    return {
-      sent: false,
-      reason: "send_failed",
-      error: result.error,
-      to: session.trainer.email,
-    };
-  }
-
-  await recordTrace(supabase, sessionId, {
-    sent_at: new Date().toISOString(),
-    to: session.trainer.email,
-    error: null,
-  });
-  return { sent: true, reason: "ok", to: session.trainer.email };
+/**
+ * Construit le HTML de la convocation formateur pour AFFICHAGE (page « Voir ma
+ * convocation »). Renvoie null si la session/formateur est introuvable.
+ */
+export async function buildTrainerConvocationHtml(
+  supabase: Db,
+  sessionId: string,
+): Promise<{ subject: string; html: string } | null> {
+  const session = await loadSession(supabase, sessionId);
+  if (!session || !session.trainer) return null;
+  const { subject, html } = await composeConvocation(supabase, session);
+  return { subject, html };
 }
 
 // ── Helpers locaux (repris de confirm/actions.ts) ───────────────────────────

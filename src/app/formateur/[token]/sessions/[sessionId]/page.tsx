@@ -945,6 +945,19 @@ export default async function FormateurSessionDetailPage({
               </a>
             </div>
           </div>
+
+          {/* Voir ma convocation — régénérée à partir des données à jour de la
+              session (Gilles 2026-06-19). */}
+          <div className="pt-3 mt-2 border-t border-zinc-100">
+            <a
+              href={`/formateur/${token}/sessions/${sessionId}/convocation`}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md bg-cyan-600 hover:bg-cyan-700 text-white text-sm font-semibold"
+              title="Consulter votre convocation (toujours à jour)"
+            >
+              <Mail className="h-4 w-4" />
+              Voir ma convocation
+            </a>
+          </div>
         </header>
 
         {/* Consignes transmises par l'organisme (code salle, accès, matériel…)

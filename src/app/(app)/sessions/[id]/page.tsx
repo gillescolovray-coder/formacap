@@ -512,10 +512,10 @@ export default async function SessionDetailPage({
           { label: title },
         ]}
         actions={
-          <div className="flex flex-col items-stretch sm:items-end gap-1.5 w-full sm:w-auto">
-            <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+          <>
             <BackButton fallbackHref="/sessions" />
             {canConfirm && (
+              <div className="flex flex-col items-start gap-1">
                 <form action={confirmAction}>
                   <Button
                     type="submit"
@@ -550,6 +550,25 @@ export default async function SessionDetailPage({
                     )}
                   </Button>
                 </form>
+                {/* État RÉEL de la convocation formateur (Gilles 2026-06-16) */}
+                {trainerConvSentLabel ? (
+                  <span
+                    className="text-[11px] text-emerald-700 dark:text-emerald-400"
+                    title={trainerConvTo ? `Envoyée à ${trainerConvTo}` : undefined}
+                  >
+                    ✅ Convocation envoyée le {trainerConvSentLabel}
+                    {trainerConvTo ? ` à ${trainerConvTo}` : ""}
+                  </span>
+                ) : trainerConvError ? (
+                  <span className="text-[11px] text-red-600 dark:text-red-400 max-w-[280px]">
+                    ❌ Convocation non envoyée : {trainerConvError}
+                  </span>
+                ) : isConfirmed ? (
+                  <span className="text-[11px] text-amber-600 dark:text-amber-500">
+                    ⚠️ Convocation formateur pas encore envoyée
+                  </span>
+                ) : null}
+              </div>
             )}
             {canCancelPostpone && (
               <CancelPostponeButton
@@ -602,28 +621,7 @@ export default async function SessionDetailPage({
               <Save className="h-4 w-4" />
               Enregistrer
             </Button>
-            </div>
-            {/* État convocation formateur sur sa propre ligne — n'affecte plus
-                l'alignement des boutons (Gilles 2026-06-19). */}
-            {canConfirm &&
-              (trainerConvSentLabel ? (
-                <span
-                  className="text-[11px] text-emerald-700 dark:text-emerald-400"
-                  title={trainerConvTo ? `Envoyée à ${trainerConvTo}` : undefined}
-                >
-                  ✅ Convocation envoyée le {trainerConvSentLabel}
-                  {trainerConvTo ? ` à ${trainerConvTo}` : ""}
-                </span>
-              ) : trainerConvError ? (
-                <span className="text-[11px] text-red-600 dark:text-red-400 sm:text-right">
-                  ❌ Convocation non envoyée : {trainerConvError}
-                </span>
-              ) : isConfirmed ? (
-                <span className="text-[11px] text-amber-600 dark:text-amber-500">
-                  ⚠️ Convocation formateur pas encore envoyée
-                </span>
-              ) : null)}
-          </div>
+          </>
         }
       />
 
