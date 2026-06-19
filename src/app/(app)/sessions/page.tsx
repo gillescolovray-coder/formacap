@@ -26,6 +26,7 @@ import { PageHeader } from "@/components/page-header";
 import { SyncCalendarButton } from "./_sync-calendar-button";
 import { SessionStatusSelect } from "./_status-select";
 import { AdminClosedToggle } from "./_admin-closed-toggle";
+import { SessionsWeekView } from "./_sessions-week-view";
 import {
   computeInscriptionDisplayAmount,
   type DisplayAmountSessionContext,
@@ -80,6 +81,10 @@ type SearchParams = {
   to?: string;
   /** Saut rapide à un mois (YYYY-MM) — déduit from/to si présent. */
   month?: string;
+  /** Vue : "" / "list" (liste groupée par mois) ou "week" (planning semaine). */
+  view?: "list" | "week" | "";
+  /** Semaine affichée en mode planning (YYYY-MM-DD, n'importe quel jour). */
+  week?: string;
 };
 
 const currencyFormatter = new Intl.NumberFormat("fr-FR", {
@@ -151,6 +156,24 @@ export default async function SessionsListPage({
     dateTo = `${monthParam}-${String(lastDay).padStart(2, "0")}`;
   }
 
+  // Vue PLANNING (semaine) — Gilles 2026-06-19. En mode semaine, on ignore
+  // les filtres période/dates (c'est la semaine affichée qui borne).
+  const weekMode = params.view === "week";
+  const isoToday = new Date().toISOString().slice(0, 10);
+  const mondayOf = (iso: string): string => {
+    const d = new Date(iso + "T00:00:00Z");
+    const dow = d.getUTCDay(); // 0=dim … 6=sam
+    d.setUTCDate(d.getUTCDate() + (dow === 0 ? -6 : 1 - dow));
+    return d.toISOString().slice(0, 10);
+  };
+  const addDaysIso = (iso: string, n: number): string => {
+    const d = new Date(iso + "T00:00:00Z");
+    d.setUTCDate(d.getUTCDate() + n);
+    return d.toISOString().slice(0, 10);
+  };
+  const weekStart = mondayOf(isoDate(params.week) || isoToday);
+  const weekEnd = addDaysIso(weekStart, 6);
+
   const isFiltered =
     Boolean(q) ||
     statusFilter !== "" ||
@@ -196,14 +219,20 @@ export default async function SessionsListPage({
   if (formationFilter) query = query.eq("formation_id", formationFilter);
 
   const today = new Date().toISOString().slice(0, 10);
-  if (periodFilter === "past") query = query.lt("end_date", today);
-  if (periodFilter === "upcoming") query = query.gt("start_date", today);
-  if (periodFilter === "current")
-    query = query.lte("start_date", today).gte("end_date", today);
-  // Bornes de dates côté serveur quand une plage est demandée (overlap :
-  // start_date <= to ET end_date >= from). Réduit le volume rapatrié.
-  if (dateFrom) query = query.gte("end_date", dateFrom);
-  if (dateTo) query = query.lte("start_date", dateTo);
+  // En mode planning (semaine), on ne filtre PAS par période/dates côté
+  // serveur : on borne sur la semaine affichée juste après.
+  if (weekMode) {
+    query = query.gte("end_date", weekStart).lte("start_date", weekEnd);
+  } else {
+    if (periodFilter === "past") query = query.lt("end_date", today);
+    if (periodFilter === "upcoming") query = query.gt("start_date", today);
+    if (periodFilter === "current")
+      query = query.lte("start_date", today).gte("end_date", today);
+    // Bornes de dates côté serveur quand une plage est demandée (overlap :
+    // start_date <= to ET end_date >= from). Réduit le volume rapatrié.
+    if (dateFrom) query = query.gte("end_date", dateFrom);
+    if (dateTo) query = query.lte("start_date", dateTo);
+  }
   // Plus de masquage des sessions >30 j : la vue groupée par mois replie
   // automatiquement les mois passés (Gilles 2026-06-12).
 
@@ -404,6 +433,8 @@ export default async function SessionsListPage({
       from: dateFrom,
       to: dateTo,
       month: monthParam,
+      view: weekMode ? "week" : "",
+      week: weekMode ? weekStart : "",
       ...overrides,
     };
     for (const [k, v] of Object.entries(merged)) if (v) sp.set(k, v);
@@ -419,6 +450,31 @@ export default async function SessionsListPage({
   // Liens mois : on pose `month` et on efface from/to pour que `month` prime.
   const prevMonthHref = buildSessionsHref({ month: prevMonth, from: "", to: "" });
   const nextMonthHref = buildSessionsHref({ month: nextMonth, from: "", to: "" });
+
+  // ── Vue PLANNING (semaine) — Gilles 2026-06-19 ───────────────────────────
+  const listViewHref = buildSessionsHref({ view: "", week: "" });
+  const weekViewHref = buildSessionsHref({ view: "week", week: weekStart });
+  const prevWeekHref = buildSessionsHref({
+    view: "week",
+    week: addDaysIso(weekStart, -7),
+  });
+  const nextWeekHref = buildSessionsHref({
+    view: "week",
+    week: addDaysIso(weekStart, 7),
+  });
+  const todayWeekHref = buildSessionsHref({
+    view: "week",
+    week: mondayOf(isoToday),
+  });
+  const weekDayIsos = Array.from({ length: 7 }, (_, i) =>
+    addDaysIso(weekStart, i),
+  );
+  // Lien vers l'agenda Google synchronisé (« Sessions CAP »), ouvert dans un
+  // nouvel onglet. Le calendar id n'est pas un secret (simple identifiant).
+  const googleCalendarId = process.env.GOOGLE_CALENDAR_ID ?? "";
+  const googleAgendaUrl = googleCalendarId
+    ? `https://calendar.google.com/calendar/embed?src=${encodeURIComponent(googleCalendarId)}`
+    : null;
 
   // Compteur : enrollments (apprenants déjà inscrits dans la session)
   // + inscription_requests rattachées qui ne sont PAS encore converties
@@ -1221,6 +1277,36 @@ export default async function SessionsListPage({
     );
   }
 
+  // Cartes pour la vue planning (semaine) — données sérialisables.
+  const weekCards = weekMode
+    ? (sessions as TrainingSession[]).map((s) => {
+        const info = resolveSessionStatus(s.status, customStatuses);
+        const sRaw = s as unknown as {
+          trainer?:
+            | { first_name: string; last_name: string }
+            | Array<{ first_name: string; last_name: string }>
+            | null;
+        };
+        const t = Array.isArray(sRaw.trainer)
+          ? sRaw.trainer[0] ?? null
+          : sRaw.trainer;
+        const trainerLabel =
+          s.trainer_name ||
+          (t ? `${t.first_name} ${t.last_name}`.trim() : null);
+        return {
+          id: s.id,
+          title: s.formation?.title ?? "Session",
+          startDate: (s.start_date as string).slice(0, 10),
+          endDate: ((s.end_date as string) ?? s.start_date).slice(0, 10),
+          statusLabel: info.label,
+          statusBadgeClasses: info.badgeClasses,
+          isCancelled: info.code === "cancelled",
+          modality: s.modality ?? null,
+          trainerLabel,
+        };
+      })
+    : [];
+
   return (
     <>
       <PageHeader
@@ -1242,10 +1328,54 @@ export default async function SessionsListPage({
       />
 
       <div className="p-4 sm:p-8 space-y-4">
+        {/* Bascule Liste / Planning + accès à l'agenda Google synchronisé
+            (Gilles 2026-06-19). */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="inline-flex rounded-lg border border-zinc-300 overflow-hidden text-sm font-semibold">
+            <Link
+              href={listViewHref}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-3 py-1.5",
+                !weekMode
+                  ? "bg-cyan-600 text-white"
+                  : "bg-white text-zinc-600 hover:bg-zinc-50",
+              )}
+            >
+              <ListChecks className="h-4 w-4" />
+              Liste
+            </Link>
+            <Link
+              href={weekViewHref}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-3 py-1.5",
+                weekMode
+                  ? "bg-cyan-600 text-white"
+                  : "bg-white text-zinc-600 hover:bg-zinc-50",
+              )}
+            >
+              <Calendar className="h-4 w-4" />
+              Planning
+            </Link>
+          </div>
+          {googleAgendaUrl && (
+            <a
+              href={googleAgendaUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-800 text-sm font-semibold hover:bg-emerald-100"
+              title="Ouvrir l'agenda Google synchronisé (Sessions CAP) dans un nouvel onglet"
+            >
+              <ExternalLink className="h-4 w-4" />
+              Agenda Google
+            </a>
+          )}
+        </div>
+
         {/* Info masquage automatique des sessions > 30 jours
             (Gilles 2026-05-22) : on alerte l'utilisateur quand des
             sessions sont cachees, et on propose un raccourci. */}
-        {periodFilter === "" &&
+        {!weekMode &&
+          periodFilter === "" &&
           !q &&
           (hiddenOldSessionsCount ?? 0) > 0 && (
             <div className="rounded-lg bg-cyan-50/60 dark:bg-cyan-950/20 border border-cyan-200 dark:border-cyan-900 p-3 flex items-start gap-2.5">
@@ -1269,7 +1399,9 @@ export default async function SessionsListPage({
             </div>
           )}
 
-        {/* Stat cards par période */}
+        {/* Stat cards par période — masquées en mode planning (la semaine
+            borne déjà l'affichage). */}
+        {!weekMode && (
         <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
           <Link
             href={buildSessionsHref({ period: "" })}
@@ -1332,6 +1464,7 @@ export default async function SessionsListPage({
             </div>
           </Link>
         </div>
+        )}
 
         <form
           method="get"
@@ -1343,6 +1476,13 @@ export default async function SessionsListPage({
               du menu Période redondant avec « Du → Au »). */}
           {periodFilter && (
             <input type="hidden" name="period" value={periodFilter} />
+          )}
+          {/* En mode planning : on conserve la vue semaine quand on filtre. */}
+          {weekMode && (
+            <>
+              <input type="hidden" name="view" value="week" />
+              <input type="hidden" name="week" value={weekStart} />
+            </>
           )}
 
           {/* Ligne 1 : grande recherche + bouton coloré bien visible. */}
@@ -1490,6 +1630,15 @@ export default async function SessionsListPage({
           <div className="rounded-xl bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-900 p-4 text-sm text-red-700 dark:text-red-300">
             Erreur lors du chargement : {error.message}
           </div>
+        ) : weekMode ? (
+          <SessionsWeekView
+            weekDayIsos={weekDayIsos}
+            cards={weekCards}
+            prevHref={prevWeekHref}
+            nextHref={nextWeekHref}
+            todayHref={todayWeekHref}
+            todayIso={isoToday}
+          />
         ) : !sessions || sessions.length === 0 ? (
           <div className="rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-12 text-center">
             <Calendar className="h-12 w-12 mx-auto text-zinc-300 dark:text-zinc-700 mb-3" />
