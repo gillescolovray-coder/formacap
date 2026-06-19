@@ -237,7 +237,8 @@ export default async function EvaluationAdminPage({
               Aucun apprenant inscrit.
             </div>
           ) : (
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[760px]">
               <thead className="bg-zinc-50 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500 border-b border-zinc-200">
                 <tr>
                   <th className="px-4 py-3">Apprenant</th>
@@ -322,6 +323,7 @@ export default async function EvaluationAdminPage({
                 })}
               </tbody>
             </table>
+            </div>
           )}
         </div>
 

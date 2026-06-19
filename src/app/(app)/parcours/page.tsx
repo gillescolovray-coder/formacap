@@ -260,8 +260,8 @@ export default async function ParcoursListPage({
             </Button>
           </div>
         ) : (
-          <div className="rounded-xl bg-white border border-slate-200 overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="rounded-xl bg-white border border-slate-200 overflow-x-auto">
+            <table className="w-full text-sm min-w-[680px]">
               <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 border-b border-slate-200">
                 <tr>
                   <th className="px-4 py-3">Nom</th>

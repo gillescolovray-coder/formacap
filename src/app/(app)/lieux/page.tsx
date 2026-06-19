@@ -329,8 +329,8 @@ export default async function LocationsListPage({
                 ? " (filtré" + (locations.length > 1 ? "s" : "") + ")"
                 : ""}
             </p>
-            <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden">
-              <table className="w-full text-sm">
+            <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-x-auto">
+              <table className="w-full text-sm min-w-[680px]">
                 <thead className="bg-slate-50 dark:bg-slate-950 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 border-b border-slate-200 dark:border-slate-800">
                   <tr>
                     <th className="px-4 py-3">Nom</th>

@@ -174,8 +174,8 @@ export function SessionInscriptionsTable({
   const totalIsExact = sessionTotalRes.isExact;
 
   return (
-    <div className="relative">
-      <table className="w-full text-xs table-fixed">
+    <div className="relative overflow-x-auto">
+      <table className="w-full text-xs table-fixed min-w-[640px]">
         <thead className="bg-slate-50 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-500">
           <tr>
             {v.demandeur && <th className="px-2 py-2 w-[15%]">Demandeur</th>}

@@ -239,8 +239,8 @@ export default async function AttestationsPage({
             </p>
           </div>
         ) : (
-          <div className="rounded-xl bg-white border border-zinc-200 overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="rounded-xl bg-white border border-zinc-200 overflow-x-auto">
+            <table className="w-full text-sm min-w-[820px]">
               <thead className="bg-zinc-50 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500 border-b border-zinc-200">
                 <tr>
                   <th className="px-4 py-3">Apprenant</th>

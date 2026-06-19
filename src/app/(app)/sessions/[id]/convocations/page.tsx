@@ -379,8 +379,8 @@ export default async function ConvocationsPage({
             qu&apos;un apprenant sera inscrit à cette session.
           </div>
         ) : (
-          <div className="rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 overflow-x-auto">
+            <table className="w-full text-sm min-w-[760px]">
               <thead className="bg-zinc-50 dark:bg-zinc-950 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500 border-b border-zinc-200 dark:border-zinc-800">
                 <tr>
                   <th className="px-4 py-3">Apprenant</th>
