@@ -7,8 +7,10 @@ import {
   Building2,
   Calendar,
   Clock,
+  Download,
   Handshake,
   ListChecks,
+  Loader2,
   Mail,
   MapPin,
   Phone,
@@ -151,6 +153,54 @@ export function InscriptionsOverviewTable({
   const periodLabel =
     mode === "month" ? `${MONTHS_FR[month]} ${year}` : `Année ${year}`;
 
+  // Export Excel de la période affichée (Gilles 2026-06-19).
+  const [exporting, setExporting] = useState(false);
+  async function handleExportExcel() {
+    setExporting(true);
+    try {
+      const exportRows = rows.map((r) => ({
+        dateSession: r.startDate,
+        formation: r.formationTitle,
+        apprenant:
+          [r.learnerLastName, r.learnerFirstName].filter(Boolean).join(" ") ||
+          "",
+        entreprise: r.companyName ?? "",
+        source:
+          r.sourceKind === "of"
+            ? `OF — ${r.partnerName ?? ""}`.trim()
+            : r.sourceKind === "partenaire"
+              ? `Prescripteur — ${r.partnerName ?? ""}`.trim()
+              : "CAP NUMÉRIQUE",
+        heures: r.durationHours ?? null,
+        mode: r.amountMode === "forfait" ? "Forfait session" : "Par apprenant",
+        montantHt:
+          r.amountMode === "forfait"
+            ? r.sessionAmount ?? null
+            : r.amountHt ?? null,
+      }));
+      const res = await fetch("/api/dashboard/inscriptions/export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rows: exportRows, periodLabel, totals }),
+      });
+      if (!res.ok) {
+        window.alert("Export impossible pour le moment.");
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `inscriptions-${year}${mode === "month" ? "-" + String(month + 1).padStart(2, "0") : ""}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExporting(false);
+    }
+  }
+
   // Index du 1er apprenant d'une session deja PASSEE (start_date < aujourd'hui).
   const todayIso = new Date().toISOString().slice(0, 10);
   const firstPastIdx = rows.findIndex(
@@ -249,6 +299,20 @@ export function InscriptionsOverviewTable({
               </option>
             ))}
           </select>
+          <button
+            type="button"
+            onClick={handleExportExcel}
+            disabled={exporting || rows.length === 0}
+            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-emerald-300 bg-emerald-50 text-emerald-800 text-xs font-semibold hover:bg-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Exporter la période affichée en Excel (filtres par colonne + totaux + date d'édition)"
+          >
+            {exporting ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Download className="h-3.5 w-3.5" />
+            )}
+            Export Excel
+          </button>
           <Link
             href="/inscriptions"
             className="text-xs text-cyan-700 hover:underline"
