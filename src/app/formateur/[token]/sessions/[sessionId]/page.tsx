@@ -363,7 +363,9 @@ export default async function FormateurSessionDetailPage({
   // 5. Total demi-journées + 1er jour pour les horaires affichés dans le header
   const { data: days } = await supabase
     .from("session_days")
-    .select("day_date, morning_start, morning_end, afternoon_start, afternoon_end")
+    .select(
+      "day_date, morning_start, morning_end, afternoon_start, afternoon_end, trainer_notes",
+    )
     .eq("session_id", sessionId)
     .order("day_date", { ascending: true });
   const daysTyped = (days ?? []) as Array<{
@@ -372,7 +374,16 @@ export default async function FormateurSessionDetailPage({
     morning_end: string | null;
     afternoon_start: string | null;
     afternoon_end: string | null;
+    trainer_notes: string | null;
   }>;
+  // Consignes formateur par jour (Gilles 2026-06-19) — saisies côté
+  // back-office, à afficher dans le portail ET dans l'agenda.
+  const dayConsignes = daysTyped
+    .filter((d) => (d.trainer_notes ?? "").trim().length > 0)
+    .map((d) => ({
+      date: d.day_date,
+      notes: (d.trainer_notes ?? "").trim(),
+    }));
   let totalSlots = 0;
   for (const d of daysTyped) {
     if (d.morning_start && d.morning_end) totalSlots++;
@@ -735,6 +746,19 @@ export default async function FormateurSessionDetailPage({
     session.organization?.email
       ? `Email OF : ${session.organization.email}`
       : null,
+    // Consignes formateur (code salle, accès…) reprises dans l'agenda
+    // (Gilles 2026-06-19).
+    ...(dayConsignes.length > 0
+      ? [
+          "",
+          "--- Consignes ---",
+          ...dayConsignes.map((c) =>
+            daysTyped.length > 1
+              ? `${new Date(c.date + "T00:00:00").toLocaleDateString("fr-FR")} : ${c.notes}`
+              : c.notes,
+          ),
+        ]
+      : []),
     "",
     "--- Acces a mon portail formateur ---",
     `Mon agenda : ${calAgendaUrl}`,
@@ -922,6 +946,33 @@ export default async function FormateurSessionDetailPage({
             </div>
           </div>
         </header>
+
+        {/* Consignes transmises par l'organisme (code salle, accès, matériel…)
+            saisies côté back-office, par jour — Gilles 2026-06-19. */}
+        {dayConsignes.length > 0 && (
+          <div className="rounded-xl border-2 border-amber-300 bg-amber-50 p-4">
+            <p className="text-sm font-bold text-amber-900 flex items-center gap-1.5 mb-1.5">
+              <span className="text-base leading-none">📋</span>
+              Consignes pour cette session
+            </p>
+            <ul className="space-y-1.5">
+              {dayConsignes.map((c) => (
+                <li key={c.date} className="text-sm text-amber-900">
+                  {daysTyped.length > 1 && (
+                    <span className="font-semibold">
+                      {new Date(c.date + "T00:00:00").toLocaleDateString(
+                        "fr-FR",
+                        { weekday: "long", day: "numeric", month: "long" },
+                      )}{" "}
+                      :{" "}
+                    </span>
+                  )}
+                  <span className="whitespace-pre-line">{c.notes}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* Saisie express — sous-traitance (Phase 1 MVP, Gilles 2026-05-24) */}
         {session.is_subcontracted && (

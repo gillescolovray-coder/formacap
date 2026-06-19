@@ -98,11 +98,25 @@ export async function GET(
   // (sinon on tomberait sur les valeurs par defaut globales, fausses).
   const { data: sessionDays } = await supabase
     .from("session_days")
-    .select("day_date, morning_start, afternoon_end, morning_end")
+    .select(
+      "day_date, morning_start, afternoon_end, morning_end, trainer_notes",
+    )
     .eq("session_id", sessionId)
     .order("day_date", { ascending: true });
   const firstDay = sessionDays?.[0] ?? null;
   const lastDay = sessionDays?.[sessionDays.length - 1] ?? null;
+  // Consignes formateur par jour (code salle, accès…) — Gilles 2026-06-19.
+  const consignes = ((sessionDays ?? []) as Array<{
+    day_date: string;
+    trainer_notes: string | null;
+  }>)
+    .filter((d) => (d.trainer_notes ?? "").trim().length > 0)
+    .map((d) => {
+      const note = (d.trainer_notes ?? "").trim();
+      return (sessionDays?.length ?? 0) > 1
+        ? `${new Date(d.day_date + "T00:00:00").toLocaleDateString("fr-FR")} : ${note}`
+        : note;
+    });
 
   // 4. Composer l'événement
   const title = session.formation?.title ?? "Formation";
@@ -160,6 +174,9 @@ export async function GET(
     `${enrollmentCount ?? 0} apprenant${(enrollmentCount ?? 0) > 1 ? "s" : ""} inscrit${(enrollmentCount ?? 0) > 1 ? "s" : ""}.`,
     session.organization?.phone ? `Contact OF : ${session.organization.phone}` : null,
     session.organization?.email ? `Email OF : ${session.organization.email}` : null,
+    ...(consignes.length > 0
+      ? ["", "--- Consignes ---", ...consignes]
+      : []),
     "",
     "--- Acces a mon portail formateur ---",
     `Mon agenda : ${agendaUrl}`,
