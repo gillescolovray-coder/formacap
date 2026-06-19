@@ -153,35 +153,48 @@ export function InscriptionsOverviewTable({
   const periodLabel =
     mode === "month" ? `${MONTHS_FR[month]} ${year}` : `Année ${year}`;
 
-  // Export Excel de la période affichée (Gilles 2026-06-19).
+  // Export de la période affichée (Gilles 2026-06-19) — Excel + PDF.
   const [exporting, setExporting] = useState(false);
+  function buildExportPayload() {
+    const exportRows = rows.map((r) => ({
+      dateSession: r.startDate,
+      formation: r.formationTitle,
+      apprenant:
+        [r.learnerLastName, r.learnerFirstName].filter(Boolean).join(" ") || "",
+      entreprise: r.companyName ?? "",
+      source:
+        r.sourceKind === "of"
+          ? `OF — ${r.partnerName ?? ""}`.trim()
+          : r.sourceKind === "partenaire"
+            ? `Prescripteur — ${r.partnerName ?? ""}`.trim()
+            : "CAP NUMÉRIQUE",
+      heures: r.durationHours ?? null,
+      mode: r.amountMode === "forfait" ? "Forfait session" : "Par apprenant",
+      montantHt:
+        r.amountMode === "forfait"
+          ? r.sessionAmount ?? null
+          : r.amountHt ?? null,
+    }));
+    return { rows: exportRows, periodLabel, totals };
+  }
+  function handleExportPdf() {
+    try {
+      sessionStorage.setItem(
+        "dashboard-inscriptions-export",
+        JSON.stringify(buildExportPayload()),
+      );
+    } catch {
+      /* ignore */
+    }
+    window.open("/dashboard/inscriptions/print", "_blank");
+  }
   async function handleExportExcel() {
     setExporting(true);
     try {
-      const exportRows = rows.map((r) => ({
-        dateSession: r.startDate,
-        formation: r.formationTitle,
-        apprenant:
-          [r.learnerLastName, r.learnerFirstName].filter(Boolean).join(" ") ||
-          "",
-        entreprise: r.companyName ?? "",
-        source:
-          r.sourceKind === "of"
-            ? `OF — ${r.partnerName ?? ""}`.trim()
-            : r.sourceKind === "partenaire"
-              ? `Prescripteur — ${r.partnerName ?? ""}`.trim()
-              : "CAP NUMÉRIQUE",
-        heures: r.durationHours ?? null,
-        mode: r.amountMode === "forfait" ? "Forfait session" : "Par apprenant",
-        montantHt:
-          r.amountMode === "forfait"
-            ? r.sessionAmount ?? null
-            : r.amountHt ?? null,
-      }));
       const res = await fetch("/api/dashboard/inscriptions/export", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows: exportRows, periodLabel, totals }),
+        body: JSON.stringify(buildExportPayload()),
       });
       if (!res.ok) {
         window.alert("Export impossible pour le moment.");
@@ -312,6 +325,16 @@ export function InscriptionsOverviewTable({
               <Download className="h-3.5 w-3.5" />
             )}
             Export Excel
+          </button>
+          <button
+            type="button"
+            onClick={handleExportPdf}
+            disabled={rows.length === 0}
+            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-rose-300 bg-rose-50 text-rose-800 text-xs font-semibold hover:bg-rose-100 disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Exporter la période affichée en PDF (ouvre une page imprimable)"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Export PDF
           </button>
           <Link
             href="/inscriptions"
