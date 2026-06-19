@@ -234,7 +234,7 @@ async function composeConvocation(
   const { data: days } = await supabase
     .from("session_days")
     .select(
-      "day_date, morning_start, morning_end, afternoon_start, afternoon_end",
+      "day_date, morning_start, morning_end, afternoon_start, afternoon_end, trainer_notes",
     )
     .eq("session_id", session.id)
     .order("day_date", { ascending: true });
@@ -310,10 +310,36 @@ async function composeConvocation(
     portal_url: portalUrl,
   };
 
+  // Encart « Consignes pour cette session » (code salle, accès, matériel…)
+  // saisies par jour côté back-office — Gilles 2026-06-19. Inséré dans la
+  // convocation (email ET page « Voir ma convocation »), style proche de
+  // l'encart « Accès apprenant ».
+  const consigneItems = ((days ?? []) as Array<{
+    day_date: string;
+    trainer_notes: string | null;
+  }>)
+    .filter((d) => (d.trainer_notes ?? "").trim().length > 0)
+    .map((d) => {
+      const note = escapeHtml((d.trainer_notes ?? "").trim());
+      const dateLabel =
+        (days?.length ?? 0) > 1
+          ? `<strong>${new Date(d.day_date + "T00:00:00").toLocaleDateString("fr-FR")} :</strong> `
+          : "";
+      return `<li style="margin:0 0 4px;">${dateLabel}${note}</li>`;
+    });
+  const consignesBox =
+    consigneItems.length > 0
+      ? `<div style="background:#fffbeb;border:1px solid #fde68a;border-left:4px solid #f59e0b;border-radius:8px;padding:12px 14px;margin:16px 0;font-family:Arial,Helvetica,sans-serif;">` +
+        `<p style="margin:0 0 6px;font-weight:bold;color:#92400e;font-size:14px;">📋 Consignes pour cette session</p>` +
+        `<ul style="margin:0;padding-left:18px;color:#78350f;font-size:13px;line-height:1.5;">${consigneItems.join("")}</ul>` +
+        `</div>`
+      : "";
+
   const subject = substituteVars(blocks.subject_template, vars);
   const html = [
     substituteVars(blocks.intro_html, vars),
     substituteVars(blocks.main_html, vars),
+    consignesBox,
     substituteVars(blocks.closing_html, vars),
   ].join("\n");
   const text = htmlToText(html);
@@ -338,6 +364,15 @@ export async function buildTrainerConvocationHtml(
 
 function substituteVars(template: string, vars: Record<string, string>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? "");
+}
+
+/** Échappe le texte libre des consignes avant injection HTML. */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 function htmlToText(html: string): string {
