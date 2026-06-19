@@ -153,7 +153,7 @@ export function BatchPrintSelector({
           </span>
         )}
       </summary>
-      <div className="absolute right-0 top-full mt-1 w-96 max-w-[90vw] max-h-96 overflow-auto bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-md shadow-lg z-50 flex flex-col">
+      <div className="absolute right-0 top-full mt-1 w-[calc(100vw-1rem)] sm:w-96 max-w-[calc(100vw-1rem)] max-h-96 overflow-auto bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-md shadow-lg z-50 flex flex-col">
         {/* Header : tout cocher + nb selectionnes */}
         <div className="px-3 py-2 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between gap-2 sticky top-0 bg-white dark:bg-zinc-900">
           <button

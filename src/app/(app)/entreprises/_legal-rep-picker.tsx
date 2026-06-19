@@ -93,7 +93,7 @@ export function LegalRepLearnerPicker({
       </button>
 
       {open && (
-        <div className="absolute z-20 mt-2 right-0 w-80 rounded-lg border border-slate-200 bg-white shadow-xl">
+        <div className="absolute z-20 mt-2 right-0 w-[calc(100vw-1rem)] sm:w-80 max-w-[calc(100vw-1rem)] rounded-lg border border-slate-200 bg-white shadow-xl">
           <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100">
             <span className="text-xs font-semibold text-slate-700">
               Apprenants de cette entreprise
