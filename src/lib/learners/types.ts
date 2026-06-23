@@ -21,6 +21,13 @@ export type Learner = {
   lead_source: string | null;
   notes: string | null;
   is_active: boolean;
+  /** Fiche express créée via QR formateur / saisie express (migration 0104),
+   *  en attente de complétion. Affichée avec un badge dans la liste. */
+  is_temporary?: boolean;
+  /** Nom d'entreprise en texte libre tant que la fiche express n'est pas
+   *  rattachée à une entreprise référencée (company_id). */
+  company_name_temp?: string | null;
+  company_siret_temp?: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;

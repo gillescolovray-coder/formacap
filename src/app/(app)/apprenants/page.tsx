@@ -5,6 +5,7 @@ import {
   Mail,
   Phone,
   Plus,
+  QrCode,
   Smartphone,
   UserCircle,
   Users,
@@ -28,6 +29,8 @@ type SearchParams = {
   q?: string;
   company_id?: string;
   active?: string;
+  /** Filtre fiche : "" = toutes, "ok" = complètes, "express" = express à compléter. */
+  fiche?: string;
 };
 
 function escapeForIlike(value: string) {
@@ -43,7 +46,12 @@ export default async function LearnersListPage({
   const q = (params.q ?? "").trim();
   const companyFilter = params.company_id ?? "";
   const activeFilter = params.active ?? "";
-  const isFiltered = Boolean(q) || companyFilter !== "" || activeFilter !== "";
+  const ficheFilter = params.fiche ?? "";
+  const isFiltered =
+    Boolean(q) ||
+    companyFilter !== "" ||
+    activeFilter !== "" ||
+    ficheFilter !== "";
 
   const supabase = await createClient();
   const {
@@ -56,19 +64,23 @@ export default async function LearnersListPage({
     .select("id, name")
     .order("name", { ascending: true });
 
-  // Exclure les apprenants temporaires (saisie express sous-traitance)
-  // tant qu'ils ne sont pas promus. Migration 0104, Gilles 2026-05-24.
+  // Apprenants express (QR formateur / saisie express, is_temporary=true) :
+  // desormais AFFICHES dans la liste avec un badge « Express — à compléter »
+  // (Gilles 2026-06-23, ils etaient introuvables auparavant). Le filtre
+  // « fiche » permet de n'afficher que les complètes ou que les express.
   let query = supabase
     .from("learners")
     .select("*, company:companies(id, name)")
-    .eq("is_temporary", false)
     .order("updated_at", { ascending: false });
+
+  if (ficheFilter === "ok") query = query.eq("is_temporary", false);
+  else if (ficheFilter === "express") query = query.eq("is_temporary", true);
 
   if (q) {
     const safe = escapeForIlike(q);
     if (safe.length > 0) {
       query = query.or(
-        `first_name.ilike.%${safe}%,last_name.ilike.%${safe}%,email.ilike.%${safe}%,city.ilike.%${safe}%`,
+        `first_name.ilike.%${safe}%,last_name.ilike.%${safe}%,email.ilike.%${safe}%,city.ilike.%${safe}%,company_name_temp.ilike.%${safe}%`,
       );
     }
   }
@@ -158,6 +170,7 @@ export default async function LearnersListPage({
     { count: inactiveCount },
     { count: companyCount },
     { count: privateCount },
+    { count: expressCount },
   ] = await Promise.all([
     supabase
       .from("learners")
@@ -183,6 +196,11 @@ export default async function LearnersListPage({
       .select("id", { count: "exact", head: true })
       .is("company_id", null)
       .eq("is_temporary", false),
+    // Fiches express (QR / saisie express) en attente de complétion.
+    supabase
+      .from("learners")
+      .select("id", { count: "exact", head: true })
+      .eq("is_temporary", true),
   ]);
 
   function statCardClass(active: boolean, accent: string) {
@@ -214,7 +232,7 @@ export default async function LearnersListPage({
 
       <div className="p-8 space-y-4">
         {/* Stat cards */}
-        <div className="grid gap-3 grid-cols-2 md:grid-cols-5">
+        <div className="grid gap-3 grid-cols-2 md:grid-cols-6">
           <Link
             href="/apprenants"
             className={statCardClass(
@@ -290,13 +308,30 @@ export default async function LearnersListPage({
               {privateCount ?? 0}
             </div>
           </Link>
+          {/* Fiches express (QR formateur / saisie express) à compléter.
+              Cliquable -> filtre fiche=express. Gilles 2026-06-23. */}
+          <Link
+            href="/apprenants?fiche=express"
+            className={statCardClass(
+              ficheFilter === "express",
+              "bg-amber-50/60 dark:bg-amber-950/20",
+            )}
+          >
+            <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 text-xs font-medium uppercase tracking-wider mb-1">
+              <QrCode className="h-3.5 w-3.5" />
+              Express
+            </div>
+            <div className="text-2xl font-bold tabular-nums text-amber-800 dark:text-amber-300">
+              {expressCount ?? 0}
+            </div>
+          </Link>
         </div>
 
         <form
           method="get"
           className="rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4"
         >
-          <div className="grid gap-3 md:grid-cols-[2fr_1fr_1fr_auto] items-end">
+          <div className="grid gap-3 md:grid-cols-[2fr_1fr_1fr_1fr_auto] items-end">
             <div className="space-y-1.5">
               <Label htmlFor="q" className="text-xs">
                 Rechercher
@@ -343,6 +378,21 @@ export default async function LearnersListPage({
                 <option value="">Tous</option>
                 <option value="yes">Actifs</option>
                 <option value="no">Inactifs</option>
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="fiche" className="text-xs">
+                Fiche
+              </Label>
+              <select
+                id="fiche"
+                name="fiche"
+                defaultValue={ficheFilter}
+                className="flex h-9 w-full rounded-md border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-400"
+              >
+                <option value="">Toutes</option>
+                <option value="ok">Complètes</option>
+                <option value="express">Express à compléter</option>
               </select>
             </div>
             <div className="flex gap-2">
@@ -424,6 +474,7 @@ export default async function LearnersListPage({
                 <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
                   {(learners as Learner[]).map((l) => {
                     const isCompany = Boolean(l.company_id);
+                    const isExpress = Boolean(l.is_temporary);
                     const fullName = [l.civility, l.first_name, l.last_name]
                       .filter(Boolean)
                       .join(" ");
@@ -431,17 +482,22 @@ export default async function LearnersListPage({
                       `${l.first_name?.[0] ?? ""}${l.last_name?.[0] ?? ""}`.toUpperCase() ||
                       "?";
                     // Couleur de ligne pastel selon la catégorie de l'apprenant.
-                    // Inactif → gris atténué qui prime sur la couleur de catégorie.
+                    // Inactif → gris atténué ; Express (QR/saisie) → ambre pour
+                    // signaler une fiche à compléter (prime sur la catégorie).
                     const rowClass = !l.is_active
                       ? "bg-zinc-50/40 dark:bg-zinc-900/40 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900/80 opacity-70"
-                      : isCompany
-                        ? "bg-cyan-50/30 dark:bg-cyan-950/10 hover:bg-cyan-50 dark:hover:bg-cyan-950/30"
-                        : "bg-violet-50/30 dark:bg-violet-950/10 hover:bg-violet-50 dark:hover:bg-violet-950/30";
+                      : isExpress
+                        ? "bg-amber-50/50 dark:bg-amber-950/10 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                        : isCompany
+                          ? "bg-cyan-50/30 dark:bg-cyan-950/10 hover:bg-cyan-50 dark:hover:bg-cyan-950/30"
+                          : "bg-violet-50/30 dark:bg-violet-950/10 hover:bg-violet-50 dark:hover:bg-violet-950/30";
                     const avatarClass = !l.is_active
                       ? "bg-gradient-to-br from-zinc-400 to-zinc-500"
-                      : isCompany
-                        ? "bg-gradient-to-br from-cyan-500 to-blue-600"
-                        : "bg-gradient-to-br from-violet-500 to-purple-600";
+                      : isExpress
+                        ? "bg-gradient-to-br from-amber-500 to-orange-600"
+                        : isCompany
+                          ? "bg-gradient-to-br from-cyan-500 to-blue-600"
+                          : "bg-gradient-to-br from-violet-500 to-purple-600";
                     return (
                       <tr
                         key={l.id}
@@ -465,7 +521,15 @@ export default async function LearnersListPage({
                               >
                                 {fullName}
                               </Link>
-                              {isCompany ? (
+                              {isExpress ? (
+                                <span
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-900 mt-0.5"
+                                  title="Fiche créée via QR formateur / saisie express — à compléter"
+                                >
+                                  <QrCode className="h-2.5 w-2.5" />
+                                  Express — à compléter
+                                </span>
+                              ) : isCompany ? (
                                 <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-cyan-100 text-cyan-800 border border-cyan-200 dark:bg-cyan-950/60 dark:text-cyan-300 dark:border-cyan-900 mt-0.5">
                                   <Building2 className="h-2.5 w-2.5" />
                                   Entreprise
@@ -534,6 +598,16 @@ export default async function LearnersListPage({
                                 {l.company.name}
                               </span>
                             </Link>
+                          ) : l.company_name_temp ? (
+                            <span
+                              className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-400"
+                              title="Entreprise saisie en texte libre (fiche express à rattacher)"
+                            >
+                              <Building2 className="h-3 w-3" />
+                              <span className="truncate max-w-[180px]">
+                                {l.company_name_temp}
+                              </span>
+                            </span>
                           ) : (
                             <span className="text-zinc-400 italic text-xs">
                               —
