@@ -22,6 +22,7 @@ type Identity = {
   legal_representative_name: string | null;
   legal_representative_role: string | null;
   google_review_url: string | null;
+  quiz_pass_threshold_percent: number | null;
 };
 
 export function OrgIdentityForm({
@@ -141,6 +142,18 @@ export function OrgIdentityForm({
           placeholder="https://g.page/r/.../review"
           spanFull
           help="Lien vers votre page d'avis Google. Utilisé dans l'email « Demande d'avis Google » envoyé aux apprenants très satisfaits."
+        />
+        <Field
+          label="Seuil de réussite quiz (« la moyenne »)"
+          name="quiz_pass_threshold_percent"
+          defaultValue={
+            initial.quiz_pass_threshold_percent != null
+              ? String(initial.quiz_pass_threshold_percent)
+              : "50"
+          }
+          type="number"
+          placeholder="50"
+          help="En % : en dessous, le formateur est alerté pour faire rejouer le quiz à l'apprenant. Défaut 50."
         />
       </div>
       <div className="flex justify-end">

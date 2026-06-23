@@ -42,6 +42,13 @@ export async function updateOrgIdentity(orgId: string, formData: FormData) {
     ),
     // Lien d'avis Google (demande d'avis aux apprenants — Gilles 2026-06-23)
     google_review_url: parseText(formData.get("google_review_url")),
+    // Seuil de réussite quiz « la moyenne » (Gilles 2026-06-23) : 0-100.
+    quiz_pass_threshold_percent: (() => {
+      const raw = parseText(formData.get("quiz_pass_threshold_percent"));
+      if (raw === null) return undefined; // ne pas écraser
+      const n = Math.round(Number(raw));
+      return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : undefined;
+    })(),
   };
 
   const { error } = await supabase

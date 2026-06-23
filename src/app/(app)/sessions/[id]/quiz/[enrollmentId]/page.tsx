@@ -9,6 +9,7 @@ import { SessionHeaderMeta } from "../../_session-header-meta";
 import { QuizAttemptDetailView } from "@/components/quiz-attempt-detail-view";
 import type { QuizAttempt, QuizQuestion } from "@/lib/quiz/types";
 import { PrintQuizDetailButton } from "./_print-button";
+import { QuizCorrectionEditor } from "./_correction-editor";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -22,10 +23,13 @@ const UUID_REGEX =
  */
 export default async function AdminQuizDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string; enrollmentId: string }>;
+  searchParams: Promise<{ qsaved?: string; qerror?: string }>;
 }) {
   const { id, enrollmentId } = await params;
+  const sp = await searchParams;
   if (!UUID_REGEX.test(id) || !UUID_REGEX.test(enrollmentId)) notFound();
 
   const supabase = await createClient();
@@ -37,15 +41,17 @@ export default async function AdminQuizDetailPage({
   const { data: session } = await supabase
     .from("sessions")
     .select(
-      "id, quiz_template_id, formation:formations(title, quiz_template_id)",
+      "id, quiz_template_id, quiz_results_locked_at, formation:formations(title, quiz_template_id)",
     )
     .eq("id", id)
     .maybeSingle<{
       id: string;
       quiz_template_id: string | null;
+      quiz_results_locked_at: string | null;
       formation: { title: string; quiz_template_id: string | null } | null;
     }>();
   if (!session) notFound();
+  const quizLocked = Boolean(session.quiz_results_locked_at);
 
   // Verifier l'enrollment + recuperer l'apprenant
   const { data: enrollment } = await supabase
@@ -74,33 +80,55 @@ export default async function AdminQuizDetailPage({
     );
   }
 
-  const [{ data: quizRow }, { data: questionsRaw }, { data: attempts }] =
-    await Promise.all([
-      supabase
-        .from("quiz_templates")
-        .select("title")
-        .eq("id", effectiveQuizId)
-        .maybeSingle<{ title: string }>(),
-      supabase
-        .from("quiz_questions")
-        .select(
-          "id, quiz_template_id, position, type, text, options, correct_answer, points, explanation",
-        )
-        .eq("quiz_template_id", effectiveQuizId)
-        .order("position", { ascending: true }),
-      supabase
-        .from("quiz_attempts")
-        .select(
-          "id, enrollment_id, quiz_template_id, phase, score, max_score, started_at, completed_at, data",
-        )
-        .eq("enrollment_id", enrollmentId)
-        .eq("quiz_template_id", effectiveQuizId),
-    ]);
+  const [
+    { data: quizRow },
+    { data: questionsRaw },
+    { data: attempts },
+    { data: historyRows },
+  ] = await Promise.all([
+    supabase
+      .from("quiz_templates")
+      .select("title")
+      .eq("id", effectiveQuizId)
+      .maybeSingle<{ title: string }>(),
+    supabase
+      .from("quiz_questions")
+      .select(
+        "id, quiz_template_id, position, type, text, options, correct_answer, points, explanation",
+      )
+      .eq("quiz_template_id", effectiveQuizId)
+      .order("position", { ascending: true }),
+    supabase
+      .from("quiz_attempts")
+      .select(
+        "id, enrollment_id, quiz_template_id, phase, score, max_score, started_at, completed_at, data, edited_at",
+      )
+      .eq("enrollment_id", enrollmentId)
+      .eq("quiz_template_id", effectiveQuizId),
+    supabase
+      .from("quiz_attempt_history")
+      .select("phase, score, max_score, archived_at")
+      .eq("enrollment_id", enrollmentId)
+      .eq("quiz_template_id", effectiveQuizId)
+      .order("archived_at", { ascending: true }),
+  ]);
 
   const questions = (questionsRaw ?? []) as QuizQuestion[];
-  const allAttempts = (attempts ?? []) as QuizAttempt[];
+  const allAttempts = (attempts ?? []) as Array<
+    QuizAttempt & { edited_at?: string | null }
+  >;
   const preAttempt = allAttempts.find((a) => a.phase === "pre") ?? null;
   const postAttempt = allAttempts.find((a) => a.phase === "post") ?? null;
+
+  type HistRow = {
+    phase: "pre" | "post";
+    score: number | null;
+    max_score: number | null;
+    archived_at: string;
+  };
+  const history = (historyRows ?? []) as HistRow[];
+  const pctOf = (s: number | null, m: number | null) =>
+    s === null || m === null || m === 0 ? null : Math.round((s / m) * 100);
 
   const fullName = [
     enrollment.learner?.first_name,
@@ -187,6 +215,82 @@ export default async function AdminQuizDetailPage({
           preAttempt={preAttempt}
           postAttempt={postAttempt}
         />
+
+        {/* === Correction admin (Gilles 2026-06-23) === */}
+        <div className="no-print space-y-3 border-t border-zinc-200 pt-4">
+          {sp.qsaved && (
+            <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-2.5 text-sm text-emerald-800">
+              ✅ Réponses corrigées et score recalculé.
+            </div>
+          )}
+          {sp.qerror === "locked" && (
+            <div className="rounded-lg bg-rose-50 border border-rose-200 px-4 py-2.5 text-sm text-rose-700">
+              Résultats verrouillés — déverrouillez d&apos;abord depuis l&apos;onglet
+              Quiz de la session.
+            </div>
+          )}
+
+          <h2 className="text-sm font-bold text-zinc-800">
+            Correction des résultats
+          </h2>
+
+          {/* Historique des rejeux (1er essai conservé) */}
+          {history.length > 0 && (
+            <div className="rounded-lg bg-zinc-50 border border-zinc-200 px-4 py-2.5 text-xs text-zinc-600">
+              <span className="font-semibold">Essais précédents (rejeu) :</span>{" "}
+              {history.map((h, i) => {
+                const p = pctOf(h.score, h.max_score);
+                return (
+                  <span key={i}>
+                    {i > 0 ? " · " : ""}
+                    {h.phase === "pre" ? "Pré" : "Post"}{" "}
+                    {p !== null ? `${p}%` : "—"} (le{" "}
+                    {new Date(h.archived_at).toLocaleDateString("fr-FR")})
+                  </span>
+                );
+              })}
+            </div>
+          )}
+
+          {preAttempt && (
+            <div className="space-y-1">
+              {preAttempt.edited_at && (
+                <p className="text-[11px] text-amber-700">
+                  ✎ Pré ajusté le{" "}
+                  {new Date(preAttempt.edited_at).toLocaleDateString("fr-FR")}
+                </p>
+              )}
+              <QuizCorrectionEditor
+                sessionId={id}
+                enrollmentId={enrollmentId}
+                phase="pre"
+                phaseLabel="Pré-formation"
+                questions={questions}
+                attempt={preAttempt}
+                locked={quizLocked}
+              />
+            </div>
+          )}
+          {postAttempt && (
+            <div className="space-y-1">
+              {postAttempt.edited_at && (
+                <p className="text-[11px] text-amber-700">
+                  ✎ Post ajusté le{" "}
+                  {new Date(postAttempt.edited_at).toLocaleDateString("fr-FR")}
+                </p>
+              )}
+              <QuizCorrectionEditor
+                sessionId={id}
+                enrollmentId={enrollmentId}
+                phase="post"
+                phaseLabel="Post-formation"
+                questions={questions}
+                attempt={postAttempt}
+                locked={quizLocked}
+              />
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -1657,16 +1657,55 @@ export async function deleteQuizAttemptFromPortal(
   // formations.quiz_template_id en fallback)
   const { data: session } = await supabase
     .from("sessions")
-    .select("quiz_template_id, formation:formations(quiz_template_id)")
+    .select(
+      "organization_id, quiz_template_id, quiz_results_locked_at, formation:formations(quiz_template_id)",
+    )
     .eq("id", sessionId)
     .maybeSingle<{
+      organization_id: string;
       quiz_template_id: string | null;
+      quiz_results_locked_at: string | null;
       formation: { quiz_template_id: string | null } | null;
     }>();
   const effectiveQuizId =
     session?.quiz_template_id ?? session?.formation?.quiz_template_id ?? null;
   if (!effectiveQuizId) {
     return { ok: false, error: "Aucun quiz rattaché à cette session." };
+  }
+  // Verrou : on ne rejoue pas si les résultats sont verrouillés (Gilles 2026-06-23).
+  if (session?.quiz_results_locked_at) {
+    return {
+      ok: false,
+      error: "Résultats verrouillés — rejeu impossible.",
+    };
+  }
+
+  // Archive la tentative existante AVANT suppression (garde la trace du
+  // 1er essai pour l'audit — Gilles 2026-06-23).
+  const { data: prev } = await supabase
+    .from("quiz_attempts")
+    .select("score, max_score, data, completed_at")
+    .eq("enrollment_id", enrollmentId)
+    .eq("quiz_template_id", effectiveQuizId)
+    .eq("phase", phase)
+    .maybeSingle<{
+      score: number | null;
+      max_score: number | null;
+      data: unknown;
+      completed_at: string | null;
+    }>();
+  if (prev && session?.organization_id) {
+    await supabase.from("quiz_attempt_history").insert({
+      organization_id: session.organization_id,
+      enrollment_id: enrollmentId,
+      quiz_template_id: effectiveQuizId,
+      phase,
+      score: prev.score,
+      max_score: prev.max_score,
+      data: prev.data,
+      completed_at: prev.completed_at,
+      reason: "replay",
+    });
   }
 
   const { error } = await supabase

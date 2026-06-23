@@ -5,6 +5,8 @@ import {
   Brain,
   CheckCircle2,
   Eye,
+  Lock,
+  LockOpen,
   TrendingDown,
   TrendingUp,
 } from "lucide-react";
@@ -15,16 +17,20 @@ import { BackButton } from "@/components/back-button";
 import { SessionTabs } from "../_session-tabs";
 import { SessionHeaderMeta } from "../_session-header-meta";
 import type { QuizAttempt } from "@/lib/quiz/types";
+import { toggleQuizLock } from "./actions";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export default async function SessionQuizDashboardPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ qlocked?: string; qunlocked?: string }>;
 }) {
   const { id } = await params;
+  const sp = await searchParams;
   if (!UUID_REGEX.test(id)) notFound();
 
   const supabase = await createClient();
@@ -36,18 +42,20 @@ export default async function SessionQuizDashboardPage({
   const { data: session } = await supabase
     .from("sessions")
     .select(
-      "id, quiz_template_id, formation:formations(title, quiz_template_id)",
+      "id, quiz_template_id, quiz_results_locked_at, formation:formations(title, quiz_template_id)",
     )
     .eq("id", id)
     .maybeSingle<{
       id: string;
       quiz_template_id: string | null;
+      quiz_results_locked_at: string | null;
       formation: {
         title: string;
         quiz_template_id: string | null;
       } | null;
     }>();
   if (!session) notFound();
+  const quizLocked = Boolean(session.quiz_results_locked_at);
 
   const effectiveQuizId =
     session.quiz_template_id ?? session.formation?.quiz_template_id ?? null;
@@ -250,6 +258,33 @@ export default async function SessionQuizDashboardPage({
         ]}
         actions={
           <div className="flex items-center gap-2">
+            <form action={toggleQuizLock}>
+              <input type="hidden" name="sessionId" value={id} />
+              <input type="hidden" name="lock" value={quizLocked ? "0" : "1"} />
+              <button
+                type="submit"
+                className={
+                  quizLocked
+                    ? "inline-flex items-center gap-1.5 px-3 py-2 rounded-md border border-emerald-300 bg-emerald-50 text-emerald-700 text-sm font-semibold hover:bg-emerald-100"
+                    : "inline-flex items-center gap-1.5 px-3 py-2 rounded-md border border-zinc-300 bg-white text-zinc-700 text-sm font-semibold hover:bg-zinc-50"
+                }
+                title={
+                  quizLocked
+                    ? "Déverrouiller pour permettre corrections et rejeux"
+                    : "Verrouiller les résultats (lecture seule, preuve Qualiopi)"
+                }
+              >
+                {quizLocked ? (
+                  <>
+                    <Lock className="h-4 w-4" /> Résultats verrouillés
+                  </>
+                ) : (
+                  <>
+                    <LockOpen className="h-4 w-4" /> Verrouiller les résultats
+                  </>
+                )}
+              </button>
+            </form>
             <Link
               href={`/sessions/${id}/quiz/print`}
               target="_blank"
@@ -264,6 +299,24 @@ export default async function SessionQuizDashboardPage({
         }
       />
       <SessionTabs sessionId={id} counts={{ participants: total }} />
+
+      {quizLocked && (
+        <div className="mx-8 mt-4 rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-2.5 text-sm text-emerald-800 inline-flex items-center gap-2">
+          <Lock className="h-4 w-4" />
+          Résultats verrouillés — corrections et rejeux désactivés. Cliquez «
+          Résultats verrouillés » pour déverrouiller.
+        </div>
+      )}
+      {sp.qlocked && (
+        <div className="mx-8 mt-4 rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-2.5 text-sm text-emerald-800">
+          ✅ Résultats verrouillés.
+        </div>
+      )}
+      {sp.qunlocked && (
+        <div className="mx-8 mt-4 rounded-lg bg-amber-50 border border-amber-200 px-4 py-2.5 text-sm text-amber-800">
+          🔓 Résultats déverrouillés — corrections et rejeux de nouveau possibles.
+        </div>
+      )}
 
       <div className="p-8 max-w-5xl space-y-4">
         {/* KPIs */}

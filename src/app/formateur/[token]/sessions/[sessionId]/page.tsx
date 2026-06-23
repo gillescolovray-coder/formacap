@@ -557,6 +557,39 @@ export default async function FormateurSessionDetailPage({
     }
   }
 
+  // 6 ter-bis. Seuil de réussite quiz + apprenants SOUS la moyenne au quiz
+  // de sortie -> alerte formateur « faire rejouer » (Gilles 2026-06-23).
+  let quizThreshold = 50;
+  {
+    const { data: srow } = await supabase
+      .from("sessions")
+      .select("organization_id")
+      .eq("id", sessionId)
+      .maybeSingle<{ organization_id: string }>();
+    if (srow?.organization_id) {
+      const { data: o } = await supabase
+        .from("organizations")
+        .select("quiz_pass_threshold_percent")
+        .eq("id", srow.organization_id)
+        .maybeSingle<{ quiz_pass_threshold_percent: number | null }>();
+      if (o?.quiz_pass_threshold_percent != null)
+        quizThreshold = o.quiz_pass_threshold_percent;
+    }
+  }
+  const belowThreshold = participants
+    .map((p) => {
+      const slot = quizByEnrollment.get(p.enrollmentId);
+      const post = slot?.post ?? null;
+      if (!post || !post.max_score) return null;
+      const pct = Math.round(((post.score ?? 0) / post.max_score) * 100);
+      return pct < quizThreshold
+        ? { enrollmentId: p.enrollmentId, name: p.fullName, pct }
+        : null;
+    })
+    .filter((x): x is { enrollmentId: string; name: string; pct: number } =>
+      Boolean(x),
+    );
+
   // 6 quater. Bilan formateur (Module 7). Fallback silencieux si la
   // table n'existe pas encore en prod (migration 0101 pas appliquée) :
   // la section affichera juste un message d'attente.
@@ -1418,6 +1451,48 @@ export default async function FormateurSessionDetailPage({
             {quizQuestions.length > 0 && (
               <div className="mb-2">
                 <BlankQuizButton questions={quizQuestions} />
+              </div>
+            )}
+
+            {/* Alerte : apprenants sous la moyenne au quiz de sortie
+                -> proposition de rejeu (Gilles 2026-06-23). */}
+            {belowThreshold.length > 0 && (
+              <div className="mb-3 rounded-lg border border-rose-200 bg-rose-50 p-3">
+                <div className="text-sm font-bold text-rose-800">
+                  ⚠️ {belowThreshold.length} apprenant
+                  {belowThreshold.length > 1 ? "s" : ""} sous la moyenne (
+                  {quizThreshold} %)
+                </div>
+                <p className="text-xs text-rose-700 mt-1">
+                  Ces apprenants n&apos;ont pas atteint la moyenne au quiz de
+                  sortie. Vous pouvez leur faire <strong>rejouer le quiz</strong>{" "}
+                  (leur 1er résultat est conservé).
+                </p>
+                <ul className="mt-2 space-y-1.5">
+                  {belowThreshold.map((b) => (
+                    <li
+                      key={b.enrollmentId}
+                      className="flex items-center justify-between gap-2 text-sm flex-wrap"
+                    >
+                      <span className="text-rose-900 font-medium">
+                        {b.name} — {b.pct} %
+                      </span>
+                      <QuizAttemptResetButton
+                        learnerName={b.name}
+                        phaseLabel="du quiz de sortie"
+                        resetAction={async () => {
+                          "use server";
+                          return await deleteQuizAttemptFromPortal(
+                            token,
+                            sessionId,
+                            b.enrollmentId,
+                            "post",
+                          );
+                        }}
+                      />
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
 
