@@ -88,6 +88,28 @@ const styles = StyleSheet.create({
     borderTopColor: "#e2e8f0",
     backgroundColor: "#f8fafc",
   },
+  // Mise en evidence par statut (Gilles 2026-06-23)
+  rowConfirmed: {
+    flexDirection: "row",
+    borderTopWidth: 1,
+    borderTopColor: "#a7f3d0",
+    backgroundColor: "#d1fae5",
+  },
+  rowCancelled: {
+    flexDirection: "row",
+    borderTopWidth: 1,
+    borderTopColor: "#fecaca",
+    backgroundColor: "#fee2e2",
+  },
+  rowPostponed: {
+    flexDirection: "row",
+    borderTopWidth: 1,
+    borderTopColor: "#fed7aa",
+    backgroundColor: "#ffedd5",
+  },
+  tdConfirmed: { color: "#065f46", fontWeight: "bold" },
+  tdCancelled: { color: "#991b1b" },
+  tdPostponed: { color: "#9a3412" },
   th: {
     flexBasis: 0,
     padding: 4,
@@ -126,6 +148,12 @@ export type SessionsListPdfColumn = {
   width?: number;
 };
 
+export type SessionsListPdfRowStyle =
+  | "confirmed"
+  | "cancelled"
+  | "postponed"
+  | null;
+
 export type SessionsListPdfData = {
   title: string;
   subtitle: string | null;
@@ -138,6 +166,8 @@ export type SessionsListPdfData = {
   generatedAt: string;
   columns: SessionsListPdfColumn[];
   rows: string[][];
+  /** Style par ligne (couleur selon statut). Meme ordre que `rows`. */
+  rowStyles?: SessionsListPdfRowStyle[];
 };
 
 export function SessionsListPdf({ data }: { data: SessionsListPdfData }) {
@@ -195,22 +225,43 @@ export function SessionsListPdf({ data }: { data: SessionsListPdfData }) {
               </Text>
             ))}
           </View>
-          {data.rows.map((r, ri) => (
-            <View
-              key={ri}
-              style={ri % 2 === 0 ? styles.row : styles.rowAlt}
-              wrap={false}
-            >
-              {cols.map((c, ci) => (
-                <Text
-                  key={ci}
-                  style={[styles.td, { flexGrow: c.width ?? 1 }]}
-                >
-                  {r[ci] ?? ""}
-                </Text>
-              ))}
-            </View>
-          ))}
+          {data.rows.map((r, ri) => {
+            const st = data.rowStyles?.[ri] ?? null;
+            const rowStyle =
+              st === "confirmed"
+                ? styles.rowConfirmed
+                : st === "cancelled"
+                  ? styles.rowCancelled
+                  : st === "postponed"
+                    ? styles.rowPostponed
+                    : ri % 2 === 0
+                      ? styles.row
+                      : styles.rowAlt;
+            const tdExtra =
+              st === "confirmed"
+                ? styles.tdConfirmed
+                : st === "cancelled"
+                  ? styles.tdCancelled
+                  : st === "postponed"
+                    ? styles.tdPostponed
+                    : null;
+            return (
+              <View key={ri} style={rowStyle} wrap={false}>
+                {cols.map((c, ci) => (
+                  <Text
+                    key={ci}
+                    style={[
+                      styles.td,
+                      { flexGrow: c.width ?? 1 },
+                      ...(tdExtra ? [tdExtra] : []),
+                    ]}
+                  >
+                    {r[ci] ?? ""}
+                  </Text>
+                ))}
+              </View>
+            );
+          })}
         </View>
 
         {/* Pied de page */}

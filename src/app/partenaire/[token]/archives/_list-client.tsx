@@ -93,7 +93,11 @@ function placeCell(s: ArchivedSession): string {
   const loc = s.location_detail;
   if (!loc) return "—";
   return (
-    [loc.name, [loc.postal_code, loc.city].filter(Boolean).join(" ")]
+    [
+      loc.name,
+      loc.address,
+      [loc.postal_code, loc.city].filter(Boolean).join(" "),
+    ]
       .filter((x) => x && x.length > 0)
       .join(", ") || "—"
   );

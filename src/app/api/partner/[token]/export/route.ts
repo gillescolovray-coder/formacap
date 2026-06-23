@@ -29,6 +29,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 type Column = { header?: string; width?: number };
+type RowStyle = "confirmed" | "cancelled" | "postponed" | null;
 type Body = {
   format?: "pdf" | "xlsx";
   title?: string;
@@ -37,6 +38,14 @@ type Body = {
   filenameBase?: string;
   columns?: Column[];
   rows?: unknown[][];
+  rowStyles?: RowStyle[];
+};
+
+/** Couleur de fond Excel (ARGB) par statut de ligne. */
+const XLSX_ROW_FILL: Record<string, string> = {
+  confirmed: "FFD1FAE5",
+  cancelled: "FFFEE2E2",
+  postponed: "FFFFEDD5",
 };
 
 function safeName(s: string): string {
@@ -73,6 +82,11 @@ export async function POST(
       cell === null || cell === undefined ? "" : String(cell),
     ),
   );
+  const rowStyles: RowStyle[] = Array.isArray(body.rowStyles)
+    ? body.rowStyles.map((s) =>
+        s === "confirmed" || s === "cancelled" || s === "postponed" ? s : null,
+      )
+    : [];
   const title = body.title?.trim() || "Export";
   const subtitle = body.subtitle?.trim() || null;
   const filterLabel = body.filterLabel?.trim() || "Tout";
@@ -107,6 +121,7 @@ export async function POST(
       generatedAt,
       columns,
       rows,
+      rowStyles,
     };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const element = React.createElement(SessionsListPdf as any, { data });
@@ -159,9 +174,19 @@ export async function POST(
     col.width = Math.max(12, (columns[i]?.width ?? 1) * 14);
   });
 
-  for (const r of rows) {
-    ws.addRow(columns.map((_, i) => r[i] ?? ""));
-  }
+  rows.forEach((r, ri) => {
+    const added = ws.addRow(columns.map((_, i) => r[i] ?? ""));
+    const fill = rowStyles[ri] ? XLSX_ROW_FILL[rowStyles[ri] as string] : null;
+    if (fill) {
+      added.eachCell((c) => {
+        c.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: fill },
+        };
+      });
+    }
+  });
 
   const buffer = await wb.xlsx.writeBuffer();
   return new NextResponse(buffer as unknown as BodyInit, {

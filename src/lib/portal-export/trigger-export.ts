@@ -11,6 +11,9 @@ export type ExportColumn = {
   width?: number;
 };
 
+/** Statut de mise en evidence d une ligne dans l export (couleur). */
+export type ExportRowStyle = "confirmed" | "cancelled" | "postponed" | null;
+
 export type ExportPayload = {
   format: "pdf" | "xlsx";
   title: string;
@@ -19,6 +22,8 @@ export type ExportPayload = {
   filenameBase: string;
   columns: ExportColumn[];
   rows: string[][];
+  /** Style de chaque ligne (meme ordre que `rows`). Optionnel. */
+  rowStyles?: ExportRowStyle[];
 };
 
 export async function triggerPartnerExport(

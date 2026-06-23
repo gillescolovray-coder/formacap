@@ -151,17 +151,24 @@ function statusLabel(s: string): string {
         : "Planifiée";
 }
 
-/** Lieu (présentiel) ou appli visio (distanciel) en une cellule texte. */
+/**
+ * Cellule « Lieu / Visio » pour l export (Gilles 2026-06-23) :
+ *   - distanciel : uniquement le nom de l application visio (sans l URL)
+ *   - présentiel / hybride : adresse complète du lieu de formation
+ */
 function placeCell(s: CatalogueSession): string {
   if (s.modality === "distanciel") return s.visio?.app ?? "Distanciel";
   const loc = s.location_detail;
-  if (!loc) return "—";
-  return [
-    loc.name,
-    [loc.postal_code, loc.city].filter(Boolean).join(" "),
-  ]
-    .filter((x) => x && x.length > 0)
-    .join(", ") || "—";
+  if (!loc) return s.visio?.app ?? "—";
+  return (
+    [
+      loc.name,
+      loc.address,
+      [loc.postal_code, loc.city].filter(Boolean).join(" "),
+    ]
+      .filter((x) => x && x.length > 0)
+      .join(", ") || "—"
+  );
 }
 
 export function CatalogueList({
@@ -307,7 +314,6 @@ export function CatalogueList({
               filenameBase: "Catalogue-sessions",
               columns: [
                 { header: "Formation", width: 3 },
-                { header: "Référence", width: 1.2 },
                 { header: "Date(s)", width: 1.5 },
                 { header: "Modalité", width: 1 },
                 { header: "Lieu / Visio", width: 2 },
@@ -316,7 +322,6 @@ export function CatalogueList({
               ],
               rows: filtered.map((s) => [
                 s.formation?.title ?? "(formation supprimée)",
-                s.reference ?? "—",
                 formatDateRange(s.start_date, s.end_date),
                 modalityLabel(s.modality),
                 placeCell(s),
@@ -325,6 +330,15 @@ export function CatalogueList({
                   ? `${s.enrolled_count} / ${s.max_participants}`
                   : `${s.enrolled_count}`,
               ]),
+              rowStyles: filtered.map((s) =>
+                s.status === "confirmed"
+                  ? ("confirmed" as const)
+                  : s.status === "cancelled"
+                    ? ("cancelled" as const)
+                    : s.status === "postponed"
+                      ? ("postponed" as const)
+                      : null,
+              ),
             };
           }}
         />
