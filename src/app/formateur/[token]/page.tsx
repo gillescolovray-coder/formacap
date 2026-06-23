@@ -12,6 +12,11 @@ import {
   SessionCalendar,
   type CalendarEvent,
 } from "@/components/session-calendar";
+import {
+  zoneForPostalCode,
+  fetchSchoolHolidayDays,
+  zoneLabel as schoolZoneLabel,
+} from "@/lib/fr-school-holidays";
 
 export const dynamic = "force-dynamic";
 
@@ -245,14 +250,24 @@ export default async function FormateurAgendaPage({
     (Array.isArray(v) ? (v[0] ?? null) : (v ?? null)) as T | null;
   const trainerEvents: CalendarEvent[] = allSessions.map((s) => {
     const formation = pickOne<{ title: string | null }>(s.formation);
-    const loc = pickOne<{ name: string | null; city: string | null }>(
-      s.location_ref,
-    );
+    const loc = pickOne<{
+      name: string | null;
+      city: string | null;
+      address: string | null;
+      postal_code: string | null;
+    }>(s.location_ref);
+    // Info-bulle : nom de la salle + adresse complète (présentiel).
     const meta =
       s.modality === "distanciel"
         ? "Distanciel"
         : loc
-          ? [loc.name, loc.city].filter(Boolean).join(" — ")
+          ? [
+              loc.name,
+              loc.address,
+              [loc.postal_code, loc.city].filter(Boolean).join(" "),
+            ]
+              .filter((x) => x && x.length > 0)
+              .join(", ")
           : s.location ?? null;
     return {
       id: s.id,
@@ -265,6 +280,21 @@ export default async function FormateurAgendaPage({
       meta,
     };
   });
+
+  // Congés scolaires : zone déduite du code postal du formateur, en rouge.
+  const holZone = zoneForPostalCode(trainer.company_postal_code);
+  const holFrom = new Date();
+  holFrom.setMonth(holFrom.getMonth() - 2);
+  const holTo = new Date();
+  holTo.setMonth(holTo.getMonth() + 16);
+  const holidayDays = holZone
+    ? await fetchSchoolHolidayDays(
+        holZone,
+        holFrom.toISOString().slice(0, 10),
+        holTo.toISOString().slice(0, 10),
+      )
+    : {};
+  const holidayZoneLabel = holZone ? schoolZoneLabel(holZone) : null;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
@@ -288,7 +318,12 @@ export default async function FormateurAgendaPage({
           <p className="text-xs text-zinc-500">{org?.name ?? ""}</p>
         </header>
 
-        <SessionCalendar events={trainerEvents} storageKey="formateur-agenda">
+        <SessionCalendar
+          events={trainerEvents}
+          storageKey="formateur-agenda"
+          holidayDays={holidayDays}
+          holidayZoneLabel={holidayZoneLabel}
+        >
         <div className="space-y-4">
         {/* Section À venir — mise en avant */}
         <section className="rounded-2xl bg-gradient-to-br from-cyan-50/60 to-white border-2 border-cyan-200 p-3 md:p-4 space-y-3">

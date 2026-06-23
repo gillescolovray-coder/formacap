@@ -9,6 +9,11 @@ import { resolvePartnerContext } from "../_resolve";
 import { InviteBlock } from "../_invite-block";
 import { CatalogueList, type CatalogueSession } from "./_list-client";
 import { loadPartnerCatalogueSessions } from "@/lib/portal/partner-catalogue";
+import {
+  zoneForPostalCode,
+  fetchSchoolHolidayDays,
+  zoneLabel as schoolZoneLabel,
+} from "@/lib/fr-school-holidays";
 
 // Rendu toujours frais : reflète immédiatement les tarifs de Paramètres
 // (grille prescripteur/OF) — Gilles 2026-06-09.
@@ -302,6 +307,22 @@ export default async function PartnerCataloguePage({
       ? "Aucune session distanciel INTER à venir pour le moment."
       : "Aucune session à venir dans votre catalogue pour le moment.";
 
+  // Congés scolaires : zone déduite du code postal du partenaire (OF /
+  // prescripteur), affichée en rouge sur le calendrier (Gilles 2026-06-23).
+  const holZone = zoneForPostalCode(ctx.company.postal_code);
+  const holRangeFrom = new Date();
+  holRangeFrom.setMonth(holRangeFrom.getMonth() - 2);
+  const holRangeTo = new Date();
+  holRangeTo.setMonth(holRangeTo.getMonth() + 16);
+  const holidayDays = holZone
+    ? await fetchSchoolHolidayDays(
+        holZone,
+        holRangeFrom.toISOString().slice(0, 10),
+        holRangeTo.toISOString().slice(0, 10),
+      )
+    : {};
+  const holidayZoneLabel = holZone ? schoolZoneLabel(holZone) : null;
+
   return (
     <div className="space-y-5">
       <header>
@@ -339,6 +360,8 @@ export default async function PartnerCataloguePage({
           organizationEmail={ctx.organization.email}
           sessions={rows}
           partnerType={ctx.company.type}
+          holidayDays={holidayDays}
+          holidayZoneLabel={holidayZoneLabel}
         />
       )}
     </div>

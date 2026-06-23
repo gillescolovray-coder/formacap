@@ -181,6 +181,8 @@ export function CatalogueList({
   organizationEmail,
   sessions,
   partnerType,
+  holidayDays,
+  holidayZoneLabel,
 }: {
   token: string;
   partnerName: string;
@@ -189,6 +191,9 @@ export function CatalogueList({
   /** Type du partenaire — change le libelle du filtre (Donneur d ordre
    *  pour les OF, Prescripteur pour les prescripteurs). Gilles 2026-06-01. */
   partnerType: "of" | "prescripteur";
+  /** Jours de vacances scolaires { "YYYY-MM-DD": libellé } (zone partenaire). */
+  holidayDays?: Record<string, string>;
+  holidayZoneLabel?: string | null;
 }) {
   const [query, setQuery] = useState("");
   const [onlyOwn, setOnlyOwn] = useState(false);
@@ -372,7 +377,12 @@ export function CatalogueList({
         />
       </div>
 
-      <SessionCalendar events={calendarEvents} storageKey="partner-catalogue">
+      <SessionCalendar
+        events={calendarEvents}
+        storageKey="partner-catalogue"
+        holidayDays={holidayDays}
+        holidayZoneLabel={holidayZoneLabel}
+      >
       {filtered.length === 0 ? (
         <div className="rounded-2xl bg-white border border-zinc-200 p-8 text-center">
           <Search className="h-8 w-8 text-zinc-300 mx-auto mb-2" />
