@@ -86,25 +86,26 @@ function normalize(s: string): string {
     .replace(/[̀-ͯ]/g, "");
 }
 
-/** Cellule pourcentage coloree. */
-function Pct({
-  value,
-  color,
-}: {
-  value: number | null;
-  color: "violet" | "emerald";
-}) {
-  if (value === null)
-    return <span className="text-zinc-400 text-xs italic">—</span>;
+/** Badge de statut de session colore. */
+function StatusBadge({ status }: { status: string | null }) {
+  const label = statusLabel(status);
+  const cls =
+    status === "confirmed"
+      ? "bg-emerald-100 text-emerald-800"
+      : status === "cancelled"
+        ? "bg-red-100 text-red-700"
+        : status === "postponed"
+          ? "bg-orange-100 text-orange-700"
+          : status === "completed"
+            ? "bg-zinc-100 text-zinc-600"
+            : status === "in_progress"
+              ? "bg-cyan-100 text-cyan-700"
+              : "bg-amber-50 text-amber-700 border border-amber-200";
   return (
     <span
-      className={
-        color === "violet"
-          ? "font-bold text-violet-700"
-          : "font-bold text-emerald-700"
-      }
+      className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${cls}`}
     >
-      {value} %
+      {label}
     </span>
   );
 }
@@ -123,7 +124,16 @@ export function ParticipantsListClient({
     if (!q) return rows;
     return rows.filter((r) =>
       normalize(
-        [r.learnerName, r.companyName ?? "", r.formationTitle ?? ""].join(" "),
+        [
+          r.learnerName,
+          r.companyName ?? "",
+          r.formationTitle ?? "",
+          // Recherche par date : libellé FR (« 29 mai 2026 ») + ISO brut
+          // (« 2026-05-29 ») pour couvrir « mai », « 2026 », « 29 mai »…
+          formatDateRange(r.startDate, r.endDate),
+          r.startDate ?? "",
+          r.endDate ?? "",
+        ].join(" "),
       ).includes(q),
     );
   }, [rows, query]);
@@ -177,8 +187,6 @@ export function ParticipantsListClient({
               { header: "Date(s)", width: 1.5 },
               { header: "Modalité", width: 1 },
               { header: "Statut", width: 1 },
-              { header: "Quiz pré", width: 0.8 },
-              { header: "Quiz post", width: 0.8 },
             ],
             rows: filtered.map((r) => [
               r.learnerName,
@@ -187,8 +195,6 @@ export function ParticipantsListClient({
               formatDateRange(r.startDate, r.endDate),
               modalityLabel(r.modality),
               statusLabel(r.status),
-              r.prePct !== null ? `${r.prePct} %` : "—",
-              r.postPct !== null ? `${r.postPct} %` : "—",
             ]),
             rowStyles: filtered.map((r) => rowStyle(r.status)),
           })}
@@ -220,8 +226,7 @@ export function ParticipantsListClient({
                 <th className="px-3 py-2 text-left">Formation</th>
                 <th className="px-3 py-2 text-left">Date(s)</th>
                 <th className="px-3 py-2 text-left">Modalité</th>
-                <th className="px-3 py-2 text-right">Quiz pré</th>
-                <th className="px-3 py-2 text-right">Quiz post</th>
+                <th className="px-3 py-2 text-left">Statut</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
@@ -249,11 +254,8 @@ export function ParticipantsListClient({
                   <td className="px-3 py-2 text-zinc-600 whitespace-nowrap">
                     {modalityLabel(r.modality)}
                   </td>
-                  <td className="px-3 py-2 text-right tabular-nums">
-                    <Pct value={r.prePct} color="violet" />
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums">
-                    <Pct value={r.postPct} color="emerald" />
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    <StatusBadge status={r.status} />
                   </td>
                 </tr>
               ))}
