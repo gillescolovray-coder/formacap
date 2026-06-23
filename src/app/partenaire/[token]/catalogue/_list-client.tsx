@@ -19,6 +19,10 @@ import {
   X,
 } from "lucide-react";
 import { ExportButtons } from "../_export-buttons";
+import {
+  SessionCalendar,
+  type CalendarEvent,
+} from "@/components/session-calendar";
 
 export type CatalogueSession = {
   id: string;
@@ -222,6 +226,25 @@ export function CatalogueList({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessions, query, onlyOwn, isOf]);
 
+  // Événements pour la vue calendrier (Mois/Semaine) — reflète le filtrage.
+  const calendarEvents: CalendarEvent[] = useMemo(
+    () =>
+      filtered.map((s) => ({
+        id: s.id,
+        title: s.formation?.title ?? "(formation supprimée)",
+        startDate: s.start_date,
+        endDate: s.end_date,
+        status: s.status,
+        modality: s.modality,
+        href:
+          s.status === "cancelled"
+            ? null
+            : `/partenaire/${token}/inscrire/${s.id}`,
+        meta: placeCell(s),
+      })),
+    [filtered, token],
+  );
+
   const mineCount = sessions.filter(matchesMine).length;
   const mineLabel = isOf ? "Donneur d'ordre uniquement" : "Prescripteur uniquement";
   const mineTitle = isOf
@@ -344,6 +367,7 @@ export function CatalogueList({
         />
       </div>
 
+      <SessionCalendar events={calendarEvents} storageKey="partner-catalogue">
       {filtered.length === 0 ? (
         <div className="rounded-2xl bg-white border border-zinc-200 p-8 text-center">
           <Search className="h-8 w-8 text-zinc-300 mx-auto mb-2" />
@@ -737,6 +761,7 @@ export function CatalogueList({
           })}
         </div>
       )}
+      </SessionCalendar>
     </div>
   );
 }

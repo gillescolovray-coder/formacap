@@ -8,6 +8,10 @@ import {
   type SessionScheduleSnapshot,
 } from "./_session-card";
 import { PastSessionsSection } from "./_past-sessions-section";
+import {
+  SessionCalendar,
+  type CalendarEvent,
+} from "@/components/session-calendar";
 
 export const dynamic = "force-dynamic";
 
@@ -235,6 +239,33 @@ export default async function FormateurAgendaPage({
     schedule: scheduleBySession.get(s.id) ?? null,
   }));
 
+  // Événements pour la vue calendrier (Liste/Mois/Semaine) — toutes les
+  // sessions du formateur (à venir + passées) pour pouvoir naviguer.
+  const pickOne = <T,>(v: unknown): T | null =>
+    (Array.isArray(v) ? (v[0] ?? null) : (v ?? null)) as T | null;
+  const trainerEvents: CalendarEvent[] = allSessions.map((s) => {
+    const formation = pickOne<{ title: string | null }>(s.formation);
+    const loc = pickOne<{ name: string | null; city: string | null }>(
+      s.location_ref,
+    );
+    const meta =
+      s.modality === "distanciel"
+        ? "Distanciel"
+        : loc
+          ? [loc.name, loc.city].filter(Boolean).join(" — ")
+          : s.location ?? null;
+    return {
+      id: s.id,
+      title: formation?.title ?? "Session",
+      startDate: s.start_date,
+      endDate: s.end_date,
+      status: s.status,
+      modality: s.modality,
+      href: `/formateur/${token}/sessions/${s.id}`,
+      meta,
+    };
+  });
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
       <div className="max-w-3xl mx-auto p-4 md:p-8 space-y-4">
@@ -257,6 +288,8 @@ export default async function FormateurAgendaPage({
           <p className="text-xs text-zinc-500">{org?.name ?? ""}</p>
         </header>
 
+        <SessionCalendar events={trainerEvents} storageKey="formateur-agenda">
+        <div className="space-y-4">
         {/* Section À venir — mise en avant */}
         <section className="rounded-2xl bg-gradient-to-br from-cyan-50/60 to-white border-2 border-cyan-200 p-3 md:p-4 space-y-3">
           <div className="flex items-center gap-2">
@@ -308,6 +341,8 @@ export default async function FormateurAgendaPage({
             hiddenCount={pastHiddenCount}
           />
         )}
+        </div>
+        </SessionCalendar>
 
         <footer className="text-center text-[11px] text-zinc-400 mt-8">
           Conservez ce lien : il vous donne accès en permanence à vos
