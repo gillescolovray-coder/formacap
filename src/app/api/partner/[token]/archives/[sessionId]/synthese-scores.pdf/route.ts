@@ -138,7 +138,10 @@ export async function GET(
     learner: {
       first_name: string | null;
       last_name: string | null;
-      email: string | null;
+      // Entreprise : objet jointure OU fallback texte libre
+      // (cascade identique a la fiche detail archives — Gilles 2026-06-23).
+      company: { name: string | null } | { name: string | null }[] | null;
+      company_name_temp: string | null;
     } | null;
   };
 
@@ -148,7 +151,7 @@ export async function GET(
     const { data } = await supabase
       .from("session_enrollments")
       .select(
-        "id, learner:learners(first_name, last_name, email)",
+        "id, learner:learners(first_name, last_name, company:companies(name), company_name_temp)",
       )
       .eq("session_id", sessionId)
       .neq("status", "cancelled");
@@ -170,7 +173,7 @@ export async function GET(
       const { data } = await supabase
         .from("session_enrollments")
         .select(
-          "id, learner:learners(first_name, last_name, email)",
+          "id, learner:learners(first_name, last_name, company:companies(name), company_name_temp)",
         )
         .eq("session_id", sessionId)
         .in("learner_id", learnerIds)
@@ -220,7 +223,11 @@ export async function GET(
     const learner = Array.isArray(e.learner) ? e.learner[0] : e.learner;
     const lastName = learner?.last_name ?? "";
     const firstName = learner?.first_name ?? "";
-    const email = learner?.email ?? null;
+    // Entreprise : jointure companies(name) puis fallback texte libre
+    // (meme cascade que la fiche detail archives — Gilles 2026-06-23).
+    const companyRaw = learner?.company;
+    const companyObj = Array.isArray(companyRaw) ? companyRaw[0] : companyRaw;
+    const companyName = companyObj?.name ?? learner?.company_name_temp ?? null;
     const scores = scoresByEnrollment.get(e.id) ?? null;
     const prePct = scores?.pre
       ? pct(scores.pre.score, scores.pre.max_score)
@@ -233,7 +240,7 @@ export async function GET(
     return {
       fullName:
         [firstName, lastName].filter(Boolean).join(" ").trim() || "—",
-      email,
+      companyName,
       prePct,
       postPct,
       progression,

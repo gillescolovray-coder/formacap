@@ -200,24 +200,28 @@ export default async function PartnerDashboardPage({
           label="Sessions au catalogue"
           value={catalogCount ?? 0}
           color="cyan"
+          href={`/partenaire/${token}/catalogue`}
         />
         <Kpi
           icon={Clock}
           label="Formations en cours / à venir"
           value={inProgress}
           color="amber"
+          href={`/partenaire/${token}/inscriptions`}
         />
         <Kpi
           icon={Users}
           label="Apprenants inscrits"
           value={total}
           color="indigo"
+          href={`/partenaire/${token}/inscriptions`}
         />
         <Kpi
           icon={CheckCircle2}
           label="Formations terminées"
           value={finished}
           color="emerald"
+          href={`/partenaire/${token}/archives`}
         />
       </section>
 
@@ -264,11 +268,14 @@ function Kpi({
   label,
   value,
   color,
+  href,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: number;
   color: "cyan" | "indigo" | "amber" | "emerald";
+  /** Si fourni, la carte devient cliquable vers cette destination. */
+  href?: string;
 }) {
   const colorClasses = {
     cyan: "bg-cyan-50 border-cyan-200 text-cyan-700",
@@ -276,8 +283,8 @@ function Kpi({
     amber: "bg-amber-50 border-amber-200 text-amber-700",
     emerald: "bg-emerald-50 border-emerald-200 text-emerald-700",
   }[color];
-  return (
-    <div className={`rounded-xl border p-3 sm:p-4 ${colorClasses}`}>
+  const inner = (
+    <>
       <Icon className="h-4 w-4 sm:h-5 sm:w-5 mb-1 sm:mb-2" />
       <div className="text-xl sm:text-2xl font-bold text-zinc-900 tabular-nums">
         {value}
@@ -285,6 +292,20 @@ function Kpi({
       <div className="text-[10px] sm:text-[11px] uppercase tracking-wider font-bold leading-tight">
         {label}
       </div>
-    </div>
+    </>
+  );
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className={`rounded-xl border p-3 sm:p-4 block transition-all hover:shadow-md hover:brightness-[0.97] focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-cyan-300 ${colorClasses}`}
+        title={`Voir : ${label}`}
+      >
+        {inner}
+      </Link>
+    );
+  }
+  return (
+    <div className={`rounded-xl border p-3 sm:p-4 ${colorClasses}`}>{inner}</div>
   );
 }

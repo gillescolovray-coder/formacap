@@ -271,7 +271,8 @@ const styles = StyleSheet.create({
 
 export type SyntheseScoresPdfRow = {
   fullName: string;
-  email: string | null;
+  /** Entreprise de l apprenant (remplace l email — Gilles 2026-06-23). */
+  companyName: string | null;
   prePct: number | null;
   postPct: number | null;
   progression: number | null;
@@ -305,6 +306,63 @@ function average(values: Array<number | null>): number | null {
   const nums = values.filter((v): v is number => v !== null);
   if (nums.length === 0) return null;
   return Math.round(nums.reduce((s, v) => s + v, 0) / nums.length);
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Met en gras, dans la ligne de mentions legales du pied de page, les 3
+ * informations cles reprises du cachet (Gilles 2026-06-23) :
+ *   1. le nom de l organisation (ex: CAP NUMERIQUE)
+ *   2. le N° de declaration d activite
+ *   3. le N° de TVA intracommunautaire
+ * Le telephone (« Mobile : … ») et l email ne sont volontairement pas cibles.
+ */
+function buildLegalNodes(text: string, orgName: string): React.ReactNode[] {
+  const ranges: Array<[number, number]> = [];
+  const add = (re: RegExp) => {
+    re.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text)) !== null) {
+      if (m[0].length === 0) {
+        re.lastIndex++;
+        continue;
+      }
+      ranges.push([m.index, m.index + m[0].length]);
+    }
+  };
+
+  const trimmed = orgName.trim();
+  if (trimmed) add(new RegExp(escapeRegExp(trimmed), "gi"));
+  // N° de declaration d activite : <numero> (chiffres + espaces)
+  add(/(?<=d[ée]claration\s+d['’\s]activit[ée]\s*:?\s*)\d[\d ]{6,}\d/giu);
+  // N° TVA : FR + 11 chiffres (avec espaces eventuels)
+  add(/FR\s?\d[\d ]{6,}\d/gi);
+
+  if (ranges.length === 0) return [text];
+  ranges.sort((a, b) => a[0] - b[0]);
+  const merged: Array<[number, number]> = [];
+  for (const r of ranges) {
+    const last = merged[merged.length - 1];
+    if (last && r[0] <= last[1]) last[1] = Math.max(last[1], r[1]);
+    else merged.push([r[0], r[1]]);
+  }
+
+  const nodes: React.ReactNode[] = [];
+  let cursor = 0;
+  merged.forEach(([s, e], i) => {
+    if (s > cursor) nodes.push(text.slice(cursor, s));
+    nodes.push(
+      <Text key={`b${i}`} style={{ fontWeight: "bold" }}>
+        {text.slice(s, e)}
+      </Text>,
+    );
+    cursor = e;
+  });
+  if (cursor < text.length) nodes.push(text.slice(cursor));
+  return nodes;
 }
 
 export function SyntheseScoresPdf({ data }: { data: SyntheseScoresPdfData }) {
@@ -394,7 +452,7 @@ export function SyntheseScoresPdf({ data }: { data: SyntheseScoresPdfData }) {
           <View style={styles.tableRowHead}>
             <Text style={styles.thNum}>#</Text>
             <Text style={styles.thName}>Apprenant</Text>
-            <Text style={styles.thEmail}>Email</Text>
+            <Text style={styles.thEmail}>Entreprise</Text>
             <Text style={styles.thScore}>Pré %</Text>
             <Text style={styles.thScore}>Post %</Text>
             <Text style={styles.thProg}>Progression</Text>
@@ -406,7 +464,7 @@ export function SyntheseScoresPdf({ data }: { data: SyntheseScoresPdfData }) {
             >
               <Text style={styles.tdNum}>{i + 1}</Text>
               <Text style={styles.tdName}>{r.fullName}</Text>
-              <Text style={styles.tdEmail}>{r.email ?? "—"}</Text>
+              <Text style={styles.tdEmail}>{r.companyName ?? "—"}</Text>
               <Text style={styles.tdScorePre}>
                 {r.prePct !== null ? `${r.prePct} %` : "—"}
               </Text>
@@ -435,8 +493,11 @@ export function SyntheseScoresPdf({ data }: { data: SyntheseScoresPdfData }) {
         {/* Pied de page : mentions legales + cachet OF */}
         <View style={styles.footerBlock}>
           <Text style={styles.legalText}>
-            {data.orgLegalText ?? data.orgName} — Document de synthèse édité
-            le {new Date().toLocaleDateString("fr-FR")}
+            {data.orgLegalText
+              ? buildLegalNodes(data.orgLegalText, data.orgName)
+              : data.orgName}{" "}
+            — Document de synthèse édité le{" "}
+            {new Date().toLocaleDateString("fr-FR")}
           </Text>
           {data.orgStampUrl && (
             <View style={styles.stampWrap}>

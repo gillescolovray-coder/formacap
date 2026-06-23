@@ -13,6 +13,7 @@ import {
   Users,
   X,
 } from "lucide-react";
+import { ExportButtons } from "../_export-buttons";
 
 export type ArchivedSession = {
   id: string;
@@ -77,6 +78,27 @@ function normalize(s: string): string {
     .replace(/[̀-ͯ]/g, "");
 }
 
+function modalityLabel(m: string | null): string {
+  return m === "presentiel"
+    ? "Présentiel"
+    : m === "hybride"
+      ? "Hybride"
+      : m === "distanciel"
+        ? "Distanciel"
+        : "—";
+}
+
+function placeCell(s: ArchivedSession): string {
+  if (s.modality === "distanciel") return "Distanciel";
+  const loc = s.location_detail;
+  if (!loc) return "—";
+  return (
+    [loc.name, [loc.postal_code, loc.city].filter(Boolean).join(" ")]
+      .filter((x) => x && x.length > 0)
+      .join(", ") || "—"
+  );
+}
+
 /**
  * Liste des sessions archivees avec moteur de recherche
  * (Gilles 2026-06-01). Mise en forme harmonisee avec le catalogue :
@@ -134,9 +156,39 @@ export function ArchivesListClient({
         </div>
       </div>
 
-      <div className="text-xs text-zinc-500">
-        {filtered.length} session{filtered.length > 1 ? "s" : ""} sur{" "}
-        {sessions.length}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="text-xs text-zinc-500">
+          {filtered.length} session{filtered.length > 1 ? "s" : ""} sur{" "}
+          {sessions.length}
+        </div>
+        <ExportButtons
+          token={token}
+          disabled={filtered.length === 0}
+          buildPayload={() => ({
+            title: "Sessions archivées",
+            subtitle: null,
+            filterLabel: query.trim()
+              ? `Recherche : « ${query.trim()} »`
+              : "Toutes les sessions archivées",
+            filenameBase: "Archives-sessions",
+            columns: [
+              { header: "Formation", width: 3 },
+              { header: "Code", width: 1.2 },
+              { header: "Date(s)", width: 1.5 },
+              { header: "Modalité", width: 1 },
+              { header: "Lieu", width: 2 },
+              { header: "Apprenants", width: 1 },
+            ],
+            rows: filtered.map((s) => [
+              s.formation_title ?? "(formation supprimée)",
+              s.internal_code ?? "—",
+              formatDateRange(s.start_date, s.end_date),
+              modalityLabel(s.modality),
+              placeCell(s),
+              `${s.nb_learners}`,
+            ]),
+          })}
+        />
       </div>
 
       {sessions.length === 0 ? (

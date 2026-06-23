@@ -1,0 +1,15 @@
+Portail partenaire : export PDF/Excel + KPI cliquables + synthese quiz
+
+- Catalogue & Archives : boutons « Imprimer (PDF) » + « Exporter (Excel) »
+  sous la barre de recherche, exportant la liste FILTREE. PDF et Excel
+  horodates (fuseau Paris) + logo de l organisation. Route generique
+  /api/partner/[token]/export (revalide le token, aucun tarif expose).
+- Tableau de bord partenaire : les 4 compteurs deviennent cliquables
+  (Catalogue -> /catalogue, En cours + Apprenants -> /inscriptions,
+  Terminees -> /archives).
+- Synthese des resultats quiz (PDF) : colonne « Email » remplacee par
+  « Entreprise » (cascade companies(name) -> company_name_temp, identique
+  a la fiche detail). Mentions legales du pied de page : nom organisation,
+  N° declaration d activite et N° TVA mis en gras (reprise du cachet).
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>

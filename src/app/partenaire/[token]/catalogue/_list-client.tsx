@@ -18,6 +18,7 @@ import {
   Users,
   X,
 } from "lucide-react";
+import { ExportButtons } from "../_export-buttons";
 
 export type CatalogueSession = {
   id: string;
@@ -128,6 +129,39 @@ function normalize(s: string): string {
     .toLowerCase()
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "");
+}
+
+function modalityLabel(m: string | null): string {
+  return m === "presentiel"
+    ? "Présentiel"
+    : m === "hybride"
+      ? "Hybride"
+      : m === "distanciel"
+        ? "Distanciel"
+        : "—";
+}
+
+function statusLabel(s: string): string {
+  return s === "confirmed"
+    ? "Confirmée"
+    : s === "cancelled"
+      ? "Annulée"
+      : s === "postponed"
+        ? "Reportée"
+        : "Planifiée";
+}
+
+/** Lieu (présentiel) ou appli visio (distanciel) en une cellule texte. */
+function placeCell(s: CatalogueSession): string {
+  if (s.modality === "distanciel") return s.visio?.app ?? "Distanciel";
+  const loc = s.location_detail;
+  if (!loc) return "—";
+  return [
+    loc.name,
+    [loc.postal_code, loc.city].filter(Boolean).join(" "),
+  ]
+    .filter((x) => x && x.length > 0)
+    .join(", ") || "—";
 }
 
 export function CatalogueList({
@@ -252,9 +286,48 @@ export function CatalogueList({
         </div>
       </div>
 
-      <div className="text-xs text-zinc-500">
-        {filtered.length} session{filtered.length > 1 ? "s" : ""} sur{" "}
-        {sessions.length}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="text-xs text-zinc-500">
+          {filtered.length} session{filtered.length > 1 ? "s" : ""} sur{" "}
+          {sessions.length}
+        </div>
+        <ExportButtons
+          token={token}
+          disabled={filtered.length === 0}
+          buildPayload={() => {
+            const filterParts: string[] = [];
+            if (onlyOwn) filterParts.push(mineLabel);
+            if (query.trim()) filterParts.push(`Recherche : « ${query.trim()} »`);
+            const filterLabel =
+              filterParts.length > 0 ? filterParts.join(" · ") : "Tout le catalogue";
+            return {
+              title: "Catalogue des sessions",
+              subtitle: partnerName,
+              filterLabel,
+              filenameBase: "Catalogue-sessions",
+              columns: [
+                { header: "Formation", width: 3 },
+                { header: "Référence", width: 1.2 },
+                { header: "Date(s)", width: 1.5 },
+                { header: "Modalité", width: 1 },
+                { header: "Lieu / Visio", width: 2 },
+                { header: "Statut", width: 1 },
+                { header: "Inscrits", width: 1 },
+              ],
+              rows: filtered.map((s) => [
+                s.formation?.title ?? "(formation supprimée)",
+                s.reference ?? "—",
+                formatDateRange(s.start_date, s.end_date),
+                modalityLabel(s.modality),
+                placeCell(s),
+                statusLabel(s.status),
+                s.max_participants !== null
+                  ? `${s.enrolled_count} / ${s.max_participants}`
+                  : `${s.enrolled_count}`,
+              ]),
+            };
+          }}
+        />
       </div>
 
       {filtered.length === 0 ? (
