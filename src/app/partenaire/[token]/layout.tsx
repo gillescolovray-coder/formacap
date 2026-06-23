@@ -8,6 +8,7 @@ import {
   Handshake,
   LayoutDashboard,
   ListChecks,
+  Users,
 } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolvePartnerContext } from "./_resolve";
@@ -129,6 +130,12 @@ export default async function PartnerLayout({
               icon={ListChecks}
               label="Mes inscriptions"
               labelShort="Mes insc."
+            />
+            <NavLink
+              href={`${base}/participants`}
+              icon={Users}
+              label="Participants"
+              labelShort="Particip."
             />
             <NavLink
               href={`${base}/archives`}

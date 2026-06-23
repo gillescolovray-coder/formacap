@@ -211,10 +211,11 @@ export default async function PartnerDashboardPage({
         />
         <Kpi
           icon={Users}
-          label="Apprenants inscrits"
+          label="Participants"
           value={total}
           color="indigo"
-          href={`/partenaire/${token}/inscriptions`}
+          href={`/partenaire/${token}/participants`}
+          title="Apprenants ayant suivi vos sessions (sous-traitance, prescription ou inscrits via le portail)"
         />
         <Kpi
           icon={CheckCircle2}
@@ -269,6 +270,7 @@ function Kpi({
   value,
   color,
   href,
+  title,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
@@ -276,6 +278,8 @@ function Kpi({
   color: "cyan" | "indigo" | "amber" | "emerald";
   /** Si fourni, la carte devient cliquable vers cette destination. */
   href?: string;
+  /** Infobulle personnalisée (sinon « Voir : <label> »). */
+  title?: string;
 }) {
   const colorClasses = {
     cyan: "bg-cyan-50 border-cyan-200 text-cyan-700",
@@ -299,7 +303,7 @@ function Kpi({
       <Link
         href={href}
         className={`rounded-xl border p-3 sm:p-4 block transition-all hover:shadow-md hover:brightness-[0.97] focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-cyan-300 ${colorClasses}`}
-        title={`Voir : ${label}`}
+        title={title ?? `Voir : ${label}`}
       >
         {inner}
       </Link>
