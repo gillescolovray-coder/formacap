@@ -151,13 +151,15 @@ export function AppShellClient({ sidebar, children }: AppShellClientProps) {
           {/* Boutons de bascule sticky en haut à gauche :
               - Mobile (< md) : burger menu qui ouvre le drawer
               - Desktop (md+) : bouton collapsed/expanded de la sidebar */}
+          {/* Burger mobile : `fixed` (overlay) au lieu de `float` qui faisait
+              rétrécir la colonne de contenu -> titre vertical sur mobile
+              (Gilles 2026-06-23). PageHeader réserve la place via pl-16. */}
           <button
             type="button"
             onClick={() => setMobileOpen(true)}
             title="Ouvrir le menu"
             aria-label="Ouvrir le menu"
-            className="lg:hidden sticky top-4 left-4 z-30 ml-4 mt-4 h-11 w-11 inline-flex items-center justify-center rounded-full bg-white border border-slate-200 shadow-md hover:shadow-lg hover:bg-slate-50 transition-all text-slate-700"
-            style={{ float: "left" }}
+            className="lg:hidden fixed top-3 left-3 z-40 h-11 w-11 inline-flex items-center justify-center rounded-full bg-white border border-slate-200 shadow-md hover:shadow-lg hover:bg-slate-50 transition-all text-slate-700"
           >
             <Menu className="h-5 w-5" />
           </button>

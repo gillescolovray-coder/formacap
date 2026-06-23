@@ -68,7 +68,7 @@ export function PageHeader({
               })}
             </nav>
           )}
-          <h1 className="text-lg md:text-xl font-black tracking-tight text-zinc-900 leading-[1.15] break-words text-balance">
+          <h1 className="text-lg md:text-xl font-black tracking-tight text-zinc-900 leading-[1.15] break-words">
             {title}
           </h1>
           {description && (
