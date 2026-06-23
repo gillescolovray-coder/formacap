@@ -329,23 +329,30 @@ function ViewBtn({
   );
 }
 
-/** Pastille événement (cliquable si href). Info-bulle = titre + lieu complet. */
+/**
+ * Pastille événement (cliquable si href). Affiche le NOM COMPLET de la session
+ * + l'ADRESSE COMPLÈTE du lieu directement dans le bloc (pas d'info-bulle —
+ * Gilles 2026-06-23), donc le bloc s'agrandit selon le contenu.
+ */
 function EventChip({ event }: { event: CalendarEvent }) {
-  const cls = `block w-full text-left truncate rounded border px-1.5 py-0.5 text-[10px] font-semibold leading-tight ${chipClass(
+  const cls = `block w-full text-left rounded border px-1.5 py-1 leading-snug ${chipClass(
     event.status,
   )}`;
-  // Info-bulle : nom de la salle + adresse complète (event.meta).
-  const tooltip = event.meta
-    ? `${event.title}\n📍 ${event.meta}`
-    : event.title;
   const content = (
-    <span className="truncate block" title={tooltip}>
-      {event.title}
-    </span>
+    <>
+      <span className="block text-[11px] font-bold break-words">
+        {event.title}
+      </span>
+      {event.meta && (
+        <span className="block text-[9px] font-normal opacity-90 break-words mt-0.5">
+          📍 {event.meta}
+        </span>
+      )}
+    </>
   );
   if (event.href)
     return (
-      <Link href={event.href} className={cls} title={tooltip}>
+      <Link href={event.href} className={cls}>
         {content}
       </Link>
     );
@@ -496,16 +503,7 @@ function WeekView({
                 {evs.length === 0 ? (
                   <p className="text-[10px] text-zinc-300 italic">—</p>
                 ) : (
-                  evs.map((e) => (
-                    <div key={e.id}>
-                      <EventChip event={e} />
-                      {e.meta && (
-                        <p className="text-[9px] text-zinc-400 px-1 truncate">
-                          {e.meta}
-                        </p>
-                      )}
-                    </div>
-                  ))
+                  evs.map((e) => <EventChip key={e.id} event={e} />)
                 )}
               </div>
             </div>
