@@ -150,10 +150,12 @@ export function SessionCalendar({
     return out;
   }, [events]);
 
+  // Une session est posée UNIQUEMENT sur son jour de début (Gilles 2026-06-23) :
+  // afficher une pastille sur chaque jour d'une plage longue (ex. 4 fév → 1 avr)
+  // inondait le calendrier. Le jour de début suffit comme repère.
   function eventsOnDay(day: Date): CalendarEvent[] {
-    const t = startOfDay(day).getTime();
     return positioned
-      .filter((p) => t >= p.start.getTime() && t <= p.end.getTime())
+      .filter((p) => sameDay(p.start, day))
       .map((p) => p.event);
   }
 

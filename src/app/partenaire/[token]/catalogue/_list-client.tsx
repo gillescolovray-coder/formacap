@@ -219,6 +219,11 @@ export function CatalogueList({
           s.location_detail?.postal_code ?? "",
           s.location_detail?.city ?? "",
           s.visio?.app ?? "",
+          // Recherche par DATE (ex. « juin 2027 », « 23 juin ») — libellé FR +
+          // ISO brut. Gilles 2026-06-23 (rétabli après ajout du calendrier).
+          formatDateRange(s.start_date, s.end_date),
+          s.start_date ?? "",
+          s.end_date ?? "",
         ].join(" "),
       );
       return haystack.includes(q);
