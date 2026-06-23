@@ -56,6 +56,7 @@ type OrgInfo = {
   website: string | null;
   legal_representative_name: string | null;
   legal_representative_role: string | null;
+  google_review_url: string | null;
   default_morning_start: string | null;
   default_morning_end: string | null;
   default_afternoon_start: string | null;
@@ -109,7 +110,7 @@ export default async function OrganizationSettingsPage({
   const { data: membership } = await supabase
     .from("organization_members")
     .select(
-      "role, organization:organizations(id, name, logo_url, secondary_logo_url, legal_mentions, siret, nda, nda_authority, legal_form, share_capital, rcs_number, vat_number, address, postal_code, city, phone, email, website, default_morning_start, default_morning_end, default_afternoon_start, default_afternoon_end, qualiopi_certificate_path, qualiopi_certificate_filename, qualiopi_certificate_expires_at, qualiopi_certificate_uploaded_at, commercial_banner_path, commercial_banner_filename, commercial_banner_uploaded_at, signature_stamp_path, signature_stamp_filename, signature_stamp_uploaded_at, emargement_token_ttl_days, realization_certificate_threshold_percent)",
+      "role, organization:organizations(id, name, logo_url, secondary_logo_url, legal_mentions, siret, nda, nda_authority, legal_form, share_capital, rcs_number, vat_number, address, postal_code, city, phone, email, website, legal_representative_name, legal_representative_role, google_review_url, default_morning_start, default_morning_end, default_afternoon_start, default_afternoon_end, qualiopi_certificate_path, qualiopi_certificate_filename, qualiopi_certificate_expires_at, qualiopi_certificate_uploaded_at, commercial_banner_path, commercial_banner_filename, commercial_banner_uploaded_at, signature_stamp_path, signature_stamp_filename, signature_stamp_uploaded_at, emargement_token_ttl_days, realization_certificate_threshold_percent)",
     )
     .eq("profile_id", user.id)
     .eq("is_active", true)
@@ -297,6 +298,7 @@ export default async function OrganizationSettingsPage({
               website: org.website,
               legal_representative_name: org.legal_representative_name,
               legal_representative_role: org.legal_representative_role,
+              google_review_url: org.google_review_url,
             }}
           />
         </section>

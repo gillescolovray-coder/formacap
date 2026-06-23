@@ -40,6 +40,8 @@ export async function updateOrgIdentity(orgId: string, formData: FormData) {
     legal_representative_role: parseText(
       formData.get("legal_representative_role"),
     ),
+    // Lien d'avis Google (demande d'avis aux apprenants — Gilles 2026-06-23)
+    google_review_url: parseText(formData.get("google_review_url")),
   };
 
   const { error } = await supabase

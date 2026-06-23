@@ -2,6 +2,7 @@ import Link from "next/link";
 import { BarChart3, CheckCircle2, Eye, Star } from "lucide-react";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { GoogleReviewPanel } from "./_google-review-panel";
 import { PageHeader } from "@/components/page-header";
 import { BackButton } from "@/components/back-button";
 import { SessionTabs } from "../_session-tabs";
@@ -29,10 +30,13 @@ const UUID_REGEX =
 
 export default async function EvaluationAdminPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ gsent?: string; gskipped?: string; gerror?: string }>;
 }) {
   const { id } = await params;
+  const sp = await searchParams;
   if (!UUID_REGEX.test(id)) notFound();
 
   const supabase = await createClient();
@@ -43,16 +47,20 @@ export default async function EvaluationAdminPage({
 
   const { data: session } = await supabase
     .from("sessions")
-    .select("id, formation:formations(title)")
+    .select("id, organization_id, formation:formations(title)")
     .eq("id", id)
-    .maybeSingle<{ id: string; formation: { title: string } | null }>();
+    .maybeSingle<{
+      id: string;
+      organization_id: string;
+      formation: { title: string } | null;
+    }>();
   if (!session) notFound();
 
   // Apprenants
   const { data: enrollments } = await supabase
     .from("session_enrollments")
     .select(
-      "id, learner:learners(civility, first_name, last_name, company_name_temp, company:companies(name)), inscription_request:inscription_requests(company_name_freetext, company:companies!inscription_requests_company_id_fkey(name))",
+      "id, learner:learners(civility, first_name, last_name, email, company_name_temp, company:companies(name)), inscription_request:inscription_requests(company_name_freetext, company:companies!inscription_requests_company_id_fkey(name))",
     )
     .eq("session_id", id);
 
@@ -65,6 +73,7 @@ export default async function EvaluationAdminPage({
       civility: string | null;
       first_name: string | null;
       last_name: string | null;
+      email: string | null;
       company_name_temp: string | null;
       company: unknown;
     }>(e.learner);
@@ -84,6 +93,7 @@ export default async function EvaluationAdminPage({
         .filter(Boolean)
         .join(" "),
       civility: learner?.civility ?? null,
+      email: learner?.email ?? null,
       companyName,
     };
   });
@@ -125,6 +135,47 @@ export default async function EvaluationAdminPage({
     });
     allData.push(r.data);
   }
+
+  // ── Avis Google ────────────────────────────────────────────────────────
+  // Lien configuré (Paramètres) + demandes déjà envoyées (suivi par enrollment).
+  const { data: orgRow } = await supabase
+    .from("organizations")
+    .select("google_review_url")
+    .eq("id", session.organization_id)
+    .maybeSingle<{ google_review_url: string | null }>();
+  const reviewConfigured = Boolean(orgRow?.google_review_url?.trim());
+
+  type ReviewRow = {
+    enrollment_id: string;
+    sent_at: string;
+    channel: string;
+  };
+  const { data: reviewRows } =
+    enrollmentIds.length > 0
+      ? await supabase
+          .from("google_review_requests")
+          .select("enrollment_id, sent_at, channel")
+          .in("enrollment_id", enrollmentIds)
+      : { data: [] };
+  const reviewByEnrollment = new Map<string, ReviewRow>();
+  for (const r of (reviewRows ?? []) as ReviewRow[]) {
+    reviewByEnrollment.set(r.enrollment_id, r);
+  }
+
+  // Éligibles = « Très satisfait » non encore sollicités.
+  const reviewEligible = participants
+    .filter((p) => {
+      const ev = byEnrollment.get(p.enrollmentId);
+      return (
+        ev?.satisfaction === "very_satisfied" &&
+        !reviewByEnrollment.has(p.enrollmentId)
+      );
+    })
+    .map((p) => ({
+      enrollmentId: p.enrollmentId,
+      name: `${p.civility ? p.civility + " " : ""}${p.fullName}`.trim(),
+      email: p.email,
+    }));
 
   const total = participants.length;
   const completed = byEnrollment.size;
@@ -230,6 +281,29 @@ export default async function EvaluationAdminPage({
           />
         </div>
 
+        {/* Bannière résultat envoi avis Google */}
+        {sp.gsent !== undefined && (
+          <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-2.5 text-sm text-emerald-800">
+            ✅ {sp.gsent} demande{Number(sp.gsent) > 1 ? "s" : ""} d&apos;avis
+            Google envoyée{Number(sp.gsent) > 1 ? "s" : ""}.
+            {sp.gskipped && Number(sp.gskipped) > 0
+              ? ` ${sp.gskipped} ignorée(s) (déjà sollicité, sans email ou non éligible).`
+              : ""}
+          </div>
+        )}
+        {sp.gerror && (
+          <div className="rounded-lg bg-rose-50 border border-rose-200 px-4 py-2.5 text-sm text-rose-700">
+            {sp.gerror}
+          </div>
+        )}
+
+        {/* Demande d'avis Google (apprenants « Très satisfait ») */}
+        <GoogleReviewPanel
+          sessionId={id}
+          reviewConfigured={reviewConfigured}
+          eligible={reviewEligible}
+        />
+
         {/* Liste apprenants */}
         <div className="rounded-xl bg-white border border-zinc-200 overflow-hidden">
           {participants.length === 0 ? (
@@ -246,6 +320,7 @@ export default async function EvaluationAdminPage({
                   <th className="px-4 py-3">Statut</th>
                   <th className="px-4 py-3">Note NPS</th>
                   <th className="px-4 py-3">Satisfaction</th>
+                  <th className="px-4 py-3">Avis Google</th>
                   <th className="px-4 py-3 text-right">Action</th>
                 </tr>
               </thead>
@@ -305,6 +380,31 @@ export default async function EvaluationAdminPage({
                         ) : (
                           <span className="text-zinc-400 text-xs">—</span>
                         )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {(() => {
+                          const gr = reviewByEnrollment.get(p.enrollmentId);
+                          if (gr) {
+                            return (
+                              <span
+                                className="inline-flex items-center gap-1 text-emerald-700 text-xs font-semibold"
+                                title={`Demande d'avis Google envoyée (${gr.channel === "auto" ? "automatique" : "manuel"})`}
+                              >
+                                <Star className="h-3.5 w-3.5" />
+                                Envoyé le{" "}
+                                {new Date(gr.sent_at).toLocaleDateString("fr-FR")}
+                              </span>
+                            );
+                          }
+                          if (ev?.satisfaction === "very_satisfied") {
+                            return (
+                              <span className="text-xs text-emerald-600">
+                                ⭐ Éligible
+                              </span>
+                            );
+                          }
+                          return <span className="text-zinc-300 text-xs">—</span>;
+                        })()}
                       </td>
                       <td className="px-4 py-3 text-right">
                         {ev ? (

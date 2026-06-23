@@ -21,6 +21,7 @@ type Identity = {
   website: string | null;
   legal_representative_name: string | null;
   legal_representative_role: string | null;
+  google_review_url: string | null;
 };
 
 export function OrgIdentityForm({
@@ -131,6 +132,15 @@ export function OrgIdentityForm({
           defaultValue={initial.legal_representative_role}
           placeholder="ex. Gérant, Président, Directeur"
           help="Optionnel — affiché si renseigné."
+        />
+        <Field
+          label="Lien d'avis Google"
+          name="google_review_url"
+          defaultValue={initial.google_review_url}
+          type="url"
+          placeholder="https://g.page/r/.../review"
+          spanFull
+          help="Lien vers votre page d'avis Google. Utilisé dans l'email « Demande d'avis Google » envoyé aux apprenants très satisfaits."
         />
       </div>
       <div className="flex justify-end">
