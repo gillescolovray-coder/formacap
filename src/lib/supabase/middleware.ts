@@ -14,6 +14,12 @@ const PUBLIC_PATHS = [
   // Le token dans l'URL fait office d'authentification (verifie cote serveur
   // a chaque page via createAdminClient + resolve token -> entity).
   "/partenaire/", // Portail OF / prescripteur
+  // BUG FIX Gilles 2026-06-23 : les pages /partenaire/ etaient publiques mais
+  // PAS les routes API /api/partner/ (synthese quiz PDF + export inscriptions).
+  // Resultat : le partenaire (sans compte) cliquait "Imprimer la synthese" et
+  // etait redirige vers /login. Gilles ne voyait pas le bug car deja connecte
+  // en admin. Les routes /api/partner/ revalident le token cote serveur.
+  "/api/partner/", // API token-based du portail partenaire (PDF synthese, export)
   "/preinscription/", // Page publique de pré-inscription (lien diffusé par un partenaire)
   "/mon-parcours/", // Portail apprenant (quiz, emargement, certificat...)
   "/formateur/", // Portail formateur (planning, emargement, positionnement)
