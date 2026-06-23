@@ -304,8 +304,10 @@ export default async function EvaluationAdminPage({
         )}
         {sp.greset && (
           <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-2.5 text-sm text-amber-800">
-            ↺ Demande(s) d&apos;avis Google réinitialisée(s). Les apprenants
-            concernés sont de nouveau sollicitables ci-dessous.
+            ↺ Demande réinitialisée. L&apos;apprenant réapparaît dans
+            l&apos;encadré <strong>« Demande d&apos;avis Google »</strong>{" "}
+            ci-dessous : cochez-le puis cliquez sur{" "}
+            <strong>« Envoyer la demande »</strong> pour le renvoyer.
           </div>
         )}
 
