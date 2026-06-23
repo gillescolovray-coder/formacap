@@ -44,3 +44,6 @@ dev-server.err.log
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Fichier temporaire de message de commit
+.git-commit-msg.tmp
