@@ -3,6 +3,7 @@ import { BarChart3, CheckCircle2, Eye, Star } from "lucide-react";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { GoogleReviewPanel } from "./_google-review-panel";
+import { resetGoogleReviewRequests } from "./actions";
 import { PageHeader } from "@/components/page-header";
 import { BackButton } from "@/components/back-button";
 import { SessionTabs } from "../_session-tabs";
@@ -33,7 +34,12 @@ export default async function EvaluationAdminPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ gsent?: string; gskipped?: string; gerror?: string }>;
+  searchParams: Promise<{
+    gsent?: string;
+    gskipped?: string;
+    gerror?: string;
+    greset?: string;
+  }>;
 }) {
   const { id } = await params;
   const sp = await searchParams;
@@ -296,6 +302,12 @@ export default async function EvaluationAdminPage({
             {sp.gerror}
           </div>
         )}
+        {sp.greset && (
+          <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-2.5 text-sm text-amber-800">
+            ↺ Demande(s) d&apos;avis Google réinitialisée(s). Les apprenants
+            concernés sont de nouveau sollicitables ci-dessous.
+          </div>
+        )}
 
         {/* Demande d'avis Google (apprenants « Très satisfait ») */}
         <GoogleReviewPanel
@@ -386,14 +398,37 @@ export default async function EvaluationAdminPage({
                           const gr = reviewByEnrollment.get(p.enrollmentId);
                           if (gr) {
                             return (
-                              <span
-                                className="inline-flex items-center gap-1 text-emerald-700 text-xs font-semibold"
-                                title={`Demande d'avis Google envoyée (${gr.channel === "auto" ? "automatique" : "manuel"})`}
-                              >
-                                <Star className="h-3.5 w-3.5" />
-                                Envoyé le{" "}
-                                {new Date(gr.sent_at).toLocaleDateString("fr-FR")}
-                              </span>
+                              <div className="flex flex-col gap-0.5">
+                                <span
+                                  className="inline-flex items-center gap-1 text-emerald-700 text-xs font-semibold"
+                                  title={`Demande d'avis Google envoyée (${gr.channel === "auto" ? "automatique" : "manuel"})`}
+                                >
+                                  <Star className="h-3.5 w-3.5" />
+                                  Envoyé le{" "}
+                                  {new Date(gr.sent_at).toLocaleDateString(
+                                    "fr-FR",
+                                  )}
+                                </span>
+                                <form action={resetGoogleReviewRequests}>
+                                  <input
+                                    type="hidden"
+                                    name="sessionId"
+                                    value={id}
+                                  />
+                                  <input
+                                    type="hidden"
+                                    name="enrollmentId"
+                                    value={p.enrollmentId}
+                                  />
+                                  <button
+                                    type="submit"
+                                    className="text-[10px] text-zinc-400 hover:text-rose-600 hover:underline"
+                                    title="Annuler cet envoi pour pouvoir le renvoyer"
+                                  >
+                                    ↺ Réinitialiser / renvoyer
+                                  </button>
+                                </form>
+                              </div>
                             );
                           }
                           if (ev?.satisfaction === "very_satisfied") {

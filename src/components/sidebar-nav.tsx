@@ -16,6 +16,7 @@ import {
   Route,
   Settings,
   Sparkles,
+  Star,
   UserCog,
   Users,
 } from "lucide-react";
@@ -43,6 +44,7 @@ const PRIMARY_ITEMS: NavItem[] = [
   { href: "/inscriptions", label: "Inscriptions", icon: Inbox },
   { href: "/lieux", label: "Lieux", icon: MapPin },
   { href: "/formateurs", label: "Formateurs", icon: UserCog },
+  { href: "/avis-google", label: "Avis Google", icon: Star },
 ];
 
 const SECONDARY_ITEMS: NavItem[] = [

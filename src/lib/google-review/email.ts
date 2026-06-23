@@ -9,7 +9,10 @@ export type GoogleReviewEmailParams = {
   learnerFirstName: string | null;
   orgName: string;
   orgLogoUrl: string | null;
+  /** Lien Google « réel » (affiché en clair dans le repli). */
   reviewUrl: string;
+  /** Lien du BOUTON (tracé pour le suivi des clics). Défaut : reviewUrl. */
+  buttonUrl?: string;
 };
 
 function esc(s: string): string {
@@ -28,7 +31,8 @@ export function buildGoogleReviewEmail(params: GoogleReviewEmailParams): {
   const hello = learnerFirstName
     ? `Bonjour ${esc(learnerFirstName)},`
     : "Bonjour chèr·e apprenant·e,";
-  const url = esc(reviewUrl);
+  const url = esc(reviewUrl); // affiché en clair dans le repli
+  const btnUrl = esc(params.buttonUrl ?? reviewUrl); // lien du bouton (tracé)
 
   const subject = `${orgName} : soutenez-nous sur Google ⭐`;
 
@@ -60,7 +64,7 @@ export function buildGoogleReviewEmail(params: GoogleReviewEmailParams): {
     </tr>
     <tr>
       <td style="padding:16px 32px 32px;text-align:center;">
-        <a href="${url}" target="_blank" rel="noopener noreferrer"
+        <a href="${btnUrl}" target="_blank" rel="noopener noreferrer"
            style="display:inline-block;background:#2f7d7b;color:#ffffff;text-decoration:none;font-weight:bold;font-size:16px;padding:14px 32px;border-radius:8px;">
           Témoignez ICI
         </a>

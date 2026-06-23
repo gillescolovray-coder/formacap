@@ -8,6 +8,7 @@ import {
 import { redirect } from "next/navigation";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { findEligibleItems, sendForItems } from "@/lib/google-review/send";
 import type { FormationModality } from "@/lib/formations/types";
 import type { SessionActionType, SessionStatus } from "@/lib/sessions/types";
 import {
@@ -626,6 +627,42 @@ export async function toggleSessionAdminClosed(
   const { error } = await supabase.from("sessions").update(update).eq("id", id);
   if (error) return { ok: false, error: error.message };
   if (statusChanged) await syncSessionCalendar(id);
+
+  // Avis Google : envoi automatique à la clôture si activé (Gilles 2026-06-23).
+  if (closed) {
+    const { data: srow } = await supabase
+      .from("sessions")
+      .select("organization_id")
+      .eq("id", id)
+      .maybeSingle<{ organization_id: string }>();
+    const orgId = srow?.organization_id;
+    if (orgId) {
+      const { data: org } = await supabase
+        .from("organizations")
+        .select("google_review_auto_on_close, google_review_url")
+        .eq("id", orgId)
+        .maybeSingle<{
+          google_review_auto_on_close: boolean | null;
+          google_review_url: string | null;
+        }>();
+      if (org?.google_review_auto_on_close && org?.google_review_url?.trim()) {
+        try {
+          const items = await findEligibleItems(supabase, orgId, {
+            sessionId: id,
+          });
+          await sendForItems(supabase, {
+            orgId,
+            items,
+            channel: "auto",
+            sentBy: user?.id ?? null,
+          });
+        } catch {
+          // best-effort : ne bloque pas la clôture si l'envoi échoue.
+        }
+      }
+    }
+  }
+
   revalidatePath("/sessions");
   revalidatePath(`/sessions/${id}`);
   revalidatePath("/inscriptions");
