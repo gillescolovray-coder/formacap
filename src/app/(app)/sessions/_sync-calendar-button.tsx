@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { CalendarCheck, Loader2, RotateCcw } from "lucide-react";
 import {
   syncAllSessionsToCalendar,
@@ -37,6 +38,7 @@ export function SyncCalendarButton({
 }: {
   lastSyncAt?: string | null;
 }) {
+  const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [lastSync, setLastSync] = useState<string | null>(lastSyncAt);
@@ -46,14 +48,19 @@ export function SyncCalendarButton({
     startTransition(async () => {
       const res = await syncAllSessionsToCalendar();
       if (res.ok) {
-        // Succès (éventuellement partiel : res.error signale des échecs).
-        setMsg({
-          ok: !res.error,
-          text: res.error
-            ? `${res.count} synchronisée(s). ⚠️ ${res.error}`
-            : `${res.count} session${res.count > 1 ? "s" : ""} synchronisée${res.count > 1 ? "s" : ""}.`,
-        });
+        const remaining = res.remaining ?? 0;
+        let text: string;
+        if (remaining > 0) {
+          text = `${res.count} synchronisée(s) — il reste ${remaining} session(s) : recliquez pour continuer.`;
+        } else if (res.count > 0) {
+          text = `${res.count} session${res.count > 1 ? "s" : ""} synchronisée${res.count > 1 ? "s" : ""}.`;
+        } else {
+          text = "Agenda déjà à jour ✅";
+        }
+        if (res.error) text += ` ⚠️ ${res.error}`;
+        setMsg({ ok: !res.error && remaining === 0, text });
         if (res.lastSyncAt) setLastSync(res.lastSyncAt);
+        router.refresh(); // met à jour le badge « non synchronisée(s) »
       } else {
         setMsg({ ok: false, text: res.error ?? "Échec de la synchronisation." });
       }
@@ -71,13 +78,14 @@ export function SyncCalendarButton({
     startTransition(async () => {
       const res = await resetAndResyncCalendar();
       if (res.ok) {
-        setMsg({
-          ok: !res.error,
-          text: res.error
-            ? `Agenda vidé (${res.deleted} supprimé(s)), ${res.count} recréée(s). ⚠️ ${res.error}`
-            : `Agenda réinitialisé : ${res.deleted} ancien(s) événement(s) supprimé(s), ${res.count} session(s) recréée(s) sans doublon.`,
-        });
+        const remaining = res.remaining ?? 0;
+        let text = `Agenda vidé (${res.deleted} supprimé(s)), ${res.count} recréée(s).`;
+        if (remaining > 0)
+          text += ` Il reste ${remaining} session(s) : cliquez « Synchroniser l'agenda » pour terminer.`;
+        if (res.error) text += ` ⚠️ ${res.error}`;
+        setMsg({ ok: !res.error && remaining === 0, text });
         if (res.lastSyncAt) setLastSync(res.lastSyncAt);
+        router.refresh();
       } else {
         setMsg({
           ok: false,

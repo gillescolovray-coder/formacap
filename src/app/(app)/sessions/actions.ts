@@ -16,6 +16,7 @@ import {
   syncSessionCalendar,
   purgeAllCalendarEvents,
   deleteSessionCalendarEvents,
+  syncSessionsNeedingUpdate,
 } from "@/lib/google-calendar/sync";
 import { isCalendarConfigured } from "@/lib/google-calendar/client";
 import { assertSessionEditable } from "@/lib/sessions/lock";
@@ -826,6 +827,7 @@ export async function duplicateSession(id: string) {
 export async function syncAllSessionsToCalendar(): Promise<{
   ok: boolean;
   count: number;
+  remaining?: number;
   error?: string;
   lastSyncAt?: string;
 }> {
@@ -847,63 +849,20 @@ export async function syncAllSessionsToCalendar(): Promise<{
       error: `Configuration Google manquante sur Vercel : ${missing}. (Vérifiez la variable puis redéployez.)`,
     };
   }
-  const { organizationId } = await getCurrentOrganizationId();
-  const supabase = await createClient();
-  const { data: sessions, error } = await supabase
-    .from("sessions")
-    .select("id")
-    .eq("organization_id", organizationId);
-  if (error) {
-    return { ok: false, count: 0, error: error.message };
+  // Synchro INCRÉMENTALE + bornée en temps (Gilles 2026-06-25) : ne traite que
+  // les sessions à (re)synchroniser et s'arrête avant le timeout serverless.
+  // `remaining` > 0 -> il faut recliquer pour finir (cas d'une grosse reprise).
+  const res = await syncSessionsNeedingUpdate({ budgetMs: 45_000 });
+  if (!res.ok) {
+    return { ok: false, count: 0, error: res.error ?? "Échec de la synchronisation." };
   }
-  const ids = (sessions ?? []).map((s) => s.id as string);
-  let count = 0;
-  let failed = 0;
-  let firstError: string | undefined;
-  // Traitement par petits lots + pause entre lots pour ne pas saturer
-  // l'API Google (évite "Rate Limit Exceeded").
-  const BATCH = 4;
-  for (let i = 0; i < ids.length; i += BATCH) {
-    const slice = ids.slice(i, i + BATCH);
-    const results = await Promise.all(
-      slice.map((id) => syncSessionCalendar(id)),
-    );
-    for (const r of results) {
-      if (r.ok) count++;
-      else {
-        failed++;
-        if (!firstError && r.error) firstError = r.error;
-      }
-    }
-    if (i + BATCH < ids.length) await new Promise((r) => setTimeout(r, 300));
-  }
-
-  // Si TOUTES les sessions ont échoué -> on remonte l'erreur Google réelle
-  // (souvent : agenda non partagé avec le compte de service, ou API non
-  // activée). Sans ça, l'utilisateur croit que c'est synchronisé.
-  if (count === 0 && failed > 0) {
-    return {
-      ok: false,
-      count: 0,
-      error: `Aucune session synchronisée (${failed} échec${failed > 1 ? "s" : ""}). Erreur Google : ${firstError ?? "inconnue"}`,
-    };
-  }
-
-  // Mémorise l'horodatage de cette synchro complète.
-  const lastSyncAt = new Date().toISOString();
-  await supabase
-    .from("organizations")
-    .update({ calendar_last_sync_at: lastSyncAt })
-    .eq("id", organizationId);
   revalidatePath("/sessions");
   return {
     ok: true,
-    count,
-    lastSyncAt,
-    error:
-      failed > 0
-        ? `${failed} session(s) en échec. Erreur : ${firstError ?? "inconnue"}`
-        : undefined,
+    count: res.synced,
+    remaining: res.remaining,
+    lastSyncAt: res.lastSyncAt,
+    error: res.failed > 0 ? `${res.failed} session(s) en échec.` : undefined,
   };
 }
 
@@ -916,6 +875,7 @@ export async function resetAndResyncCalendar(): Promise<{
   ok: boolean;
   count: number;
   deleted: number;
+  remaining?: number;
   error?: string;
   lastSyncAt?: string;
 }> {
@@ -928,10 +888,10 @@ export async function resetAndResyncCalendar(): Promise<{
         "Google Agenda non configuré (variables manquantes sur Vercel).",
     };
   }
-  const { organizationId } = await getCurrentOrganizationId();
-  const supabase = await createClient();
 
-  // 1) Vider l'agenda (supprime tout, y compris les doublons).
+  // 1) Vider l'agenda (supprime tout, y compris les doublons). La purge
+  //    efface aussi les références en base (ids + état de synchro), donc
+  //    toutes les sessions deviennent « à re-synchroniser ».
   const purge = await purgeAllCalendarEvents();
   if (!purge.ok) {
     return {
@@ -942,52 +902,17 @@ export async function resetAndResyncCalendar(): Promise<{
     };
   }
 
-  // 2) Oublier les anciens identifiants d'événements (ils n'existent plus).
-  await supabase
-    .from("sessions")
-    .update({ google_calendar_event_id: null })
-    .eq("organization_id", organizationId)
-    .not("google_calendar_event_id", "is", null);
-
-  // 3) Reconstruire proprement.
-  const { data: sessions } = await supabase
-    .from("sessions")
-    .select("id")
-    .eq("organization_id", organizationId);
-  const ids = (sessions ?? []).map((s) => s.id as string);
-  let count = 0;
-  let failed = 0;
-  let firstError: string | undefined;
-  const BATCH = 4;
-  for (let i = 0; i < ids.length; i += BATCH) {
-    const slice = ids.slice(i, i + BATCH);
-    const results = await Promise.all(
-      slice.map((id) => syncSessionCalendar(id)),
-    );
-    for (const r of results) {
-      if (r.ok) count++;
-      else {
-        failed++;
-        if (!firstError && r.error) firstError = r.error;
-      }
-    }
-    if (i + BATCH < ids.length) await new Promise((r) => setTimeout(r, 300));
-  }
-
-  const lastSyncAt = new Date().toISOString();
-  await supabase
-    .from("organizations")
-    .update({ calendar_last_sync_at: lastSyncAt })
-    .eq("id", organizationId);
+  // 2) Reconstruire en mode INCRÉMENTAL + borné en temps. Si tout ne tient
+  //    pas dans une exécution, `remaining` > 0 -> l'utilisateur reclique
+  //    « Synchroniser », et le cron horaire termine de toute façon.
+  const res = await syncSessionsNeedingUpdate({ budgetMs: 45_000 });
   revalidatePath("/sessions");
   return {
     ok: true,
-    count,
+    count: res.synced,
     deleted: purge.deleted,
-    lastSyncAt,
-    error:
-      failed > 0
-        ? `${failed} session(s) en échec. Erreur : ${firstError ?? "inconnue"}`
-        : undefined,
+    remaining: res.remaining,
+    lastSyncAt: res.lastSyncAt,
+    error: res.failed > 0 ? `${res.failed} session(s) en échec.` : undefined,
   };
 }

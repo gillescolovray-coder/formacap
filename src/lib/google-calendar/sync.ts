@@ -711,8 +711,91 @@ export async function purgeAllCalendarEvents(): Promise<{
       );
       await sleep(250);
     }
+    // IMPORTANT (Gilles 2026-06-25) : on efface AUSSI les références en base
+    // (ids d'événements + état de synchro) pour que toutes les sessions soient
+    // détectées comme « à re-synchroniser » par la synchro incrémentale.
+    // Sans ça, après une purge, les sessions gardaient un ancien id pointant
+    // vers un événement supprimé -> RDV manquants et non détectés.
+    try {
+      await createAdminClient()
+        .from("sessions")
+        .update({
+          google_calendar_event_id: null,
+          calendar_synced_at: null,
+          calendar_sync_error: null,
+        })
+        .not("id", "is", null);
+    } catch {
+      /* colonnes 0137 absentes -> au moins l'agenda est vidé */
+    }
     return { ok: true, deleted };
   } catch (e) {
     return { ok: false, deleted: 0, error: (e as Error).message };
   }
+}
+
+/**
+ * Synchro INCRÉMENTALE, bornée en temps et auto-réparante (Gilles 2026-06-25).
+ * Ne traite QUE les sessions qui en ont besoin (jamais synchronisées, sans
+ * événement, ou en erreur) — donc rapide en régime normal, et capable de
+ * rattraper en plusieurs passes après une purge (96 sessions ne tiennent pas
+ * dans la limite de temps d'UNE exécution serverless). Renvoie `remaining`
+ * pour permettre à l'appelant de relancer (bouton) / au cron de continuer.
+ */
+export async function syncSessionsNeedingUpdate(opts?: {
+  budgetMs?: number;
+  limit?: number;
+}): Promise<{
+  ok: boolean;
+  synced: number;
+  failed: number;
+  remaining: number;
+  lastSyncAt?: string;
+  error?: string;
+}> {
+  if (!isCalendarConfigured())
+    return { ok: false, synced: 0, failed: 0, remaining: 0, error: "not_configured" };
+  const budgetMs = opts?.budgetMs ?? 45_000;
+  const limit = opts?.limit ?? 500;
+  const admin = createAdminClient();
+  const { data: rows, error } = await admin
+    .from("sessions")
+    .select("id")
+    .neq("status", "archived")
+    .or(
+      "google_calendar_event_id.is.null,calendar_synced_at.is.null,calendar_sync_error.not.is.null",
+    )
+    .order("start_date", { ascending: true })
+    .limit(limit);
+  if (error) return { ok: false, synced: 0, failed: 0, remaining: 0, error: error.message };
+
+  const ids = ((rows ?? []) as Array<{ id: string }>).map((r) => r.id);
+  const total = ids.length;
+  const start = Date.now();
+  let synced = 0;
+  let failed = 0;
+  let processed = 0;
+  const BATCH = 4;
+  for (let i = 0; i < ids.length; i += BATCH) {
+    if (Date.now() - start > budgetMs) break; // on s'arrête avant le timeout
+    const slice = ids.slice(i, i + BATCH);
+    const res = await Promise.all(slice.map((id) => syncSessionCalendar(id)));
+    for (const r of res) {
+      if (r.ok) synced += 1;
+      else failed += 1;
+    }
+    processed += slice.length;
+    if (i + BATCH < ids.length) await sleep(250);
+  }
+  const remaining = Math.max(0, total - processed);
+  const lastSyncAt = new Date().toISOString();
+  try {
+    await admin
+      .from("organizations")
+      .update({ calendar_last_sync_at: lastSyncAt })
+      .not("id", "is", null);
+  } catch {
+    /* ignore */
+  }
+  return { ok: true, synced, failed, remaining, lastSyncAt };
 }

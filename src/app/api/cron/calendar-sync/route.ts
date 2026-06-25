@@ -10,8 +10,7 @@
  * Schedule dans vercel.json. Sécurité : Bearer CRON_SECRET.
  */
 import { NextResponse, type NextRequest } from "next/server";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { syncSessionCalendar } from "@/lib/google-calendar/sync";
+import { syncSessionsNeedingUpdate } from "@/lib/google-calendar/sync";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -39,28 +38,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "calendar_not_configured" });
   }
 
-  const supabase = createAdminClient();
-  const { data: sessions } = await supabase.from("sessions").select("id");
-  const ids = ((sessions ?? []) as Array<{ id: string }>).map((s) => s.id);
-
-  let count = 0;
-  let failed = 0;
-  const BATCH = 4;
-  for (let i = 0; i < ids.length; i += BATCH) {
-    const slice = ids.slice(i, i + BATCH);
-    const results = await Promise.all(slice.map((id) => syncSessionCalendar(id)));
-    for (const r of results) {
-      if (r.ok) count += 1;
-      else failed += 1;
-    }
-    if (i + BATCH < ids.length) await new Promise((r) => setTimeout(r, 300));
-  }
-
-  // Horodatage de la dernière synchro (affiché sur la page Sessions).
-  await supabase
-    .from("organizations")
-    .update({ calendar_last_sync_at: new Date().toISOString() })
-    .not("id", "is", null);
-
-  return NextResponse.json({ ok: true, count, failed });
+  // Synchro INCRÉMENTALE + bornée : ne traite que les sessions à
+  // (re)synchroniser (jamais synchronisées / sans événement / en erreur).
+  // Rapide en régime normal ; rattrape sur plusieurs passes après une purge.
+  const res = await syncSessionsNeedingUpdate({ budgetMs: 50_000 });
+  return NextResponse.json(res);
 }
