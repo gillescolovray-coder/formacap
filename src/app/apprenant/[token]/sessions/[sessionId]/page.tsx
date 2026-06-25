@@ -72,7 +72,7 @@ export default async function LearnerSessionDetailPage({
   const { data: session } = await supabase
     .from("sessions")
     .select(
-      "id, internal_code, start_date, end_date, is_inter, modality, status, location, video_app, video_link, support_drive_url, location_obj:formation_locations!location_id(name, address, postal_code, city), formation:formations(id, title, subtitle, duration_hours, duration_days, programme_pdf_url, support_drive_url), trainer:trainers!trainer_id(first_name, last_name)",
+      "id, internal_code, start_date, end_date, is_inter, modality, status, location, video_app, video_link, support_drive_url, is_subcontracted, quiz_template_id, location_obj:formation_locations!location_id(name, address, postal_code, city), formation:formations(id, title, subtitle, duration_hours, duration_days, programme_pdf_url, support_drive_url, quiz_template_id), trainer:trainers!trainer_id(first_name, last_name)",
     )
     .eq("id", sessionId)
     .eq("organization_id", ctx.learner.organization_id)
@@ -97,6 +97,8 @@ export default async function LearnerSessionDetailPage({
     video_app: string | null;
     video_link: string | null;
     support_drive_url: string | null;
+    is_subcontracted: boolean | null;
+    quiz_template_id: string | null;
     location_obj: LocObj | LocObj[] | null;
     formation:
       | {
@@ -107,6 +109,7 @@ export default async function LearnerSessionDetailPage({
           duration_days: number | null;
           programme_pdf_url: string | null;
           support_drive_url: string | null;
+          quiz_template_id: string | null;
         }
       | Array<{
           id: string;
@@ -116,6 +119,7 @@ export default async function LearnerSessionDetailPage({
           duration_days: number | null;
           programme_pdf_url: string | null;
           support_drive_url: string | null;
+          quiz_template_id: string | null;
         }>
       | null;
     trainer:
@@ -211,6 +215,22 @@ export default async function LearnerSessionDetailPage({
   // Accès aux supports réservé aux apprenants ayant émargé au moins 1
   // créneau (Gilles 2026-06-05). Lien Drive effectif = session sinon formation.
   const hasSignedEmargement = learnerSigned.size > 0;
+
+  // Sous-traitance (Gilles 2026-06-25) : l'émargement appartient à l'OF (hors
+  // FORMACAP), l'apprenant ne peut donc jamais signer ici -> on débloque les
+  // supports dès qu'il a joué AU MOINS un quiz (entrée ou sortie).
+  const isSubcontracted = sess.is_subcontracted === true;
+  let hasPlayedQuiz = false;
+  if (isSubcontracted) {
+    const { data: anyAttempt } = await supabase
+      .from("quiz_attempts")
+      .select("id")
+      .eq("enrollment_id", enrollment.id)
+      .limit(1);
+    hasPlayedQuiz = (anyAttempt ?? []).length > 0;
+  }
+  const canAccessSupports =
+    hasSignedEmargement || (isSubcontracted && hasPlayedQuiz);
   const supportDriveUrl =
     sess.support_drive_url ?? formation?.support_drive_url ?? null;
   // Liste des creneaux planifies (jour x moment) avec un horaire.
@@ -449,15 +469,16 @@ export default async function LearnerSessionDetailPage({
           <FolderOpen className="h-4 w-4 text-indigo-600" />
           Documents partagés
         </h2>
-        {!hasSignedEmargement ? (
+        {!canAccessSupports ? (
           <div className="px-4 py-6 text-center">
             <Lock className="h-8 w-8 text-zinc-300 mx-auto mb-2" />
             <p className="text-sm font-bold text-zinc-700">
               Supports verrouillés
             </p>
             <p className="text-xs text-zinc-500 mt-1 max-w-sm mx-auto">
-              Signez votre feuille d&apos;émargement pour accéder aux supports
-              de la formation.
+              {isSubcontracted
+                ? "Jouez au moins un quiz de la formation pour accéder aux supports."
+                : "Signez votre feuille d'émargement pour accéder aux supports de la formation."}
             </p>
           </div>
         ) : (

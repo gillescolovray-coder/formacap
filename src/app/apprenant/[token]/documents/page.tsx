@@ -41,7 +41,7 @@ export default async function LearnerDocumentsPage({
   const { data: enrollments } = await supabase
     .from("session_enrollments")
     .select(
-      "id, status, session:sessions(id, start_date, end_date, modality, support_drive_url, formation:formations(id, title, programme_pdf_url, support_drive_url))",
+      "id, status, session:sessions(id, start_date, end_date, modality, support_drive_url, is_subcontracted, formation:formations(id, title, programme_pdf_url, support_drive_url))",
     )
     .eq("learner_id", ctx.learner.id)
     .neq("status", "cancelled");
@@ -55,6 +55,7 @@ export default async function LearnerDocumentsPage({
       end_date: string | null;
       modality: string | null;
       support_drive_url: string | null;
+      is_subcontracted: boolean | null;
       formation: {
         id: string;
         title: string;
@@ -85,6 +86,7 @@ export default async function LearnerDocumentsPage({
         programmePdfUrl: formation?.programme_pdf_url ?? null,
         driveUrl: session.support_drive_url ?? formation?.support_drive_url ?? null,
         isPast: session.end_date ? session.end_date < today : false,
+        isSubcontracted: session.is_subcontracted === true,
       };
     })
     .filter((r): r is NonNullable<typeof r> => r !== null)
@@ -194,6 +196,25 @@ export default async function LearnerDocumentsPage({
       else learnerSignedEnrollments.add(s.enrollment_id);
     }
   }
+
+  // Sous-traitance (Gilles 2026-06-25) : l'émargement appartient à l'OF -> on
+  // débloque les supports dès qu'un quiz a été joué (au moins une tentative).
+  const quizPlayedEnrollments = new Set<string>();
+  if (enrollmentIds.length > 0) {
+    const { data: attempts } = await supabase
+      .from("quiz_attempts")
+      .select("enrollment_id")
+      .in("enrollment_id", enrollmentIds);
+    for (const a of (attempts ?? []) as Array<{ enrollment_id: string }>) {
+      quizPlayedEnrollments.add(a.enrollment_id);
+    }
+  }
+  const canAccessSupports = (it: {
+    enrollmentId: string;
+    isSubcontracted: boolean;
+  }): boolean =>
+    learnerSignedEnrollments.has(it.enrollmentId) ||
+    (it.isSubcontracted && quizPlayedEnrollments.has(it.enrollmentId));
 
   return (
     <div className="space-y-6">
@@ -320,14 +341,15 @@ export default async function LearnerDocumentsPage({
                 {/* Documents partagés (fichiers + lien Drive) — RÉSERVÉS
                     aux apprenants ayant émargé. Gilles 2026-06-05. */}
                 {(sharedDocs.length > 0 || item.driveUrl) &&
-                !learnerSignedEnrollments.has(item.enrollmentId) ? (
+                !canAccessSupports(item) ? (
                   <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-center">
                     <p className="text-xs font-bold text-zinc-700 inline-flex items-center gap-1.5">
                       🔒 Supports verrouillés
                     </p>
                     <p className="text-[11px] text-zinc-500 mt-0.5">
-                      Signez votre feuille d&apos;émargement pour accéder aux
-                      supports de cette formation.
+                      {item.isSubcontracted
+                        ? "Jouez au moins un quiz de la formation pour accéder aux supports."
+                        : "Signez votre feuille d'émargement pour accéder aux supports de cette formation."}
                     </p>
                   </div>
                 ) : (sharedDocs.length > 0 || item.driveUrl) ? (
