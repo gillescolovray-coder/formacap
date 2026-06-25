@@ -197,7 +197,17 @@ function buildDayEvent(
   // jour si la session s'étale sur plusieurs jours.
   const maxPart = s.max_participants ? `/${s.max_participants}` : "";
   const dayLabel = totalDays > 1 ? ` (Jour ${dayIndex + 1}/${totalDays})` : "";
-  const summary = `${meta.emoji} ${source.name} 👥${participantCount}${maxPart} — ${title}${dayLabel}`;
+  // Nom du formateur dans le TITRE (Gilles 2026-06-25) : permet au gestionnaire
+  // de voir d'un coup d'œil QUI anime chaque session dans l'agenda partagé.
+  const trainerLabelForTitle =
+    [s.trainer?.first_name, s.trainer?.last_name]
+      .filter(Boolean)
+      .join(" ")
+      .trim() ||
+    s.trainer_name?.trim() ||
+    "";
+  const whoPrefix = trainerLabelForTitle ? `${trainerLabelForTitle} · ` : "";
+  const summary = `${meta.emoji} ${whoPrefix}${source.name} 👥${participantCount}${maxPart} — ${title}${dayLabel}`;
   // Libellé source pour le contenu (avec le rôle).
   const sourceLine =
     source.kind === "of"
