@@ -41,6 +41,6 @@ export async function GET(request: NextRequest) {
   // Synchro INCRÉMENTALE + bornée : ne traite que les sessions à
   // (re)synchroniser (jamais synchronisées / sans événement / en erreur).
   // Rapide en régime normal ; rattrape sur plusieurs passes après une purge.
-  const res = await syncSessionsNeedingUpdate({ budgetMs: 50_000 });
+  const res = await syncSessionsNeedingUpdate({ budgetMs: 45_000 });
   return NextResponse.json(res);
 }

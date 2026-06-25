@@ -856,7 +856,7 @@ export async function syncAllSessionsToCalendar(): Promise<{
   // propager un changement de format de titre (ex. acronyme formateur DMT) aux
   // événements créés avant la mise à jour, sans avoir à « Réinitialiser ».
   const res = await syncSessionsNeedingUpdate({
-    budgetMs: 45_000,
+    budgetMs: 25_000, // marge confortable sous maxDuration=60 -> répond toujours
     forceAllIfIdle: true,
   });
   if (!res.ok) {

@@ -781,10 +781,18 @@ export async function syncSessionsNeedingUpdate(opts?: {
         "google_calendar_event_id.is.null,calendar_synced_at.is.null,calendar_sync_error.not.is.null",
       );
     if ((pending ?? 0) === 0) {
+      // On NE rafraîchit QUE les sessions en cours / à venir (end_date >= il y
+      // a 7 jours) : ce sont elles qui comptent dans l'agenda. Sinon, re-pousser
+      // les ~100 sessions passées dépasse le délai serverless (Google limite le
+      // débit -> les tentatives s'empilent -> fonction coupée -> aucun retour).
+      const cutoff = new Date(Date.now() - 7 * 86_400_000)
+        .toISOString()
+        .slice(0, 10);
       await admin
         .from("sessions")
         .update({ calendar_synced_at: null })
-        .neq("status", "archived");
+        .neq("status", "archived")
+        .gte("end_date", cutoff);
     }
   }
 
@@ -795,7 +803,10 @@ export async function syncSessionsNeedingUpdate(opts?: {
     .or(
       "google_calendar_event_id.is.null,calendar_synced_at.is.null,calendar_sync_error.not.is.null",
     )
-    .order("start_date", { ascending: true })
+    // Plus récentes / à venir d'abord (Gilles 2026-06-25) : ce sont celles que
+    // l'utilisateur voit dans l'agenda ; elles affichent l'acronyme dès le 1er
+    // clic, les sessions passées se rattrapant ensuite (clics suivants / cron).
+    .order("start_date", { ascending: false })
     .limit(limit);
   if (error) return { ok: false, synced: 0, failed: 0, remaining: 0, error: error.message };
 
@@ -805,7 +816,11 @@ export async function syncSessionsNeedingUpdate(opts?: {
   let synced = 0;
   let failed = 0;
   let processed = 0;
-  const BATCH = 4;
+  // Lots de 3 (Gilles 2026-06-25) : assez petits pour que, même si Google
+  // limite le débit (tentatives + backoff), un lot ne fasse pas exploser le
+  // budget. On vérifie le temps AVANT chaque lot et on s'arrête largement avant
+  // le timeout serverless -> la fonction répond toujours (jamais coupée).
+  const BATCH = 3;
   for (let i = 0; i < ids.length; i += BATCH) {
     if (Date.now() - start > budgetMs) break; // on s'arrête avant le timeout
     const slice = ids.slice(i, i + BATCH);
@@ -815,7 +830,7 @@ export async function syncSessionsNeedingUpdate(opts?: {
       else failed += 1;
     }
     processed += slice.length;
-    if (i + BATCH < ids.length) await sleep(250);
+    if (i + BATCH < ids.length) await sleep(200);
   }
   const remaining = Math.max(0, total - processed);
   const lastSyncAt = new Date().toISOString();
