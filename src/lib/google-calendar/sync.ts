@@ -155,6 +155,32 @@ function esc(t: string): string {
     .replace(/>/g, "&gt;");
 }
 
+/**
+ * Acronyme formateur pour le titre agenda (Gilles 2026-06-25) :
+ * 1re lettre du prénom + 1re et dernière lettre du nom de famille, en
+ * MAJUSCULES. Ex. « David MARRET » -> « DMT », « Gilles COLOVRAY » -> « GCY ».
+ * Replis : si prénom/nom séparés absents, on parse `trainer_name` (1 chaîne).
+ */
+function buildTrainerAcronym(
+  firstName: string | null,
+  lastName: string | null,
+  fullName: string | null,
+): string {
+  const acro = (f: string, l: string): string => {
+    if (!l) return f ? f[0]!.toUpperCase() : "";
+    const lastChar = l[l.length - 1] ?? "";
+    return `${f ? f[0]! : ""}${l[0]!}${lastChar}`.toUpperCase();
+  };
+  const f = (firstName ?? "").trim();
+  const l = (lastName ?? "").trim();
+  if (f || l) return acro(f, l);
+  const whole = (fullName ?? "").trim();
+  if (!whole) return "";
+  const parts = whole.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return acro(parts[0]!, parts[parts.length - 1]!);
+  return whole.slice(0, 3).toUpperCase();
+}
+
 /** Un jour de session à projeter dans l'agenda (date + plage horaire). */
 type EventDay = { date: string; start: string; end: string };
 
@@ -197,16 +223,16 @@ function buildDayEvent(
   // jour si la session s'étale sur plusieurs jours.
   const maxPart = s.max_participants ? `/${s.max_participants}` : "";
   const dayLabel = totalDays > 1 ? ` (Jour ${dayIndex + 1}/${totalDays})` : "";
-  // Nom du formateur dans le TITRE (Gilles 2026-06-25) : permet au gestionnaire
-  // de voir d'un coup d'œil QUI anime chaque session dans l'agenda partagé.
-  const trainerLabelForTitle =
-    [s.trainer?.first_name, s.trainer?.last_name]
-      .filter(Boolean)
-      .join(" ")
-      .trim() ||
-    s.trainer_name?.trim() ||
-    "";
-  const whoPrefix = trainerLabelForTitle ? `${trainerLabelForTitle} · ` : "";
+  // Acronyme formateur dans le TITRE (Gilles 2026-06-25) : raccourcit le RDV
+  // tout en identifiant qui anime. Règle : 1re lettre du prénom + 1re et
+  // dernière lettre du nom, en MAJUSCULES (ex. David MARRET -> DMT). Le nom
+  // complet reste dans le détail de l'événement.
+  const trainerAcronym = buildTrainerAcronym(
+    s.trainer?.first_name ?? null,
+    s.trainer?.last_name ?? null,
+    s.trainer_name ?? null,
+  );
+  const whoPrefix = trainerAcronym ? `${trainerAcronym} · ` : "";
   const summary = `${meta.emoji} ${whoPrefix}${source.name} 👥${participantCount}${maxPart} — ${title}${dayLabel}`;
   // Libellé source pour le contenu (avec le rôle).
   const sourceLine =
