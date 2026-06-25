@@ -105,7 +105,7 @@ export function SyncCalendarButton({
           onClick={handleClick}
           disabled={pending}
           className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs sm:text-sm font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-60 transition-colors min-h-[44px]"
-          title="Pousser toutes les sessions vers l'agenda Google « Session FORMACAP »"
+          title="Pousser / rafraîchir toutes les sessions vers l'agenda Google « Session FORMACAP » (met à jour les titres : acronyme formateur, source…)"
         >
           {pending ? (
             <Loader2 className="h-4 w-4 animate-spin" />

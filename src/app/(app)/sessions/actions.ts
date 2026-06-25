@@ -852,7 +852,13 @@ export async function syncAllSessionsToCalendar(): Promise<{
   // Synchro INCRÉMENTALE + bornée en temps (Gilles 2026-06-25) : ne traite que
   // les sessions à (re)synchroniser et s'arrête avant le timeout serverless.
   // `remaining` > 0 -> il faut recliquer pour finir (cas d'une grosse reprise).
-  const res = await syncSessionsNeedingUpdate({ budgetMs: 45_000 });
+  // forceAllIfIdle : si tout est déjà à jour, on RAFRAÎCHIT tous les RDV pour
+  // propager un changement de format de titre (ex. acronyme formateur DMT) aux
+  // événements créés avant la mise à jour, sans avoir à « Réinitialiser ».
+  const res = await syncSessionsNeedingUpdate({
+    budgetMs: 45_000,
+    forceAllIfIdle: true,
+  });
   if (!res.ok) {
     return { ok: false, count: 0, error: res.error ?? "Échec de la synchronisation." };
   }

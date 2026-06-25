@@ -745,6 +745,15 @@ export async function purgeAllCalendarEvents(): Promise<{
 export async function syncSessionsNeedingUpdate(opts?: {
   budgetMs?: number;
   limit?: number;
+  /**
+   * Rafraîchissement complet (Gilles 2026-06-25) : si AUCUNE session n'est en
+   * attente de synchro (tout est déjà à jour), on marque TOUTES les sessions
+   * non archivées comme « à resynchroniser » afin de propager un changement de
+   * FORMAT du titre (ex. ajout de l'acronyme formateur DMT) aux RDV déjà créés.
+   * Sinon (drain déjà en cours), on ne re-marque pas -> évite la boucle infinie.
+   * Le cron n'active PAS ce mode (reste purement incrémental / léger).
+   */
+  forceAllIfIdle?: boolean;
 }): Promise<{
   ok: boolean;
   synced: number;
@@ -758,6 +767,27 @@ export async function syncSessionsNeedingUpdate(opts?: {
   const budgetMs = opts?.budgetMs ?? 45_000;
   const limit = opts?.limit ?? 500;
   const admin = createAdminClient();
+
+  // Rafraîchissement complet à froid : si rien n'est en attente, on « salit »
+  // toutes les sessions non archivées (synced_at = null) pour re-pousser le
+  // nouveau format de titre. Si un drain est déjà en cours (des sessions en
+  // attente), on ne re-marque pas -> les reclics terminent sans boucler.
+  if (opts?.forceAllIfIdle) {
+    const { count: pending } = await admin
+      .from("sessions")
+      .select("id", { count: "exact", head: true })
+      .neq("status", "archived")
+      .or(
+        "google_calendar_event_id.is.null,calendar_synced_at.is.null,calendar_sync_error.not.is.null",
+      );
+    if ((pending ?? 0) === 0) {
+      await admin
+        .from("sessions")
+        .update({ calendar_synced_at: null })
+        .neq("status", "archived");
+    }
+  }
+
   const { data: rows, error } = await admin
     .from("sessions")
     .select("id")
