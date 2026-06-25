@@ -41,7 +41,7 @@ export default async function PortailDocumentsPage({
   const { data: portalRow } = await supabase
     .from("enrollment_portal_tokens")
     .select(
-      "enrollment:session_enrollments(id, session_id, quiz_template_id, session:sessions(support_drive_url, is_subcontracted, quiz_template_id, formation:formations(title, programme_pdf_url, programme_pdf_name, support_drive_url, quiz_template_id), organization:organizations(name, logo_url)))",
+      "enrollment:session_enrollments(id, session_id, quiz_template_id, session:sessions(support_drive_url, is_subcontracted, subcontracting_company_id, quiz_template_id, formation:formations(title, programme_pdf_url, programme_pdf_name, support_drive_url, quiz_template_id), organization:organizations(name, logo_url)))",
     )
     .eq("token", token)
     .maybeSingle<{
@@ -52,6 +52,7 @@ export default async function PortailDocumentsPage({
         session: {
           support_drive_url: string | null;
           is_subcontracted: boolean | null;
+          subcontracting_company_id: string | null;
           quiz_template_id: string | null;
           formation: {
             title: string;
@@ -71,8 +72,11 @@ export default async function PortailDocumentsPage({
 
   const sessionId = portalRow.enrollment.session_id;
   const enrollmentId = portalRow.enrollment.id;
+  // Sous-traitance = case cochée OU OF donneur d'ordre renseigné (Gilles
+  // 2026-06-25) : sélectionner l'OF suffit pour le déblocage par quiz.
   const isSubcontracted =
-    portalRow.enrollment.session?.is_subcontracted === true;
+    portalRow.enrollment.session?.is_subcontracted === true ||
+    portalRow.enrollment.session?.subcontracting_company_id != null;
   // Accès supports réservé aux apprenants ayant émargé (≥1 créneau).
   // Gilles 2026-06-05.
   const { data: learnerSigs } = await supabase

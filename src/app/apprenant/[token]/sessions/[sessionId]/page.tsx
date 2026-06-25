@@ -72,7 +72,7 @@ export default async function LearnerSessionDetailPage({
   const { data: session } = await supabase
     .from("sessions")
     .select(
-      "id, internal_code, start_date, end_date, is_inter, modality, status, location, video_app, video_link, support_drive_url, is_subcontracted, quiz_template_id, location_obj:formation_locations!location_id(name, address, postal_code, city), formation:formations(id, title, subtitle, duration_hours, duration_days, programme_pdf_url, support_drive_url, quiz_template_id), trainer:trainers!trainer_id(first_name, last_name)",
+      "id, internal_code, start_date, end_date, is_inter, modality, status, location, video_app, video_link, support_drive_url, is_subcontracted, subcontracting_company_id, quiz_template_id, location_obj:formation_locations!location_id(name, address, postal_code, city), formation:formations(id, title, subtitle, duration_hours, duration_days, programme_pdf_url, support_drive_url, quiz_template_id), trainer:trainers!trainer_id(first_name, last_name)",
     )
     .eq("id", sessionId)
     .eq("organization_id", ctx.learner.organization_id)
@@ -98,6 +98,7 @@ export default async function LearnerSessionDetailPage({
     video_link: string | null;
     support_drive_url: string | null;
     is_subcontracted: boolean | null;
+    subcontracting_company_id: string | null;
     quiz_template_id: string | null;
     location_obj: LocObj | LocObj[] | null;
     formation:
@@ -219,7 +220,10 @@ export default async function LearnerSessionDetailPage({
   // Sous-traitance (Gilles 2026-06-25) : l'émargement appartient à l'OF (hors
   // FORMACAP), l'apprenant ne peut donc jamais signer ici -> on débloque les
   // supports dès qu'il a joué AU MOINS un quiz (entrée ou sortie).
-  const isSubcontracted = sess.is_subcontracted === true;
+  // Sous-traitance = case cochée OU OF donneur d'ordre renseigné (Gilles
+  // 2026-06-25) : sélectionner l'OF suffit pour le déblocage par quiz.
+  const isSubcontracted =
+    sess.is_subcontracted === true || sess.subcontracting_company_id != null;
   let hasPlayedQuiz = false;
   if (isSubcontracted) {
     const { data: anyAttempt } = await supabase

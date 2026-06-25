@@ -41,7 +41,7 @@ export default async function LearnerDocumentsPage({
   const { data: enrollments } = await supabase
     .from("session_enrollments")
     .select(
-      "id, status, session:sessions(id, start_date, end_date, modality, support_drive_url, is_subcontracted, formation:formations(id, title, programme_pdf_url, support_drive_url))",
+      "id, status, session:sessions(id, start_date, end_date, modality, support_drive_url, is_subcontracted, subcontracting_company_id, formation:formations(id, title, programme_pdf_url, support_drive_url))",
     )
     .eq("learner_id", ctx.learner.id)
     .neq("status", "cancelled");
@@ -56,6 +56,7 @@ export default async function LearnerDocumentsPage({
       modality: string | null;
       support_drive_url: string | null;
       is_subcontracted: boolean | null;
+      subcontracting_company_id: string | null;
       formation: {
         id: string;
         title: string;
@@ -86,7 +87,12 @@ export default async function LearnerDocumentsPage({
         programmePdfUrl: formation?.programme_pdf_url ?? null,
         driveUrl: session.support_drive_url ?? formation?.support_drive_url ?? null,
         isPast: session.end_date ? session.end_date < today : false,
-        isSubcontracted: session.is_subcontracted === true,
+        // Sous-traitance = case cochée OU OF donneur d'ordre renseigné (Gilles
+        // 2026-06-25) : suffit de sélectionner l'OF pour que le quiz débloque
+        // le support, même si la case n'a pas été cochée.
+        isSubcontracted:
+          session.is_subcontracted === true ||
+          session.subcontracting_company_id != null,
       };
     })
     .filter((r): r is NonNullable<typeof r> => r !== null)
