@@ -114,7 +114,7 @@ export default async function InscriptionsListPage({
     supabase
       .from("sessions")
       .select(
-        "id, start_date, end_date, modality, location, is_inter, max_participants, status, default_morning_start, default_morning_end, default_afternoon_start, default_afternoon_end, pricing_mode, price_per_day_ht, price_forfait_ht, price_extra_per_day_ht, pricing_threshold, location_full:formation_locations(id, name, address, postal_code, city), formation:formations(id, title, internal_code, public_price_excl_tax), trainer:trainers(id, first_name, last_name, email, phone, mobile)",
+        "id, start_date, end_date, modality, location, is_inter, max_participants, status, default_morning_start, default_morning_end, default_afternoon_start, default_afternoon_end, pricing_mode, price_per_day_ht, price_forfait_ht, price_extra_per_day_ht, pricing_threshold, location_full:formation_locations(id, name, address, postal_code, city), formation:formations(id, title, internal_code, public_price_excl_tax, duration_days), trainer:trainers(id, first_name, last_name, email, phone, mobile)",
       )
       .order("start_date", { ascending: false }),
     // Chargement de la liste des entreprises pour résoudre le nom du
@@ -299,6 +299,7 @@ export default async function InscriptionsListPage({
       title: string;
       internal_code: string | null;
       public_price_excl_tax: number | null;
+      duration_days?: number | null;
     } | null;
     trainer: {
       id: string;
@@ -627,6 +628,7 @@ function SessionView({
       title: string;
       internal_code: string | null;
       public_price_excl_tax: number | null;
+      duration_days?: number | null;
     } | null;
     trainer: {
       id: string;
@@ -731,6 +733,7 @@ function SessionCard({
       title: string;
       internal_code: string | null;
       public_price_excl_tax: number | null;
+      duration_days?: number | null;
     } | null;
     trainer: {
       id: string;

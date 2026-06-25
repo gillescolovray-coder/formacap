@@ -50,7 +50,7 @@ async function computeConventionPricing(
   const { data: sessionRow } = await supabase
     .from("sessions")
     .select(
-      "amount_ht, pricing_mode, price_per_day_ht, price_forfait_ht, price_extra_per_day_ht, pricing_threshold, formation:formations(public_price_excl_tax, price_company)",
+      "amount_ht, pricing_mode, price_per_day_ht, price_forfait_ht, price_extra_per_day_ht, pricing_threshold, formation:formations(public_price_excl_tax, price_company, duration_days)",
     )
     .eq("id", sessionId)
     .maybeSingle<{
@@ -63,6 +63,7 @@ async function computeConventionPricing(
       formation: {
         public_price_excl_tax: number | null;
         price_company: number | null;
+        duration_days: number | null;
       } | null;
     }>();
 
@@ -133,11 +134,17 @@ async function computeConventionPricing(
       .select("id", { count: "exact", head: true })
       .eq("session_id", sessionId);
 
-    // Nb réel de jours = count(session_days)
+    // Nb réel de jours = count(session_days). Repli sur la durée nominale de
+    // la formation si le planning n'est pas encore saisi (sinon le tarif/jour
+    // était ignoré -> convention au tarif catalogue). Gilles 2026-06-25.
     const { count: daysCount } = await supabase
       .from("session_days")
       .select("id", { count: "exact", head: true })
       .eq("session_id", sessionId);
+    const effectiveDays =
+      daysCount && daysCount > 0
+        ? daysCount
+        : sessionRow.formation?.duration_days ?? 0;
 
     const cfg: SessionPricingConfig = {
       mode: sessionRow.pricing_mode,
@@ -150,7 +157,7 @@ async function computeConventionPricing(
       cfg,
       nbApprenantsCompany,
       totalCount ?? 0,
-      daysCount ?? 0,
+      effectiveDays,
     );
     return { unitPrice: unitHt, totalHt };
   }

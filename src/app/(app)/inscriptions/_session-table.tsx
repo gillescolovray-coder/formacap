@@ -30,7 +30,11 @@ import {
 import { LearnerPortalButtons } from "@/app/(app)/entreprises/_learner-portal-buttons";
 
 type SessionForCard = {
-  formation: { public_price_excl_tax: number | null } | null;
+  formation: {
+    public_price_excl_tax: number | null;
+    /** Durée nominale — repli pour le tarif/jour si planning vide. */
+    duration_days?: number | null;
+  } | null;
   /** Tarification cascade R7 — peut être null pour les sessions
    *  pré-migration 0064. Si null, on retombe sur le prix public formation. */
   pricing_mode?: "per_learner" | "forfait" | null;
@@ -165,6 +169,7 @@ export function SessionInscriptionsTable({
     price_extra_per_day_ht: session?.price_extra_per_day_ht ?? null,
     pricing_threshold: session?.pricing_threshold ?? null,
     duration_days: nbJours,
+    formation_duration_days: session?.formation?.duration_days ?? null,
     formation_public_price_excl_tax:
       session?.formation?.public_price_excl_tax ?? null,
     nb_billable_inscriptions: nbApprenantsBillable,

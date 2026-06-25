@@ -90,7 +90,7 @@ export default async function ParticipantsPage({
   const { data: session } = await supabase
     .from("sessions")
     .select(
-      "id, max_participants, status, pricing_mode, price_per_day_ht, price_forfait_ht, price_extra_per_day_ht, pricing_threshold, is_subcontracted, subcontractor_name, formation:formations(id, title, public_price_excl_tax)",
+      "id, max_participants, status, pricing_mode, price_per_day_ht, price_forfait_ht, price_extra_per_day_ht, pricing_threshold, is_subcontracted, subcontractor_name, formation:formations(id, title, public_price_excl_tax, duration_days)",
     )
     .eq("id", id)
     .maybeSingle<{
@@ -108,6 +108,7 @@ export default async function ParticipantsPage({
         id: string;
         title: string;
         public_price_excl_tax: number | null;
+        duration_days: number | null;
       } | null;
     }>();
   if (!session) notFound();

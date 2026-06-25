@@ -63,7 +63,12 @@ export type DisplayAmountSessionContext = {
   price_forfait_ht?: number | string | null;
   price_extra_per_day_ht?: number | string | null;
   pricing_threshold?: number | string | null;
+  /** Nb de jours réel (planning/session_days). Peut être 0 si planning vide. */
   duration_days?: number | string | null;
+  /** Repli : durée nominale de la formation, utilisée si duration_days = 0
+   *  (sinon le tarif/jour était ignoré et on retombait sur le catalogue —
+   *  bug « 1425 €/j affiché 340 € » Gilles 2026-06-25). */
+  formation_duration_days?: number | string | null;
   formation_public_price_excl_tax?: number | string | null;
   nb_billable_inscriptions?: number;
 };
@@ -106,7 +111,14 @@ export function computeInscriptionDisplayAmount(
   }
 
   // 3) Derive R7 (INTER per_learner / INTRA forfait)
-  const days = toNum(session.duration_days);
+  // Nb de jours = planning réel ; repli sur la durée nominale de la
+  // formation si le planning n'est pas encore saisi (sinon le tarif/jour
+  // était ignoré -> retombait sur le catalogue). Gilles 2026-06-25.
+  const sessDays = toNum(session.duration_days);
+  const days =
+    sessDays && sessDays > 0
+      ? sessDays
+      : toNum(session.formation_duration_days);
   if (session.pricing_mode && days && days > 0) {
     if (session.pricing_mode === "per_learner") {
       const perDay = toNum(session.price_per_day_ht);
