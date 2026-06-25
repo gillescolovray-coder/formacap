@@ -41,20 +41,24 @@ export default async function PortailDocumentsPage({
   const { data: portalRow } = await supabase
     .from("enrollment_portal_tokens")
     .select(
-      "enrollment:session_enrollments(id, session_id, session:sessions(support_drive_url, formation:formations(title, programme_pdf_url, programme_pdf_name, support_drive_url), organization:organizations(name, logo_url)))",
+      "enrollment:session_enrollments(id, session_id, quiz_template_id, session:sessions(support_drive_url, is_subcontracted, quiz_template_id, formation:formations(title, programme_pdf_url, programme_pdf_name, support_drive_url, quiz_template_id), organization:organizations(name, logo_url)))",
     )
     .eq("token", token)
     .maybeSingle<{
       enrollment: {
         id: string;
         session_id: string;
+        quiz_template_id: string | null;
         session: {
           support_drive_url: string | null;
+          is_subcontracted: boolean | null;
+          quiz_template_id: string | null;
           formation: {
             title: string;
             programme_pdf_url: string | null;
             programme_pdf_name: string | null;
             support_drive_url: string | null;
+            quiz_template_id: string | null;
           } | null;
           organization: { name: string; logo_url: string | null } | null;
         } | null;
@@ -67,6 +71,8 @@ export default async function PortailDocumentsPage({
 
   const sessionId = portalRow.enrollment.session_id;
   const enrollmentId = portalRow.enrollment.id;
+  const isSubcontracted =
+    portalRow.enrollment.session?.is_subcontracted === true;
   // Accès supports réservé aux apprenants ayant émargé (≥1 créneau).
   // Gilles 2026-06-05.
   const { data: learnerSigs } = await supabase
@@ -76,6 +82,22 @@ export default async function PortailDocumentsPage({
     .eq("signer_role", "learner")
     .limit(1);
   const hasSignedEmargement = (learnerSigs ?? []).length > 0;
+
+  // Sous-traitance (Gilles 2026-06-25) : l'émargement appartient à l'OF
+  // (hors FORMACAP), l'apprenant ne peut donc jamais signer ici. On débloque
+  // alors les supports dès qu'il a joué au moins UN quiz (entrée ou sortie)
+  // = preuve de participation.
+  let hasPlayedQuiz = false;
+  if (isSubcontracted) {
+    const { data: anyAttempt } = await supabase
+      .from("quiz_attempts")
+      .select("id")
+      .eq("enrollment_id", enrollmentId)
+      .limit(1);
+    hasPlayedQuiz = (anyAttempt ?? []).length > 0;
+  }
+  const canAccessSupports =
+    hasSignedEmargement || (isSubcontracted && hasPlayedQuiz);
   const supportDriveUrl =
     portalRow.enrollment.session?.support_drive_url ??
     portalRow.enrollment.session?.formation?.support_drive_url ??
@@ -187,15 +209,16 @@ export default async function PortailDocumentsPage({
           Retour à mon espace
         </Link>
 
-        {!hasSignedEmargement ? (
+        {!canAccessSupports ? (
           <div className="rounded-xl bg-white shadow-sm border border-zinc-200 p-8 text-center">
             <FolderOpen className="h-10 w-10 text-zinc-300 mx-auto mb-2" />
             <p className="text-sm font-bold text-zinc-700">
               🔒 Supports verrouillés
             </p>
             <p className="text-xs text-zinc-500 mt-1 max-w-sm mx-auto">
-              Signez votre feuille d&apos;émargement pour accéder aux supports
-              de la formation.
+              {isSubcontracted
+                ? "Jouez au moins un quiz de la formation pour accéder aux supports."
+                : "Signez votre feuille d'émargement pour accéder aux supports de la formation."}
             </p>
           </div>
         ) : (

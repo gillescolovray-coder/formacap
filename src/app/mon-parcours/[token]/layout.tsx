@@ -42,7 +42,12 @@ export default async function MonParcoursLayout({
         ? enr?.learner[0]
         : enr?.learner;
       if (learner?.id && learner?.organization_id) {
-        await logLearnerVisit(supabase, learner.organization_id, learner.id);
+        await logLearnerVisit(
+          supabase,
+          learner.organization_id,
+          learner.id,
+          tokenRow.enrollment_id,
+        );
       }
     }
   } catch {

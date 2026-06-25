@@ -76,6 +76,45 @@ export default async function LearnerDetailPage({
         .order("created_at", { ascending: false })
     : { data: [] };
 
+  // Consultations du portail apprenant (Gilles 2026-06-25) : date/heure +
+  // session sur laquelle l'apprenant a cliqué.
+  const formationByEnr = new Map<string, string>();
+  for (const e of (enrollmentsRaw ?? []) as Array<{
+    id: string;
+    sessions: { formation: { title: string | null } | { title: string | null }[] | null } | { formation: unknown }[] | null;
+  }>) {
+    const s = Array.isArray(e.sessions) ? e.sessions[0] : e.sessions;
+    const f = s
+      ? Array.isArray((s as { formation: unknown }).formation)
+        ? ((s as { formation: { title: string | null }[] }).formation[0] ?? null)
+        : ((s as { formation: { title: string | null } | null }).formation ?? null)
+      : null;
+    formationByEnr.set(e.id, f?.title ?? "Session");
+  }
+  const portalVisitHistory: Array<{
+    visited_at: string;
+    formation: string;
+  }> = [];
+  if (enrollmentIds.length) {
+    const { data: lv } = await supabase
+      .from("learner_portal_visits")
+      .select("enrollment_id, visited_at")
+      .in("enrollment_id", enrollmentIds)
+      .order("visited_at", { ascending: false })
+      .limit(100);
+    for (const v of (lv ?? []) as Array<{
+      enrollment_id: string | null;
+      visited_at: string;
+    }>) {
+      portalVisitHistory.push({
+        visited_at: v.visited_at,
+        formation: v.enrollment_id
+          ? formationByEnr.get(v.enrollment_id) ?? "Session"
+          : "Session",
+      });
+    }
+  }
+
   // Résolution des noms d'auteur (pour learner_notes + enrollment_notes)
   const allNotes = [
     ...((learnerNotesRaw ?? []) as LearnerNote[]),
@@ -279,6 +318,40 @@ export default async function LearnerDetailPage({
             {query.error}
           </div>
         )}
+        {/* Consultations du portail apprenant (Gilles 2026-06-25) */}
+        {portalVisitHistory.length > 0 && (
+          <details className="rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 overflow-hidden">
+            <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-zinc-700 dark:text-zinc-200">
+              📱 Consultations du portail apprenant
+              <span className="ml-2 text-xs font-normal text-zinc-500">
+                ({portalVisitHistory.length} visite
+                {portalVisitHistory.length > 1 ? "s" : ""})
+              </span>
+            </summary>
+            <div className="border-t border-zinc-200 dark:border-zinc-800 divide-y divide-zinc-100 dark:divide-zinc-800 max-h-72 overflow-y-auto">
+              {portalVisitHistory.map((v, i) => (
+                <div
+                  key={i}
+                  className="px-4 py-2 flex items-center justify-between gap-3 text-sm"
+                >
+                  <span className="text-zinc-600 dark:text-zinc-300 truncate">
+                    {v.formation}
+                  </span>
+                  <span className="text-xs text-zinc-500 tabular-nums whitespace-nowrap">
+                    {new Date(v.visited_at).toLocaleString("fr-FR", {
+                      day: "2-digit",
+                      month: "2-digit",
+                      year: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </details>
+        )}
+
         <div className="rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-8">
           <LearnerForm
             learner={learner}

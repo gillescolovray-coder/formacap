@@ -340,6 +340,62 @@ export default async function ParticipantsPage({
     participantLearnerIds,
   );
 
+  // Consultations du portail apprenant pour cette session (Gilles 2026-06-25).
+  // 1 visite enregistrée par (apprenant, inscription) toutes les 30 min.
+  const { data: sessionEnrollments } = await supabase
+    .from("session_enrollments")
+    .select("id, learner:learners(first_name, last_name)")
+    .eq("session_id", id);
+  const enrollmentName = new Map<string, string>();
+  for (const e of (sessionEnrollments ?? []) as Array<{
+    id: string;
+    learner: { first_name: string | null; last_name: string | null } | { first_name: string | null; last_name: string | null }[] | null;
+  }>) {
+    const l = Array.isArray(e.learner) ? e.learner[0] : e.learner;
+    enrollmentName.set(
+      e.id,
+      [l?.first_name, l?.last_name].filter(Boolean).join(" ") || "Apprenant",
+    );
+  }
+  const sessEnrIds = Array.from(enrollmentName.keys());
+  const portalVisitByEnrollment = new Map<
+    string,
+    { last: string; count: number }
+  >();
+  if (sessEnrIds.length > 0) {
+    const { data: visits } = await supabase
+      .from("learner_portal_visits")
+      .select("enrollment_id, visited_at")
+      .in("enrollment_id", sessEnrIds)
+      .order("visited_at", { ascending: false });
+    for (const v of (visits ?? []) as Array<{
+      enrollment_id: string | null;
+      visited_at: string;
+    }>) {
+      if (!v.enrollment_id) continue;
+      const cur = portalVisitByEnrollment.get(v.enrollment_id);
+      if (cur) cur.count += 1;
+      else
+        portalVisitByEnrollment.set(v.enrollment_id, {
+          last: v.visited_at,
+          count: 1,
+        });
+    }
+  }
+  const visitRows = sessEnrIds
+    .map((eid) => ({
+      name: enrollmentName.get(eid) ?? "Apprenant",
+      visit: portalVisitByEnrollment.get(eid) ?? null,
+    }))
+    .sort((a, b) => {
+      // Ceux qui ont consulté en premier (date desc), puis les non-consultés.
+      if (a.visit && !b.visit) return -1;
+      if (!a.visit && b.visit) return 1;
+      if (a.visit && b.visit) return b.visit.last.localeCompare(a.visit.last);
+      return a.name.localeCompare(b.name);
+    });
+  const nbConsulted = visitRows.filter((r) => r.visit).length;
+
   return (
     <>
       <PageHeader
@@ -393,6 +449,47 @@ export default async function ParticipantsPage({
               return await generateQuickSignupTokenAdmin(id);
             }}
           />
+        )}
+
+        {/* Consultations du portail apprenant (Gilles 2026-06-25) */}
+        {visitRows.length > 0 && (
+          <details className="rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 overflow-hidden">
+            <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-zinc-700 dark:text-zinc-200 flex items-center gap-2">
+              📱 Consultations du portail apprenant
+              <span className="text-xs font-normal text-zinc-500">
+                ({nbConsulted}/{visitRows.length} ont consulté)
+              </span>
+            </summary>
+            <div className="border-t border-zinc-200 dark:border-zinc-800 divide-y divide-zinc-100 dark:divide-zinc-800">
+              {visitRows.map((r, i) => (
+                <div
+                  key={i}
+                  className="px-4 py-2 flex items-center justify-between gap-3 text-sm"
+                >
+                  <span className="text-zinc-800 dark:text-zinc-200">
+                    {r.name}
+                  </span>
+                  {r.visit ? (
+                    <span className="text-xs text-emerald-700 dark:text-emerald-400 font-medium">
+                      Consulté le{" "}
+                      {new Date(r.visit.last).toLocaleString("fr-FR", {
+                        day: "2-digit",
+                        month: "2-digit",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                      {r.visit.count > 1 ? ` · ${r.visit.count} visites` : ""}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-zinc-400">
+                      Jamais consulté
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </details>
         )}
 
         <ParticipantsInscriptionsBlock
