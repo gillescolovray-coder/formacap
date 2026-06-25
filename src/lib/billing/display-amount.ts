@@ -80,6 +80,47 @@ const toNum = (v: number | string | null | undefined): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 
+/** Nb de jours effectif : planning réel sinon durée nominale de la formation. */
+function effectiveDays(session: DisplayAmountSessionContext): number | null {
+  const sessDays = toNum(session.duration_days);
+  return sessDays && sessDays > 0
+    ? sessDays
+    : toNum(session.formation_duration_days);
+}
+
+/**
+ * Montant par apprenant pour un forfait INTRA = forfait collectif ÷ nb
+ * apprenants (la somme égale donc le forfait). Retourne null si données
+ * insuffisantes.
+ */
+function deriveForfaitPerLearner(
+  session: DisplayAmountSessionContext,
+): DisplayAmountResult | null {
+  const days = effectiveDays(session);
+  if (!days || days <= 0) return null;
+  const nbApprenants = session.nb_billable_inscriptions ?? 0;
+  if (nbApprenants <= 0) return null;
+  const breakdown = computeSessionPrice(
+    {
+      mode: "forfait",
+      pricePerDayHt: null,
+      priceForfaitHt: toNum(session.price_forfait_ht),
+      priceExtraPerDayHt: toNum(session.price_extra_per_day_ht),
+      threshold: toNum(session.pricing_threshold) ?? 4,
+    },
+    nbApprenants,
+    days,
+  );
+  if (breakdown.totalHt <= 0) return null;
+  const amt = round2(breakdown.totalHt / nbApprenants);
+  return {
+    amount: amt,
+    source: "derived_forfait",
+    explain: `Forfait INTRA partage : ${breakdown.totalHt.toFixed(2)} € ÷ ${nbApprenants} apprenant(s) = ${amt.toFixed(2)} €`,
+    isEstimated: true,
+  };
+}
+
 /**
  * Calcule le montant HT a afficher pour UNE inscription donnee
  * dans le contexte d une session.
@@ -110,15 +151,9 @@ export function computeInscriptionDisplayAmount(
     };
   }
 
-  // 3) Derive R7 (INTER per_learner / INTRA forfait)
-  // Nb de jours = planning réel ; repli sur la durée nominale de la
-  // formation si le planning n'est pas encore saisi (sinon le tarif/jour
-  // était ignoré -> retombait sur le catalogue). Gilles 2026-06-25.
-  const sessDays = toNum(session.duration_days);
-  const days =
-    sessDays && sessDays > 0
-      ? sessDays
-      : toNum(session.formation_duration_days);
+  // 3) Derive R7 (INTER per_learner / INTRA forfait) — repli si ni billing
+  //    ni devis. Nb de jours = planning réel sinon durée nominale formation.
+  const days = effectiveDays(session);
   if (session.pricing_mode && days && days > 0) {
     if (session.pricing_mode === "per_learner") {
       const perDay = toNum(session.price_per_day_ht);
@@ -132,29 +167,8 @@ export function computeInscriptionDisplayAmount(
         };
       }
     } else if (session.pricing_mode === "forfait") {
-      const nbApprenants = session.nb_billable_inscriptions ?? 0;
-      if (nbApprenants > 0) {
-        const breakdown = computeSessionPrice(
-          {
-            mode: "forfait",
-            pricePerDayHt: null,
-            priceForfaitHt: toNum(session.price_forfait_ht),
-            priceExtraPerDayHt: toNum(session.price_extra_per_day_ht),
-            threshold: toNum(session.pricing_threshold) ?? 4,
-          },
-          nbApprenants,
-          days,
-        );
-        if (breakdown.totalHt > 0) {
-          const amt = round2(breakdown.totalHt / nbApprenants);
-          return {
-            amount: amt,
-            source: "derived_forfait",
-            explain: `Forfait INTRA partage : ${breakdown.totalHt.toFixed(2)} € ÷ ${nbApprenants} apprenant(s) = ${amt.toFixed(2)} €`,
-            isEstimated: true,
-          };
-        }
-      }
+      const live = deriveForfaitPerLearner(session);
+      if (live) return live;
     }
   }
 

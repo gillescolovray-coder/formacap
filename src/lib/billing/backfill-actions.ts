@@ -1,11 +1,118 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   loadAndComputeBillingForInscription,
   persistComputedBilling,
 } from "./compute-billing";
+
+/**
+ * Recalcule la facturation de TOUTES les inscriptions d'UNE session (cœur,
+ * sans contrôle d'accès — pour usage interne via le client admin). Gilles
+ * 2026-06-25 : c'est LA correction « tarif fiable une fois pour toutes ». Le
+ * forfait étant un total de groupe, le montant par apprenant (= total ÷ nb)
+ * doit être rafraîchi dès que le nombre d'apprenants change.
+ *
+ * GARDE-FOU : une session CLÔTURÉE (admin_closed_at) n'est JAMAIS recalculée
+ * (montants gelés). Respecte aussi les overrides manuels (sauf force).
+ */
+async function recomputeSessionBillingCore(
+  admin: SupabaseClient,
+  sessionId: string,
+  opts?: { force?: boolean },
+): Promise<{ computed: number; skipped: number; closed: boolean }> {
+  const { data: sess } = await admin
+    .from("sessions")
+    .select("admin_closed_at")
+    .eq("id", sessionId)
+    .maybeSingle<{ admin_closed_at: string | null }>();
+  // Session clôturée -> montants gelés, on ne touche à rien.
+  if (sess?.admin_closed_at) return { computed: 0, skipped: 0, closed: true };
+
+  const { data: rows } = await admin
+    .from("inscription_requests")
+    .select("id, billing_manually_overridden")
+    .eq("target_session_id", sessionId);
+
+  let computed = 0;
+  let skipped = 0;
+  for (const ir of (rows ?? []) as Array<{
+    id: string;
+    billing_manually_overridden: boolean | null;
+  }>) {
+    if (ir.billing_manually_overridden && !opts?.force) {
+      skipped += 1;
+      continue;
+    }
+    try {
+      const result = await loadAndComputeBillingForInscription(admin, ir.id);
+      await persistComputedBilling(admin, ir.id, result, {
+        force: !!opts?.force,
+      });
+      computed += 1;
+    } catch {
+      /* best-effort : une inscription en erreur ne bloque pas les autres */
+    }
+  }
+  return { computed, skipped, closed: false };
+}
+
+/**
+ * Déclenchement AUTOMATIQUE (best-effort, sans bloquer l'appelant) après un
+ * changement du nombre d'apprenants d'une session (inscription / annulation).
+ * À appeler depuis les server actions d'inscription/émargement.
+ */
+export async function recomputeSessionBillingAuto(
+  sessionId: string | null | undefined,
+): Promise<void> {
+  if (!sessionId) return;
+  try {
+    const admin = createAdminClient();
+    await recomputeSessionBillingCore(admin, sessionId);
+    revalidatePath(`/sessions/${sessionId}`);
+    revalidatePath("/inscriptions");
+  } catch {
+    /* best-effort */
+  }
+}
+
+/**
+ * Recalcul MANUEL de la facturation d'une session (bouton sur la fiche).
+ * Contrôle d'accès gestionnaire. Répare immédiatement une session existante.
+ */
+export async function recomputeSessionBilling(
+  sessionId: string,
+): Promise<{
+  ok: boolean;
+  error?: string;
+  computed?: number;
+  skipped?: number;
+  closed?: boolean;
+}> {
+  const userSupabase = await createClient();
+  const {
+    data: { user },
+  } = await userSupabase.auth.getUser();
+  if (!user) return { ok: false, error: "Non authentifié." };
+  const { data: member } = await userSupabase
+    .from("organization_members")
+    .select("role")
+    .eq("profile_id", user.id)
+    .eq("is_active", true)
+    .limit(1)
+    .maybeSingle<{ role: string }>();
+  if (!member || !["admin", "manager", "pedagogy_lead"].includes(member.role)) {
+    return { ok: false, error: "Accès réservé aux gestionnaires." };
+  }
+  const admin = createAdminClient();
+  const res = await recomputeSessionBillingCore(admin, sessionId);
+  revalidatePath(`/sessions/${sessionId}`);
+  revalidatePath("/inscriptions");
+  return { ok: true, ...res };
+}
 
 /**
  * Backfill billing pour toutes les inscriptions OU billing_total_ht

@@ -14,6 +14,7 @@ import {
 } from "@/lib/inscriptions/sync";
 import { cleanupUserEmptyDrafts } from "@/lib/inscriptions/cleanup";
 import { logInscriptionDeletion } from "@/lib/inscriptions/deletion-log";
+import { recomputeSessionBillingAuto } from "@/lib/billing/backfill-actions";
 import { assertSessionEditable } from "@/lib/sessions/lock";
 
 async function getOrgId() {
@@ -641,6 +642,10 @@ export async function createInscription(formData: FormData) {
   revalidatePath("/sessions");
   revalidatePath("/dashboard");
 
+  // Le nombre d'apprenants de la session a changé -> on réaligne la
+  // facturation de TOUTE la session (forfait = total ÷ nb). Gilles 2026-06-25.
+  await recomputeSessionBillingAuto(payload.target_session_id);
+
   // Contexte de retour : si l'utilisateur a démarré depuis l'onglet
   // Participants d'une session, on le ramène sur cet onglet plutôt que
   // sur la fiche d'inscription. Sinon redirection sur la fiche.
@@ -1050,6 +1055,10 @@ export async function updateInscription(id: string, formData: FormData) {
     },
   );
 
+  // Réaligne la facturation de toute la session (forfait = total ÷ nb,
+  // tarifs sous-traitance/prescripteur via le moteur). Gilles 2026-06-25.
+  await recomputeSessionBillingAuto(payload.target_session_id);
+
   revalidatePath("/inscriptions");
   revalidatePath(`/inscriptions/${id}`);
   revalidatePath("/apprenants");
@@ -1390,6 +1399,9 @@ export async function convertToEnrollment(id: string) {
     session_id: req.target_session_id,
   });
 
+  // Un apprenant confirmé de plus -> recalcul facturation de la session.
+  await recomputeSessionBillingAuto(req.target_session_id);
+
   revalidatePath("/inscriptions");
   revalidatePath(`/inscriptions/${id}`);
   revalidatePath("/sessions");
@@ -1472,6 +1484,8 @@ export async function attachInscriptionToCompany(
       .update({ company_id: companyId })
       .eq("id", req.learner_id);
   }
+  // Le changement d'entreprise peut changer le scénario de facturation.
+  await recomputeSessionBillingAuto(req.target_session_id);
   revalidatePath(`/inscriptions/${inscriptionId}`);
   revalidatePath("/inscriptions");
   if (req.target_session_id)

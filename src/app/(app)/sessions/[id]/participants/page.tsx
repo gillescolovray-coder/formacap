@@ -5,6 +5,7 @@ import { BackButton } from "@/components/back-button";
 import { SessionTabs } from "../_session-tabs";
 import { SessionHeaderMeta } from "../_session-header-meta";
 import { ParticipantsInscriptionsBlock } from "../_participants-inscriptions-block";
+import { RecomputeBillingButton } from "../_recompute-billing-button";
 import { PortalLinksBlock } from "../_portal-links-block";
 import { ExpressSignupBlock } from "@/components/express-signup-block";
 import {
@@ -548,6 +549,10 @@ export default async function ParticipantsPage({
             </div>
           </details>
         )}
+
+        <div className="flex justify-end">
+          <RecomputeBillingButton sessionId={id} />
+        </div>
 
         <ParticipantsInscriptionsBlock
           session={session}
