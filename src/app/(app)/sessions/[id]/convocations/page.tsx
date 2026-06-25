@@ -192,30 +192,32 @@ export default async function ConvocationsPage({
     }
   }
 
-  // Référents pédagogiques par société pour cette session (Gilles 2026-05-22).
-  // On lit inscription_referent_contacts directement (dédoublonnage cote
-  // BDD via une contrainte d'unicite session × societe × contact).
-  const learnerCompanyIds = Array.from(
+  // Référents pédagogiques par INSCRIPTION (Gilles 2026-06-25 — FIX).
+  // Source canonique = inscription_referent_contacts (clé : inscription_id,
+  // contact_id). L'ancienne requête filtrait sur session_id / company_id qui
+  // N'EXISTENT PAS sur cette table -> elle ne renvoyait jamais rien (référent
+  // visible sur la convention mais absent de la convocation). On mappe donc
+  // par inscription_id, comme le module convention.
+  const inscriptionIds = Array.from(
     new Set(
       rawRows
-        .map((r) => r.learner?.company_id as string | null)
+        .map((r) => r.inscription_request_id as string | null)
         .filter((x): x is string => Boolean(x)),
     ),
   );
-  const referentsByCompany = new Map<
+  const referentsByInscription = new Map<
     string,
     Array<{ name: string; email: string | null }>
   >();
-  if (learnerCompanyIds.length > 0) {
+  if (inscriptionIds.length > 0) {
     const { data: refRows } = await supabase
       .from("inscription_referent_contacts")
       .select(
-        "company_id, contact:company_contacts(first_name, last_name, email)",
+        "inscription_id, contact:company_contacts(first_name, last_name, email)",
       )
-      .eq("session_id", id)
-      .in("company_id", learnerCompanyIds);
+      .in("inscription_id", inscriptionIds);
     for (const row of (refRows ?? []) as Array<{
-      company_id: string;
+      inscription_id: string;
       contact:
         | { first_name: string | null; last_name: string | null; email: string | null }
         | Array<{ first_name: string | null; last_name: string | null; email: string | null }>
@@ -225,9 +227,9 @@ export default async function ConvocationsPage({
       if (!c) continue;
       const name =
         [c.first_name, c.last_name].filter(Boolean).join(" ") || "Référent";
-      const list = referentsByCompany.get(row.company_id) ?? [];
+      const list = referentsByInscription.get(row.inscription_id) ?? [];
       list.push({ name, email: c.email });
-      referentsByCompany.set(row.company_id, list);
+      referentsByInscription.set(row.inscription_id, list);
     }
   }
 
@@ -246,8 +248,8 @@ export default async function ConvocationsPage({
       ? (partnerConfirmationSentByRequestId.get(r.inscription_request_id) ??
         null)
       : null,
-    referents: r.learner?.company_id
-      ? (referentsByCompany.get(r.learner.company_id) ?? [])
+    referents: r.inscription_request_id
+      ? (referentsByInscription.get(r.inscription_request_id) ?? [])
       : [],
   }));
   const sentCount = rows.filter((r) => r.convocation_sent_at).length;
