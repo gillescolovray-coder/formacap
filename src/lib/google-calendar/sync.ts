@@ -772,26 +772,27 @@ export async function syncSessionsNeedingUpdate(opts?: {
   const limit = opts?.limit ?? 500;
   const admin = createAdminClient();
 
-  // Rafraîchissement complet à froid : si rien n'est en attente, on « salit »
-  // toutes les sessions non archivées (synced_at = null) pour re-pousser le
-  // nouveau format de titre. Si un drain est déjà en cours (des sessions en
-  // attente), on ne re-marque pas -> les reclics terminent sans boucler.
+  // Rafraîchissement des RDV À VENIR (Gilles 2026-06-25). On ne regarde QUE les
+  // sessions en cours / à venir (end_date >= il y a 7 jours) : ce sont elles qui
+  // comptent dans l'agenda. Si AUCUNE n'est en attente, on les « salit » toutes
+  // (synced_at = null) pour re-pousser le format de titre courant (acronyme
+  // formateur, source…) — même aux RDV déjà créés. Important : on se base sur
+  // les sessions à VENIR uniquement, pour qu'une vieille session passée restée
+  // en erreur ne bloque pas ce rafraîchissement en permanence. Si un drain des
+  // sessions à venir est déjà en cours, on ne re-marque pas -> pas de boucle.
   if (opts?.forceAllIfIdle) {
-    const { count: pending } = await admin
+    const cutoff = new Date(Date.now() - 7 * 86_400_000)
+      .toISOString()
+      .slice(0, 10);
+    const { count: futurePending } = await admin
       .from("sessions")
       .select("id", { count: "exact", head: true })
       .neq("status", "archived")
+      .gte("end_date", cutoff)
       .or(
         "google_calendar_event_id.is.null,calendar_synced_at.is.null,calendar_sync_error.not.is.null",
       );
-    if ((pending ?? 0) === 0) {
-      // On NE rafraîchit QUE les sessions en cours / à venir (end_date >= il y
-      // a 7 jours) : ce sont elles qui comptent dans l'agenda. Sinon, re-pousser
-      // les ~100 sessions passées dépasse le délai serverless (Google limite le
-      // débit -> les tentatives s'empilent -> fonction coupée -> aucun retour).
-      const cutoff = new Date(Date.now() - 7 * 86_400_000)
-        .toISOString()
-        .slice(0, 10);
+    if ((futurePending ?? 0) === 0) {
       await admin
         .from("sessions")
         .update({ calendar_synced_at: null })
