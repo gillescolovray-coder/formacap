@@ -227,9 +227,13 @@ function buildDayEvent(
   // tout en identifiant qui anime. Règle : 1re lettre du prénom + 1re et
   // dernière lettre du nom, en MAJUSCULES (ex. David MARRET -> DMT). Le nom
   // complet reste dans le détail de l'événement.
+  // La jointure `trainer` peut être renvoyée par Supabase comme OBJET ou comme
+  // TABLEAU selon l'inférence de relation (Gilles 2026-06-25 : c'est ce qui
+  // faisait échouer l'acronyme alors que le formateur existait). On normalise.
+  const trainerObj = (Array.isArray(s.trainer) ? s.trainer[0] : s.trainer) ?? null;
   const trainerAcronym = buildTrainerAcronym(
-    s.trainer?.first_name ?? null,
-    s.trainer?.last_name ?? null,
+    trainerObj?.first_name ?? null,
+    trainerObj?.last_name ?? null,
     s.trainer_name ?? null,
   );
   const whoPrefix = trainerAcronym ? `${trainerAcronym} · ` : "";
@@ -265,13 +269,13 @@ function buildDayEvent(
       : [`  • ${frDate(s.start_date)} → ${frDate(s.end_date)}`];
 
   const trainerName =
-    [s.trainer?.first_name, s.trainer?.last_name]
+    [trainerObj?.first_name, trainerObj?.last_name]
       .filter(Boolean)
       .join(" ")
       .trim() ||
     s.trainer_name?.trim() ||
     "À affecter";
-  const trainerPhone = (s.trainer?.mobile || s.trainer?.phone || "").trim();
+  const trainerPhone = (trainerObj?.mobile || trainerObj?.phone || "").trim();
 
   const locationStr = buildLocationString(s);
 
