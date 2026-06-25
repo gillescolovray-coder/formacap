@@ -798,19 +798,31 @@ export async function syncSessionsNeedingUpdate(opts?: {
 
   const { data: rows, error } = await admin
     .from("sessions")
-    .select("id")
+    .select("id, start_date")
     .neq("status", "archived")
     .or(
       "google_calendar_event_id.is.null,calendar_synced_at.is.null,calendar_sync_error.not.is.null",
     )
-    // Plus récentes / à venir d'abord (Gilles 2026-06-25) : ce sont celles que
-    // l'utilisateur voit dans l'agenda ; elles affichent l'acronyme dès le 1er
-    // clic, les sessions passées se rattrapant ensuite (clics suivants / cron).
-    .order("start_date", { ascending: false })
     .limit(limit);
   if (error) return { ok: false, synced: 0, failed: 0, remaining: 0, error: error.message };
 
-  const ids = ((rows ?? []) as Array<{ id: string }>).map((r) => r.id);
+  // PRIORITÉ AUX SESSIONS LES PLUS PROCHES D'AUJOURD'HUI (Gilles 2026-06-25,
+  // après disparition du RDV du 26/06 suite à une réinitialisation). Ordre :
+  // 1) à venir, la plus proche d'abord (aujourd'hui, demain…), 2) passées, la
+  // plus récente d'abord. Ainsi, même si le budget de temps coupe la reprise,
+  // les RDV que l'utilisateur regarde (proche futur) sont reconstruits EN
+  // PREMIER -> ils ne disparaissent jamais après un « Synchroniser ».
+  const todayMs = new Date(new Date().toISOString().slice(0, 10)).getTime();
+  const sorted = ((rows ?? []) as Array<{ id: string; start_date: string | null }>)
+    .map((r) => {
+      const t = r.start_date ? new Date(r.start_date).getTime() : todayMs;
+      const upcoming = t >= todayMs;
+      // Clé de tri : à venir (proche d'abord) avant passées (récentes d'abord).
+      const key = upcoming ? t - todayMs : todayMs - t + 1e15;
+      return { id: r.id, key };
+    })
+    .sort((a, b) => a.key - b.key);
+  const ids = sorted.map((r) => r.id);
   const total = ids.length;
   const start = Date.now();
   let synced = 0;
