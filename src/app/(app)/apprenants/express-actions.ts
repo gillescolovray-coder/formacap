@@ -187,6 +187,27 @@ export async function createCompanyFromSireneAndAttach(
   return { ...res, companyId };
 }
 
+/**
+ * Valide des apprenants Express DÉJÀ rattachés à une entreprise : retire le
+ * statut « Express — à compléter » (is_temporary = false) sans toucher au
+ * company_id existant.
+ */
+export async function markExpressValidated(
+  learnerIds: string[],
+): Promise<{ ok: boolean; error?: string; count: number }> {
+  const ids = (learnerIds ?? []).filter(Boolean);
+  if (ids.length === 0) return { ok: false, error: "Aucun apprenant", count: 0 };
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("learners")
+    .update({ is_temporary: false, company_name_temp: null, company_siret_temp: null })
+    .in("id", ids);
+  if (error) return { ok: false, error: error.message, count: 0 };
+  revalidatePath("/apprenants");
+  revalidatePath("/apprenants/express");
+  return { ok: true, count: ids.length };
+}
+
 /** Rattache PLUSIEURS apprenants (même société) à une entreprise existante. */
 export async function attachManyLearnersToCompany(
   learnerIds: string[],

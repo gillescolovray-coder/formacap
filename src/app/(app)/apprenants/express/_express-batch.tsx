@@ -15,6 +15,7 @@ import {
   attachManyLearnersToCompany,
   autoAttachExactExpressMatches,
   createCompanyFromSireneAndAttachMany,
+  markExpressValidated,
   type CompanySuggestion,
 } from "../express-actions";
 
@@ -22,6 +23,9 @@ export type ExpressGroup = {
   key: string;
   displayName: string;
   hasName: boolean;
+  /** true si les apprenants ont déjà une entreprise (il reste à « valider »). */
+  alreadyAttached: boolean;
+  companyId: string | null;
   siretTemp: string | null;
   learners: { id: string; name: string }[];
   matches: CompanySuggestion[];
@@ -54,6 +58,21 @@ export function ExpressBatch({
         router.refresh();
       } else {
         setMsg({ ok: false, text: res.error ?? "Échec." });
+      }
+    });
+  }
+
+  function validateGroup(g: ExpressGroup) {
+    setMsg(null);
+    setBusyKey(g.key);
+    startTransition(async () => {
+      const res = await markExpressValidated(g.learners.map((l) => l.id));
+      setBusyKey(null);
+      if (res.ok) {
+        setMsg({ ok: true, text: `${res.count} apprenant(s) validé(s).` });
+        router.refresh();
+      } else {
+        setMsg({ ok: false, text: res.error ?? "Échec de la validation." });
       }
     });
   }
@@ -152,7 +171,27 @@ export function ExpressBatch({
               {g.learners.map((l) => l.name).join(", ")}
             </div>
 
-            {!g.hasName ? (
+            {g.alreadyAttached ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-emerald-700">
+                  Déjà rattaché à <strong>{g.displayName}</strong> — il reste à
+                  valider (retirer le badge Express).
+                </span>
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() => validateGroup(g)}
+                  className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60 min-h-[36px] whitespace-nowrap"
+                >
+                  {isBusy ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Check className="h-3.5 w-3.5" />
+                  )}
+                  Valider les {g.learners.length}
+                </button>
+              </div>
+            ) : !g.hasName ? (
               <p className="text-xs text-amber-700">
                 Nom d&apos;entreprise non renseigné — à compléter
                 individuellement sur chaque fiche apprenant.

@@ -34,11 +34,10 @@ export default async function ExpressBatchPage() {
     supabase
       .from("learners")
       .select(
-        "id, first_name, last_name, company_name_temp, company_siret_temp",
+        "id, first_name, last_name, company_id, company_name_temp, company_siret_temp, company:companies(id, name)",
       )
       .eq("organization_id", organizationId)
       .eq("is_temporary", true)
-      .is("company_id", null)
       .order("company_name_temp", { ascending: true }),
     supabase
       .from("companies")
@@ -50,8 +49,10 @@ export default async function ExpressBatchPage() {
     id: string;
     first_name: string | null;
     last_name: string | null;
+    company_id: string | null;
     company_name_temp: string | null;
     company_siret_temp: string | null;
+    company: { id: string; name: string } | { id: string; name: string }[] | null;
   }>;
   const companies = (companiesData ?? []) as Array<{
     id: string;
@@ -61,19 +62,47 @@ export default async function ExpressBatchPage() {
     city: string | null;
   }>;
 
-  // Regroupement par nom d'entreprise normalisé.
+  // Regroupement : si l'apprenant a DÉJÀ une entreprise -> groupe par cette
+  // entreprise (action « Valider ») ; sinon par nom saisi en texte libre
+  // (action « Rattacher »). Ainsi on montre TOUS les Express (= compteur).
   const groupsMap = new Map<string, ExpressGroup>();
   for (const l of learners) {
-    const key = normalizeCompanyName(l.company_name_temp);
-    const groupKey = key || "__none__";
+    const linked = Array.isArray(l.company) ? l.company[0] : l.company;
     const fullName =
       [l.first_name, l.last_name].filter(Boolean).join(" ").trim() || "Apprenant";
+
+    if (l.company_id && linked) {
+      // Déjà rattaché à une fiche entreprise -> il reste juste à « valider ».
+      const groupKey = `cid:${l.company_id}`;
+      let g = groupsMap.get(groupKey);
+      if (!g) {
+        g = {
+          key: groupKey,
+          displayName: linked.name,
+          hasName: true,
+          alreadyAttached: true,
+          companyId: l.company_id,
+          siretTemp: null,
+          learners: [],
+          matches: [],
+        };
+        groupsMap.set(groupKey, g);
+      }
+      g.learners.push({ id: l.id, name: fullName });
+      continue;
+    }
+
+    const key = normalizeCompanyName(l.company_name_temp);
+    const groupKey = key ? `name:${key}` : "__none__";
     let g = groupsMap.get(groupKey);
     if (!g) {
       g = {
         key: groupKey,
-        displayName: (l.company_name_temp ?? "").trim() || "(entreprise non renseignée)",
+        displayName:
+          (l.company_name_temp ?? "").trim() || "(entreprise non renseignée)",
         hasName: Boolean(key),
+        alreadyAttached: false,
+        companyId: null,
         siretTemp: l.company_siret_temp,
         learners: [],
         matches: key
@@ -96,17 +125,23 @@ export default async function ExpressBatchPage() {
     g.learners.push({ id: l.id, name: fullName });
   }
 
-  // Tri : d'abord les groupes avec correspondance exacte, puis proches, puis sans.
+  // Tri : à rattacher d'abord (corresp. exacte > proche > aucune), déjà
+  // rattachés (à valider) en dernier.
+  function rank(g: ExpressGroup): number {
+    if (g.alreadyAttached) return -1;
+    if (g.matches[0]?.exact) return 3;
+    if (g.matches.length > 0) return 2;
+    return 1;
+  }
   const groups = [...groupsMap.values()].sort((a, b) => {
-    const sa = a.matches[0]?.exact ? 2 : a.matches.length > 0 ? 1 : 0;
-    const sb = b.matches[0]?.exact ? 2 : b.matches.length > 0 ? 1 : 0;
-    if (sa !== sb) return sb - sa;
+    const d = rank(b) - rank(a);
+    if (d !== 0) return d;
     return a.displayName.localeCompare(b.displayName, "fr");
   });
 
   const totalLearners = learners.length;
   const exactCount = groups
-    .filter((g) => g.matches[0]?.exact)
+    .filter((g) => !g.alreadyAttached && g.matches[0]?.exact)
     .reduce((n, g) => n + g.learners.length, 0);
 
   return (
