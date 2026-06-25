@@ -49,6 +49,7 @@
  * = true), le helper ne touche plus, on lit juste ce qui est stocke.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { computeSessionPrice } from "@/lib/pricing/compute";
 
 export type BillingPricingMode =
   | "per_day_per_learner"
@@ -92,6 +93,20 @@ export type ComputeBillingInput = {
   } | null;
   /** Override eventuel partner_pricing (par formation × company). */
   partnerPriceOverrideHt: number | null;
+  /**
+   * Tarification R7 de la SESSION (« la fiche fait foi » — Gilles 2026-06-25).
+   * En CAS DIRECT, on facture au tarif de la fiche session (per_learner ou
+   * forfait) PLUTÔT qu'au catalogue formation. null = pas de R7 -> catalogue.
+   */
+  sessionPricing?: {
+    mode: "per_learner" | "forfait" | null;
+    pricePerDayHt: number | null;
+    priceForfaitHt: number | null;
+    priceExtraPerDayHt: number | null;
+    threshold: number | null;
+  } | null;
+  /** Nb d'apprenants facturables de la session (pour répartir un forfait INTRA). */
+  sessionBillableLearners?: number | null;
 };
 
 export type ComputeBillingResult = {
@@ -318,12 +333,59 @@ export function computeBillingForInscription(
 
   // ============================================================
   // CAS 1 — DIRECT CAP (pas de referrer, pas de sous-traitance)
-  // Tarif catalogue de la formation.
+  // « La fiche fait foi » (Gilles 2026-06-25) : on facture au tarif R7 de la
+  // SESSION (per_learner ou forfait) si configuré ; catalogue en repli.
   // ============================================================
   const target = input.learnerCompany ?? null;
   if (!target) {
     warnings.push("Inscription sans entreprise apprenant (particulier ?).");
   }
+
+  const sp = input.sessionPricing;
+  const effDays = input.formationDurationDays; // = jours effectifs (planning sinon formation)
+  if (sp?.mode && effDays && effDays > 0) {
+    if (sp.mode === "per_learner" && sp.pricePerDayHt && sp.pricePerDayHt > 0) {
+      const amt = round2(sp.pricePerDayHt * effDays);
+      return {
+        scenario: "direct",
+        targetCompanyId: target?.id ?? null,
+        targetCompanyName: target?.name ?? null,
+        mode: "per_day_per_learner",
+        unitPriceHt: sp.pricePerDayHt,
+        totalHt: amt,
+        explain: `Facture directe : ${sp.pricePerDayHt.toFixed(2)} EUR/j × ${effDays} j = ${amt.toFixed(2)} EUR`,
+        warnings,
+      };
+    }
+    if (sp.mode === "forfait" && sp.priceForfaitHt && sp.priceForfaitHt > 0) {
+      const nb = Math.max(input.sessionBillableLearners ?? 1, 1);
+      const breakdown = computeSessionPrice(
+        {
+          mode: "forfait",
+          pricePerDayHt: null,
+          priceForfaitHt: sp.priceForfaitHt,
+          priceExtraPerDayHt: sp.priceExtraPerDayHt,
+          threshold: sp.threshold ?? 4,
+        },
+        nb,
+        effDays,
+      );
+      if (breakdown.totalHt > 0) {
+        const perHead = round2(breakdown.totalHt / nb);
+        return {
+          scenario: "direct",
+          targetCompanyId: target?.id ?? null,
+          targetCompanyName: target?.name ?? null,
+          mode: "flat",
+          unitPriceHt: perHead,
+          totalHt: perHead,
+          explain: `Facture directe (forfait INTRA) : ${breakdown.totalHt.toFixed(2)} EUR ÷ ${nb} = ${perHead.toFixed(2)} EUR`,
+          warnings,
+        };
+      }
+    }
+  }
+
   if (input.formationPublicPriceHt != null) {
     return {
       scenario: "direct",
@@ -438,7 +500,7 @@ export async function loadAndComputeBillingForInscription(
       ? supabase
           .from("sessions")
           .select(
-            "id, modality, subcontracting_company_id, formation_id",
+            "id, modality, subcontracting_company_id, formation_id, pricing_mode, price_per_day_ht, price_forfait_ht, price_extra_per_day_ht, pricing_threshold",
           )
           .eq("id", insc.target_session_id)
           .maybeSingle()
@@ -484,6 +546,11 @@ export async function loadAndComputeBillingForInscription(
     modality: ComputeBillingInput["sessionModality"];
     subcontracting_company_id: string | null;
     formation_id: string | null;
+    pricing_mode: "per_learner" | "forfait" | null;
+    price_per_day_ht: number | string | null;
+    price_forfait_ht: number | string | null;
+    price_extra_per_day_ht: number | string | null;
+    pricing_threshold: number | string | null;
   } | null;
   if (sessRow?.subcontracting_company_id) {
     const { data: subData } = await supabase
@@ -546,10 +613,40 @@ export async function loadAndComputeBillingForInscription(
     partner_quiz_unit_price_ht: number | string | null;
   } | null;
 
+  // Jours effectifs = planning (session_days) si saisi, sinon durée nominale
+  // de la formation (« planning sinon durée formation » — Gilles 2026-06-25).
+  let effectiveDays = toNum(formationRow?.duration_days);
+  let sessionBillableLearners: number | null = null;
+  if (insc.target_session_id) {
+    const [{ count: daysCount }, { count: learnersCount }] = await Promise.all([
+      supabase
+        .from("session_days")
+        .select("id", { count: "exact", head: true })
+        .eq("session_id", insc.target_session_id),
+      supabase
+        .from("session_enrollments")
+        .select("id", { count: "exact", head: true })
+        .eq("session_id", insc.target_session_id)
+        .neq("status", "cancelled"),
+    ]);
+    if (daysCount && daysCount > 0) effectiveDays = daysCount;
+    sessionBillableLearners = learnersCount ?? null;
+  }
+
   return computeBillingForInscription({
     sessionModality: sessRow?.modality ?? null,
-    formationDurationDays: toNum(formationRow?.duration_days),
+    formationDurationDays: effectiveDays,
     formationPublicPriceHt: toNum(formationRow?.public_price_excl_tax),
+    sessionPricing: sessRow?.pricing_mode
+      ? {
+          mode: sessRow.pricing_mode,
+          pricePerDayHt: toNum(sessRow.price_per_day_ht),
+          priceForfaitHt: toNum(sessRow.price_forfait_ht),
+          priceExtraPerDayHt: toNum(sessRow.price_extra_per_day_ht),
+          threshold: toNum(sessRow.pricing_threshold),
+        }
+      : null,
+    sessionBillableLearners,
     subcontractingCompany,
     learnerCompany: learnerRow
       ? { id: learnerRow.id, name: learnerRow.name }

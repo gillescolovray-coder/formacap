@@ -9,6 +9,7 @@ import { redirect } from "next/navigation";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { findEligibleItems, sendForItems } from "@/lib/google-review/send";
+import { recomputeConventionAmount } from "./[id]/conventions/actions";
 import type { FormationModality } from "@/lib/formations/types";
 import type { SessionActionType, SessionStatus } from "@/lib/sessions/types";
 import {
@@ -510,6 +511,28 @@ export async function updateSession(id: string, formData: FormData) {
   } catch (e) {
     console.warn(
       "[updateSession] recalcul facturation session échoué",
+      (e as Error).message,
+    );
+  }
+
+  // Recalcul AUTO des conventions de la session (« la fiche fait foi » —
+  // Gilles 2026-06-25) : après recalcul des inscriptions, on réaligne les
+  // montants des conventions existantes. Best-effort.
+  try {
+    const { data: convs } = await supabase
+      .from("session_conventions")
+      .select("id")
+      .eq("session_id", id);
+    for (const c of (convs ?? []) as Array<{ id: string }>) {
+      try {
+        await recomputeConventionAmount(id, c.id);
+      } catch {
+        /* best-effort */
+      }
+    }
+  } catch (e) {
+    console.warn(
+      "[updateSession] recalcul conventions échoué",
       (e as Error).message,
     );
   }
