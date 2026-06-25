@@ -568,10 +568,14 @@ export default async function LearnerSessionDetailPage({
           </ul>
         )}
             {sharedDocsWithUrls.length > 0 && (
-              <p className="px-4 py-2 text-[11px] text-zinc-400 border-t border-zinc-100">
-                Les liens de téléchargement sont valables 1 heure. Rafraîchissez
-                la page si un lien ne fonctionne plus.
-              </p>
+              <div className="mx-4 my-3 rounded-lg bg-amber-50 border border-amber-300 px-3 py-2.5 flex items-start gap-2">
+                <span className="text-base leading-none">⏱️</span>
+                <p className="text-xs sm:text-sm font-semibold text-amber-800">
+                  Les liens de téléchargement sont valables 1 heure. Si un
+                  téléchargement ne fonctionne plus, <strong>rafraîchissez la
+                  page</strong> (ou rouvrez le lien) pour en générer un nouveau.
+                </p>
+              </div>
             )}
           </>
         )}

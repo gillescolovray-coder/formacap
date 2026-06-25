@@ -10,6 +10,8 @@ import {
 } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveLearnerContext } from "../_resolve";
+import { QuizAttemptDetailView } from "@/components/quiz-attempt-detail-view";
+import type { QuizQuestion, QuizAttempt } from "@/lib/quiz/types";
 
 type Params = { token: string };
 
@@ -37,7 +39,7 @@ export default async function LearnerQuizPage({
   const { data: enrollments } = await supabase
     .from("session_enrollments")
     .select(
-      "id, status, session:sessions(id, start_date, end_date, formation:formations(id, title))",
+      "id, status, session:sessions(id, start_date, end_date, quiz_template_id, formation:formations(id, title, quiz_template_id))",
     )
     .eq("learner_id", ctx.learner.id)
     .neq("status", "cancelled");
@@ -49,7 +51,11 @@ export default async function LearnerQuizPage({
       id: string;
       start_date: string | null;
       end_date: string | null;
-      formation: { id: string; title: string } | Array<{ id: string; title: string }> | null;
+      quiz_template_id: string | null;
+      formation:
+        | { id: string; title: string; quiz_template_id: string | null }
+        | Array<{ id: string; title: string; quiz_template_id: string | null }>
+        | null;
     } | null;
   };
 
@@ -66,6 +72,8 @@ export default async function LearnerQuizPage({
         startDate: session.start_date,
         endDate: session.end_date,
         title: formation?.title ?? "(formation supprimée)",
+        quizTemplateId:
+          session.quiz_template_id ?? formation?.quiz_template_id ?? null,
       };
     })
     .filter((r): r is NonNullable<typeof r> => r !== null)
@@ -82,7 +90,7 @@ export default async function LearnerQuizPage({
       ? await supabase
           .from("quiz_attempts")
           .select(
-            "id, enrollment_id, phase, score, max_score, completed_at, started_at",
+            "id, enrollment_id, quiz_template_id, phase, score, max_score, completed_at, started_at, data",
           )
           .in("enrollment_id", enrollmentIds)
       : { data: [] };
@@ -90,11 +98,13 @@ export default async function LearnerQuizPage({
   type Attempt = {
     id: string;
     enrollment_id: string;
+    quiz_template_id: string;
     phase: "pre" | "post";
     score: number | null;
     max_score: number | null;
     completed_at: string | null;
     started_at: string | null;
+    data: QuizAttempt["data"];
   };
   const attemptsByEnrollment = new Map<
     string,
@@ -117,6 +127,31 @@ export default async function LearnerQuizPage({
     const a = attemptsByEnrollment.get(i.enrollmentId);
     return a && (a.pre || a.post);
   });
+
+  // Questions des quiz concernés (pour le détail question par question —
+  // Gilles 2026-06-25 : l'apprenant peut voir le corrigé de ses réponses).
+  const quizTemplateIds = Array.from(
+    new Set(
+      itemsWithQuiz
+        .map((i) => i.quizTemplateId)
+        .filter((x): x is string => Boolean(x)),
+    ),
+  );
+  const questionsByTemplate = new Map<string, QuizQuestion[]>();
+  if (quizTemplateIds.length > 0) {
+    const { data: qs } = await supabase
+      .from("quiz_questions")
+      .select(
+        "id, quiz_template_id, position, type, text, options, correct_answer, points, explanation",
+      )
+      .in("quiz_template_id", quizTemplateIds)
+      .order("position", { ascending: true });
+    for (const q of (qs ?? []) as QuizQuestion[]) {
+      const arr = questionsByTemplate.get(q.quiz_template_id) ?? [];
+      arr.push(q);
+      questionsByTemplate.set(q.quiz_template_id, arr);
+    }
+  }
 
   function pct(score: number | null, max: number | null): number | null {
     if (score === null || max === null || max === 0) return null;
@@ -231,6 +266,30 @@ export default async function LearnerQuizPage({
                     </span>
                   </div>
                 )}
+
+                {/* Détail question par question (corrigé) — Gilles 2026-06-25 */}
+                {item.quizTemplateId &&
+                  (questionsByTemplate.get(item.quizTemplateId)?.length ?? 0) >
+                    0 && (
+                    <details className="rounded-lg border border-zinc-200 overflow-hidden">
+                      <summary className="cursor-pointer select-none px-3 py-2 text-sm font-semibold text-violet-700 hover:bg-violet-50">
+                        Voir le détail de mes réponses
+                      </summary>
+                      <div className="p-3 border-t border-zinc-200">
+                        <QuizAttemptDetailView
+                          questions={
+                            questionsByTemplate.get(item.quizTemplateId) ?? []
+                          }
+                          preAttempt={
+                            (att?.pre as unknown as QuizAttempt) ?? null
+                          }
+                          postAttempt={
+                            (att?.post as unknown as QuizAttempt) ?? null
+                          }
+                        />
+                      </div>
+                    </details>
+                  )}
               </article>
             );
           })}

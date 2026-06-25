@@ -122,6 +122,17 @@ export default async function LearnerLayout({
           ) : (
             "—"
           )}
+          {ctx.organization.phone && (
+            <>
+              {" · "}
+              <a
+                href={`tel:${ctx.organization.phone.replace(/\s/g, "")}`}
+                className="font-bold text-cyan-700 hover:underline whitespace-nowrap"
+              >
+                {ctx.organization.phone}
+              </a>
+            </>
+          )}
         </p>
       </footer>
     </div>

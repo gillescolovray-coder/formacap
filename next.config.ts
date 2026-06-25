@@ -18,6 +18,11 @@ const nextConfig: NextConfig = {
   // comme dependance statique (chargement dynamique via executablePath()).
   outputFileTracingIncludes: {
     "/api/**": ["./node_modules/@sparticuz/chromium/bin/**"],
+    // Les conventions / attestations / convocations génèrent aussi un PDF
+    // via une SERVER ACTION (route /sessions/**), pas seulement via /api.
+    // Sans ça : « input directory .../@sparticuz/chromium/bin does not exist »
+    // (Gilles 2026-06-25). Le binaire doit être tracé pour ces routes.
+    "/sessions/**": ["./node_modules/@sparticuz/chromium/bin/**"],
   },
 };
 
