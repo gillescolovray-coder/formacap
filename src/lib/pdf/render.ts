@@ -41,6 +41,31 @@ export type PdfRenderOptions = {
  * Lance / ferme Puppeteer à chaque appel — c'est volontaire pour rester
  * stateless sur le serverless. Pour des volumes élevés, on pourrait pooler.
  */
+/**
+ * Lance Puppeteer avec retry sur « spawn ETXTBSY » (Gilles 2026-06-25).
+ * En serverless, le binaire Chromium (@sparticuz) est décompressé dans /tmp ;
+ * si deux PDF se lancent coup sur coup (ex. « Créer & envoyer » puis
+ * « Aperçu »), le binaire peut être encore en cours d'écriture au moment du
+ * spawn -> ETXTBSY. On réessaie quelques fois, le temps que l'écriture finisse.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function launchWithRetry(launchFn: () => Promise<any>): Promise<any> {
+  const delays = [250, 600, 1200];
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= delays.length; attempt++) {
+    try {
+      return await launchFn();
+    } catch (e) {
+      lastErr = e;
+      const msg = String((e as Error)?.message ?? e);
+      const retryable = /ETXTBSY|Text file busy|spawn|EAGAIN|EBUSY/i.test(msg);
+      if (!retryable || attempt === delays.length) throw e;
+      await new Promise((r) => setTimeout(r, delays[attempt]));
+    }
+  }
+  throw lastErr;
+}
+
 export async function renderPdf(opts: PdfRenderOptions): Promise<Buffer> {
   const isProduction = process.env.NODE_ENV === "production";
 
@@ -50,12 +75,14 @@ export async function renderPdf(opts: PdfRenderOptions): Promise<Buffer> {
   if (isProduction) {
     const chromium = (await import("@sparticuz/chromium")).default;
     const puppeteer = await import("puppeteer-core");
-    browser = await puppeteer.launch({
-      args: chromium.args,
-      defaultViewport: chromium.defaultViewport,
-      executablePath: await chromium.executablePath(),
-      headless: true,
-    });
+    browser = await launchWithRetry(async () =>
+      puppeteer.launch({
+        args: chromium.args,
+        defaultViewport: chromium.defaultViewport,
+        executablePath: await chromium.executablePath(),
+        headless: true,
+      }),
+    );
   } else {
     const puppeteer = await import("puppeteer-core");
     const executablePath =
