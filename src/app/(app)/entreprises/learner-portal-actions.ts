@@ -8,6 +8,8 @@
  * l email HTML et envoie le tout via Resend.
  */
 import QRCode from "qrcode";
+import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isResendConfigured, sendEmail } from "@/lib/email/resend";
@@ -245,8 +247,60 @@ ${orgName}`;
     );
   }
 
+  // Trace d'envoi (date/heure + compteur) sur l'apprenant — best-effort
+  // (Gilles 2026-06-25). Si la migration 0136 n'est pas encore appliquée,
+  // l'échec est silencieux et n'empêche pas l'envoi.
+  if (result.ok) {
+    try {
+      const { data: cur } = await admin
+        .from("learners")
+        .select("portal_link_sent_count")
+        .eq("id", learnerId)
+        .maybeSingle<{ portal_link_sent_count: number | null }>();
+      await admin
+        .from("learners")
+        .update({
+          portal_link_sent_at: new Date().toISOString(),
+          portal_link_sent_count: (cur?.portal_link_sent_count ?? 0) + 1,
+        })
+        .eq("id", learnerId);
+    } catch {
+      /* colonnes absentes (migration non appliquée) -> on ignore */
+    }
+  }
+
   if (!result.ok) {
     return { ok: false, error: result.error };
   }
   return { ok: true, recipient: learner.email };
+}
+
+/**
+ * Envoi GROUPÉ du lien portail à plusieurs apprenants (Gilles 2026-06-25).
+ * Reçoit un FormData (sessionId + learnerId[]). Boucle sur l'envoi unitaire
+ * (qui gère auth, email, QR, trace). Redirige vers la page Participants.
+ */
+export async function sendLearnerPortalLinkBulk(formData: FormData) {
+  const sessionId = String(formData.get("sessionId") ?? "");
+  const ids = formData
+    .getAll("learnerId")
+    .map((v) => String(v))
+    .filter((v) => UUID_REGEX.test(v));
+  const base = sessionId ? `/sessions/${sessionId}/participants` : "/sessions";
+  if (ids.length === 0) {
+    redirect(`${base}?portalSent=0`);
+  }
+  let sent = 0;
+  let failed = 0;
+  for (const id of ids) {
+    try {
+      const r = await sendLearnerPortalLink(id);
+      if (r.ok) sent += 1;
+      else failed += 1;
+    } catch {
+      failed += 1;
+    }
+  }
+  revalidatePath(base);
+  redirect(`${base}?portalSent=${sent}&portalFailed=${failed}`);
 }

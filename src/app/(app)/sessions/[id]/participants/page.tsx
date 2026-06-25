@@ -5,6 +5,7 @@ import { BackButton } from "@/components/back-button";
 import { SessionTabs } from "../_session-tabs";
 import { SessionHeaderMeta } from "../_session-header-meta";
 import { ParticipantsInscriptionsBlock } from "../_participants-inscriptions-block";
+import { PortalLinksBlock } from "../_portal-links-block";
 import { ExpressSignupBlock } from "@/components/express-signup-block";
 import {
   createExpressLearnerAdmin,
@@ -344,20 +345,64 @@ export default async function ParticipantsPage({
   // 1 visite enregistrée par (apprenant, inscription) toutes les 30 min.
   const { data: sessionEnrollments } = await supabase
     .from("session_enrollments")
-    .select("id, learner:learners(first_name, last_name)")
+    .select("id, learner:learners(id, first_name, last_name, email)")
     .eq("session_id", id);
   const enrollmentName = new Map<string, string>();
+  // Apprenants distincts (pour l'envoi groupé des liens portail).
+  const learnerInfo = new Map<
+    string,
+    { id: string; name: string; email: string | null }
+  >();
   for (const e of (sessionEnrollments ?? []) as Array<{
     id: string;
-    learner: { first_name: string | null; last_name: string | null } | { first_name: string | null; last_name: string | null }[] | null;
+    learner:
+      | { id: string; first_name: string | null; last_name: string | null; email: string | null }
+      | { id: string; first_name: string | null; last_name: string | null; email: string | null }[]
+      | null;
   }>) {
     const l = Array.isArray(e.learner) ? e.learner[0] : e.learner;
-    enrollmentName.set(
-      e.id,
-      [l?.first_name, l?.last_name].filter(Boolean).join(" ") || "Apprenant",
-    );
+    const name =
+      [l?.first_name, l?.last_name].filter(Boolean).join(" ") || "Apprenant";
+    enrollmentName.set(e.id, name);
+    if (l?.id && !learnerInfo.has(l.id)) {
+      learnerInfo.set(l.id, { id: l.id, name, email: l.email ?? null });
+    }
   }
   const sessEnrIds = Array.from(enrollmentName.keys());
+
+  // Trace d'envoi des liens portail (best-effort : colonnes migration 0136).
+  const portalSentByLearner = new Map<
+    string,
+    { sentAt: string | null; sentCount: number }
+  >();
+  const learnerIdsForPortal = Array.from(learnerInfo.keys());
+  if (learnerIdsForPortal.length > 0) {
+    try {
+      const { data: ls } = await supabase
+        .from("learners")
+        .select("id, portal_link_sent_at, portal_link_sent_count")
+        .in("id", learnerIdsForPortal);
+      for (const r of (ls ?? []) as Array<{
+        id: string;
+        portal_link_sent_at: string | null;
+        portal_link_sent_count: number | null;
+      }>) {
+        portalSentByLearner.set(r.id, {
+          sentAt: r.portal_link_sent_at,
+          sentCount: r.portal_link_sent_count ?? 0,
+        });
+      }
+    } catch {
+      /* colonnes absentes -> bloc affichera « jamais envoyé » */
+    }
+  }
+  const portalLinkLearners = Array.from(learnerInfo.values())
+    .map((l) => ({
+      ...l,
+      sentAt: portalSentByLearner.get(l.id)?.sentAt ?? null,
+      sentCount: portalSentByLearner.get(l.id)?.sentCount ?? 0,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
   const portalVisitByEnrollment = new Map<
     string,
     { last: string; count: number }
@@ -434,6 +479,17 @@ export default async function ParticipantsPage({
             ci-dessous en mode « temporaire ».
           </div>
         )}
+        {query.portalSent !== undefined && (
+          <div className="rounded-xl bg-cyan-50 dark:bg-cyan-950 border border-cyan-200 dark:border-cyan-900 p-4 text-sm text-cyan-800 dark:text-cyan-300">
+            📧 {query.portalSent} lien(s) portail envoyé(s).
+            {query.portalFailed && Number(query.portalFailed) > 0
+              ? ` ${query.portalFailed} échec(s) (apprenant sans email ?).`
+              : ""}
+          </div>
+        )}
+
+        {/* Envoi groupé des liens portail apprenant (Gilles 2026-06-25) */}
+        <PortalLinksBlock sessionId={id} learners={portalLinkLearners} />
 
         {session.is_subcontracted && (
           <ExpressSignupBlock
