@@ -4,6 +4,7 @@ import {
   CircleSlash,
   Mail,
   Phone,
+  GitMerge,
   Plus,
   QrCode,
   Smartphone,
@@ -225,6 +226,15 @@ export default async function LearnersListPage({
         ]}
         actions={
           <>
+            <Button
+              variant="outline"
+              nativeButton={false}
+              render={<Link href="/apprenants/doublons" />}
+              title="Détecter et fusionner les fiches en doublon"
+            >
+              <GitMerge className="h-4 w-4" />
+              Doublons
+            </Button>
             {(expressCount ?? 0) > 0 && (
               <Button
                 variant="outline"
