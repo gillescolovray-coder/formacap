@@ -7,7 +7,10 @@
  * (session confirmée alors que Google était momentanément indisponible, etc.).
  *
  * Coût : l'API Google Calendar est gratuite (quota largement suffisant).
- * Schedule dans vercel.json. Sécurité : Bearer CRON_SECRET.
+ * Schedule dans vercel.json : UNE FOIS PAR JOUR (plan Vercel Hobby = crons
+ * limités à une exécution quotidienne ; un cron horaire faisait ÉCHOUER tout
+ * le déploiement, Gilles 2026-06-25). La synchro temps réel reste assurée par
+ * les hooks par session + le bouton « Synchroniser l'agenda ». Bearer CRON_SECRET.
  */
 import { NextResponse, type NextRequest } from "next/server";
 import { syncSessionsNeedingUpdate } from "@/lib/google-calendar/sync";
