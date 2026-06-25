@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { rankCompanyMatches } from "@/lib/companies/match";
+import { normalizeCompanyName } from "@/lib/companies/dedup";
 
 async function getOrg() {
   const supabase = await createClient();
@@ -184,4 +185,122 @@ export async function createCompanyFromSireneAndAttach(
 
   const res = await attachLearnerToCompany(learnerId, companyId);
   return { ...res, companyId };
+}
+
+/** Rattache PLUSIEURS apprenants (même société) à une entreprise existante. */
+export async function attachManyLearnersToCompany(
+  learnerIds: string[],
+  companyId: string,
+): Promise<{ ok: boolean; error?: string; count: number }> {
+  const ids = (learnerIds ?? []).filter(Boolean);
+  if (!companyId || ids.length === 0)
+    return { ok: false, error: "Données manquantes", count: 0 };
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("learners")
+    .update({
+      company_id: companyId,
+      is_temporary: false,
+      company_name_temp: null,
+      company_siret_temp: null,
+    })
+    .in("id", ids);
+  if (error) return { ok: false, error: error.message, count: 0 };
+  revalidatePath("/apprenants");
+  revalidatePath("/apprenants/express");
+  revalidatePath("/entreprises");
+  return { ok: true, count: ids.length };
+}
+
+/** Crée (ou réutilise) une entreprise SIRENE puis rattache PLUSIEURS apprenants. */
+export async function createCompanyFromSireneAndAttachMany(
+  learnerIds: string[],
+  input: SireneAttachInput,
+): Promise<{ ok: boolean; error?: string; count: number }> {
+  const ids = (learnerIds ?? []).filter(Boolean);
+  if (ids.length === 0) return { ok: false, error: "Aucun apprenant", count: 0 };
+  // On crée/rattache via le 1er apprenant pour obtenir l'ID entreprise…
+  const first = await createCompanyFromSireneAndAttach(ids[0]!, input);
+  if (!first.ok || !first.companyId)
+    return { ok: false, error: first.error, count: 0 };
+  // …puis on rattache les autres à la même entreprise.
+  if (ids.length > 1) {
+    const rest = await attachManyLearnersToCompany(ids.slice(1), first.companyId);
+    if (!rest.ok) return { ok: false, error: rest.error, count: 1 };
+  }
+  return { ok: true, count: ids.length };
+}
+
+/**
+ * Automatisme : rattache d'un coup tous les apprenants Express dont le nom
+ * d'entreprise correspond EXACTEMENT (après normalisation) à une fiche
+ * existante. Les cas sans correspondance exacte restent à traiter à la main.
+ */
+export async function autoAttachExactExpressMatches(): Promise<{
+  ok: boolean;
+  attached: number;
+  remaining: number;
+  error?: string;
+}> {
+  const { organizationId } = await getOrg();
+  const supabase = await createClient();
+  const [{ data: learnersData }, { data: companiesData }] = await Promise.all([
+    supabase
+      .from("learners")
+      .select("id, company_name_temp")
+      .eq("organization_id", organizationId)
+      .eq("is_temporary", true)
+      .is("company_id", null),
+    supabase
+      .from("companies")
+      .select("id, name")
+      .eq("organization_id", organizationId),
+  ]);
+  const learners = (learnersData ?? []) as Array<{
+    id: string;
+    company_name_temp: string | null;
+  }>;
+  const companies = (companiesData ?? []) as Array<{ id: string; name: string }>;
+
+  // Index entreprises par nom normalisé.
+  const byNorm = new Map<string, string>();
+  for (const c of companies) {
+    const key = normalizeCompanyName(c.name);
+    if (key && !byNorm.has(key)) byNorm.set(key, c.id);
+  }
+
+  // Regroupe les apprenants à rattacher par entreprise cible.
+  const toAttach = new Map<string, string[]>(); // companyId -> learnerIds
+  let remaining = 0;
+  for (const l of learners) {
+    const key = normalizeCompanyName(l.company_name_temp);
+    const companyId = key ? byNorm.get(key) : undefined;
+    if (companyId) {
+      const list = toAttach.get(companyId) ?? [];
+      list.push(l.id);
+      toAttach.set(companyId, list);
+    } else {
+      remaining += 1;
+    }
+  }
+
+  let attached = 0;
+  for (const [companyId, ids] of toAttach) {
+    const { error } = await supabase
+      .from("learners")
+      .update({
+        company_id: companyId,
+        is_temporary: false,
+        company_name_temp: null,
+        company_siret_temp: null,
+      })
+      .in("id", ids);
+    if (error) return { ok: false, attached, remaining, error: error.message };
+    attached += ids.length;
+  }
+
+  revalidatePath("/apprenants");
+  revalidatePath("/apprenants/express");
+  revalidatePath("/entreprises");
+  return { ok: true, attached, remaining };
 }

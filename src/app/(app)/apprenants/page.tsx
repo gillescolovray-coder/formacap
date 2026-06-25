@@ -7,6 +7,7 @@ import {
   Plus,
   QrCode,
   Smartphone,
+  Sparkles,
   UserCircle,
   Users,
 } from "lucide-react";
@@ -223,10 +224,23 @@ export default async function LearnersListPage({
           { label: "Apprenants" },
         ]}
         actions={
-          <Button nativeButton={false} render={<Link href="/apprenants/new" />}>
-            <Plus className="h-4 w-4" />
-            Nouvel apprenant
-          </Button>
+          <>
+            {(expressCount ?? 0) > 0 && (
+              <Button
+                variant="outline"
+                nativeButton={false}
+                render={<Link href="/apprenants/express" />}
+                title="Rattacher les apprenants Express à une entreprise (base + SIRENE)"
+              >
+                <Sparkles className="h-4 w-4" />
+                Rattacher les Express ({expressCount})
+              </Button>
+            )}
+            <Button nativeButton={false} render={<Link href="/apprenants/new" />}>
+              <Plus className="h-4 w-4" />
+              Nouvel apprenant
+            </Button>
+          </>
         }
       />
 
