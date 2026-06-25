@@ -488,9 +488,6 @@ export default async function ParticipantsPage({
           </div>
         )}
 
-        {/* Envoi groupé des liens portail apprenant (Gilles 2026-06-25) */}
-        <PortalLinksBlock sessionId={id} learners={portalLinkLearners} />
-
         {session.is_subcontracted && (
           <ExpressSignupBlock
             subcontractorName={session.subcontractor_name}
@@ -506,6 +503,10 @@ export default async function ParticipantsPage({
             }}
           />
         )}
+
+        {/* Envoi groupé des liens portail apprenant (Gilles 2026-06-25) —
+            placé entre Saisie express et Consultations (Gilles 2026-06-25) */}
+        <PortalLinksBlock sessionId={id} learners={portalLinkLearners} />
 
         {/* Consultations du portail apprenant (Gilles 2026-06-25) */}
         {visitRows.length > 0 && (
