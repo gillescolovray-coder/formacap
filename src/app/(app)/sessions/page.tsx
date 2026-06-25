@@ -200,6 +200,21 @@ export default async function SessionsListPage({
   const calendarLastSyncAt =
     (orgRows?.[0]?.calendar_last_sync_at as string | null) ?? null;
 
+  // Nb de sessions NON synchronisées (erreur agenda enregistrée) — pour
+  // alerter au lieu d'un échec silencieux. Best-effort (colonne migration
+  // 0137). Gilles 2026-06-25.
+  let calendarSyncErrorCount = 0;
+  try {
+    const { count } = await supabase
+      .from("sessions")
+      .select("id", { count: "exact", head: true })
+      .not("calendar_sync_error", "is", null)
+      .neq("status", "archived");
+    calendarSyncErrorCount = count ?? 0;
+  } catch {
+    /* colonne absente -> 0 */
+  }
+
   // Construction de la requête sessions avec les filtres avant de la
   // lancer en parallèle des autres requêtes indépendantes. Le tri
   // "upcoming_first" est fait en JS plus bas (pas de .order ici).
@@ -1318,6 +1333,16 @@ export default async function SessionsListPage({
         ]}
         actions={
           <div className="flex items-center gap-2 flex-wrap">
+            {calendarSyncErrorCount > 0 && (
+              <span
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-amber-50 border border-amber-300 text-amber-800 text-xs font-bold"
+                title="Ces sessions n'ont pas pu être synchronisées avec Google Agenda. Cliquez « Synchroniser l'agenda » pour réessayer."
+              >
+                ⚠️ {calendarSyncErrorCount} session
+                {calendarSyncErrorCount > 1 ? "s" : ""} non synchronisée
+                {calendarSyncErrorCount > 1 ? "s" : ""}
+              </span>
+            )}
             <SyncCalendarButton lastSyncAt={calendarLastSyncAt} />
             <Button nativeButton={false} render={<Link href="/sessions/new" />}>
               <Plus className="h-4 w-4" />

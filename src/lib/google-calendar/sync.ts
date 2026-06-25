@@ -380,16 +380,42 @@ function isRateLimitError(e: unknown): boolean {
   );
 }
 
-/** Exécute un appel Google avec réessais sur dépassement de cadence. */
+/**
+ * Erreur TRANSITOIRE (Gilles 2026-06-25) : rate-limit, 5xx Google, ou
+ * incident réseau (coupure, timeout, DNS). Ces cas valent un réessai —
+ * c'est ce qui causait des sessions « fantômes » non synchronisées.
+ */
+function isTransientError(e: unknown): boolean {
+  if (isRateLimitError(e)) return true;
+  const s = httpStatus(e);
+  if (s && s >= 500 && s <= 599) return true;
+  const code = String((e as { code?: unknown })?.code ?? "").toUpperCase();
+  if (
+    ["ECONNRESET", "ETIMEDOUT", "EAI_AGAIN", "ENOTFOUND", "EPIPE", "ECONNABORTED"].includes(
+      code,
+    )
+  )
+    return true;
+  const msg = String((e as Error)?.message ?? "").toLowerCase();
+  return (
+    msg.includes("socket hang up") ||
+    msg.includes("network") ||
+    msg.includes("timeout") ||
+    msg.includes("econnreset") ||
+    msg.includes("eai_again")
+  );
+}
+
+/** Exécute un appel Google avec réessais sur erreur transitoire (backoff). */
 async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
   let lastErr: unknown;
-  for (let attempt = 0; attempt < 4; attempt++) {
+  for (let attempt = 0; attempt < 5; attempt++) {
     try {
       return await fn();
     } catch (e) {
       lastErr = e;
-      if (isRateLimitError(e)) {
-        await sleep(700 * (attempt + 1)); // 0.7s, 1.4s, 2.1s…
+      if (isTransientError(e)) {
+        await sleep(600 * (attempt + 1)); // 0.6s, 1.2s, 1.8s, 2.4s
         continue;
       }
       throw e;
@@ -570,10 +596,35 @@ export async function syncSessionCalendar(
       .update({ google_calendar_event_id: JSON.stringify(resultIds) })
       .eq("id", sessionId);
 
+    // Trace de l'état de synchro (best-effort — Gilles 2026-06-25 : rend
+    // visibles les échecs au lieu d'un silence). Colonnes migration 0137.
+    try {
+      await admin
+        .from("sessions")
+        .update(
+          errored
+            ? { calendar_sync_error: errMsg ?? "Erreur de synchronisation" }
+            : { calendar_synced_at: new Date().toISOString(), calendar_sync_error: null },
+        )
+        .eq("id", sessionId);
+    } catch {
+      /* colonnes absentes (migration non appliquée) -> on ignore */
+    }
+
     return errored ? { ok: false, error: errMsg } : { ok: true };
   } catch (e) {
     const error = (e as Error).message;
     console.warn("[google-calendar] synchro échouée", { sessionId, error });
+    // Trace best-effort de l'échec (client admin frais : l'erreur a pu
+    // survenir avant l'init du client ci-dessus).
+    try {
+      await createAdminClient()
+        .from("sessions")
+        .update({ calendar_sync_error: error })
+        .eq("id", sessionId);
+    } catch {
+      /* ignore */
+    }
     return { ok: false, error };
   }
 }
