@@ -231,6 +231,39 @@ export default async function ConvocationsPage({
       list.push({ name, email: c.email });
       referentsByInscription.set(row.inscription_id, list);
     }
+
+    // Référent saisi DIRECTEMENT à l'inscription (migration 0093 — souvent
+    // la seule source de l'EMAIL quand le contact société n'en a pas).
+    // On complète : remplit l'email manquant d'un référent explicite, ou
+    // ajoute le référent inline s'il n'y en avait aucun. Gilles 2026-06-25.
+    const { data: inlineRows } = await supabase
+      .from("inscription_requests")
+      .select(
+        "id, contact_referent_first_name, contact_referent_last_name, contact_referent_email",
+      )
+      .in("id", inscriptionIds);
+    for (const ir of (inlineRows ?? []) as Array<{
+      id: string;
+      contact_referent_first_name: string | null;
+      contact_referent_last_name: string | null;
+      contact_referent_email: string | null;
+    }>) {
+      const email = ir.contact_referent_email?.trim();
+      if (!email) continue;
+      const inlineName =
+        [ir.contact_referent_first_name, ir.contact_referent_last_name]
+          .filter(Boolean)
+          .join(" ")
+          .trim() || "Référent";
+      const list = referentsByInscription.get(ir.id) ?? [];
+      const missingEmail = list.find((r) => !r.email);
+      if (missingEmail) {
+        missingEmail.email = email;
+      } else if (list.length === 0) {
+        list.push({ name: inlineName, email });
+        referentsByInscription.set(ir.id, list);
+      }
+    }
   }
 
   const rows: EnrollmentRow[] = rawRows.map((r) => ({
