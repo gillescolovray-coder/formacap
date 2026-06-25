@@ -106,8 +106,36 @@ export default async function ArchiveSessionDetailPage({
     ? sess.location_obj[0]
     : sess.location_obj;
 
-  // Support pédagogique : priorité au support spécifique de la session, sinon
-  // celui de la formation. Affiché en consultation seule (Gilles 2026-06-15).
+  // SUPPORTS REMIS (Gilles 2026-06-25, preuve Qualiopi) — PRIORITÉ aux
+  // documents PARTAGÉS de la session (session_documents « shared_with_learners »),
+  // puis repli sur le lien Drive (session/formation), sinon message « pas encore
+  // déposé ». Les fichiers du bucket privé sont servis via URL signée (1 h).
+  const { data: sharedDocsRaw } = await supabase
+    .from("session_documents")
+    .select("id, file_name, storage_path, uploaded_at")
+    .eq("session_id", sessionId)
+    .eq("visibility", "shared_with_learners")
+    .order("uploaded_at", { ascending: true });
+  const docRows = (sharedDocsRaw ?? []) as Array<{
+    id: string;
+    file_name: string;
+    storage_path: string;
+  }>;
+  const sharedDocs: Array<{ name: string; url: string }> = [];
+  if (docRows.length > 0) {
+    const { data: signed } = await supabase.storage
+      .from("session-documents")
+      .createSignedUrls(
+        docRows.map((d) => d.storage_path),
+        3600,
+      );
+    (signed ?? []).forEach((s, i) => {
+      if (s.signedUrl)
+        sharedDocs.push({ name: docRows[i]!.file_name, url: s.signedUrl });
+    });
+  }
+
+  // Repli : support pédagogique Drive (consultation seule).
   const supportPreviewUrl = toDrivePreviewUrl(
     sess.support_drive_url ?? formation?.support_drive_url ?? null,
   );
@@ -257,14 +285,20 @@ export default async function ArchiveSessionDetailPage({
 
   return (
     <div className="space-y-4">
-      {/* Retour */}
-      <Link
-        href={`/partenaire/${token}/archives`}
-        className="inline-flex items-center gap-1.5 text-xs text-cyan-700 hover:underline"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        Retour aux archives
-      </Link>
+      {/* Retour : vers les archives si session passée, sinon le catalogue. */}
+      {(() => {
+        const today = new Date().toISOString().slice(0, 10);
+        const isPast = sess.end_date ? sess.end_date < today : false;
+        return (
+          <Link
+            href={`/partenaire/${token}/${isPast ? "archives" : "catalogue"}`}
+            className="inline-flex items-center gap-1.5 text-xs text-cyan-700 hover:underline"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            {isPast ? "Retour aux archives" : "Retour au catalogue"}
+          </Link>
+        );
+      })()}
 
       {/* Header session */}
       <div className="rounded-lg border border-zinc-200 bg-white p-4 space-y-3">
@@ -313,15 +347,50 @@ export default async function ArchiveSessionDetailPage({
         </div>
       </div>
 
-      {/* Support de formation — consultation seule (Gilles 2026-06-15).
-          Visible dès qu'un support est rattaché (session ou formation),
-          indépendamment du nombre d'apprenants. */}
-      {supportPreviewUrl && (
+      {/* Supports remis (Gilles 2026-06-25) : documents partagés d'abord,
+          sinon lien Drive (consultation), sinon message. Visible en cours
+          ET en archive. */}
+      {sharedDocs.length > 0 ? (
+        <div className="rounded-lg border border-zinc-200 bg-white p-4 space-y-2">
+          <h2 className="text-sm font-bold text-zinc-900 inline-flex items-center gap-1.5">
+            <FileText className="h-4 w-4 text-cyan-600" />
+            Supports remis lors de la formation
+          </h2>
+          <ul className="divide-y divide-zinc-100">
+            {sharedDocs.map((d, i) => (
+              <li
+                key={i}
+                className="flex items-center justify-between gap-3 py-2"
+              >
+                <span className="text-sm text-zinc-700 truncate">
+                  {d.name}
+                </span>
+                <a
+                  href={d.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md border border-cyan-300 bg-white hover:bg-cyan-50 text-cyan-700 text-xs font-semibold whitespace-nowrap"
+                >
+                  <FileText className="h-3.5 w-3.5" />
+                  Consulter
+                </a>
+              </li>
+            ))}
+          </ul>
+          <p className="text-[11px] text-zinc-500">
+            Documents partagés par {ctx.organization.name} pour cette session.
+          </p>
+        </div>
+      ) : supportPreviewUrl ? (
         <div className="flex flex-wrap gap-2">
           <SupportViewerButton
             previewUrl={supportPreviewUrl}
             title={formation?.title ?? "Session"}
           />
+        </div>
+      ) : (
+        <div className="rounded-lg border border-dashed border-zinc-300 bg-zinc-50 p-3 text-xs text-zinc-500">
+          Aucun support n&apos;a encore été déposé pour cette session.
         </div>
       )}
 

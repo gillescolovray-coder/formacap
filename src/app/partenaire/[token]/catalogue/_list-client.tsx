@@ -727,6 +727,17 @@ export function CatalogueList({
                         Programme
                       </a>
                     )}
+                    {/* Accès aux supports / documents partagés de la session
+                        (Gilles 2026-06-25) : visible aussi pour les sessions
+                        EN COURS, plus seulement les archives. */}
+                    <Link
+                      href={`/partenaire/${token}/archives/${s.id}`}
+                      className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 sm:py-2 rounded-lg border border-zinc-300 bg-white text-zinc-700 text-sm font-medium hover:bg-zinc-50 hover:border-zinc-400"
+                      title="Voir les supports et documents partagés de cette session"
+                    >
+                      <FileText className="h-4 w-4" />
+                      Documents
+                    </Link>
                     {/* Dropdown statut « Statut » retiré du catalogue OF
                         (Gilles 2026-06-13) : il n'existe pas dans le portail
                         prescripteur -> les deux portails doivent avoir la même
