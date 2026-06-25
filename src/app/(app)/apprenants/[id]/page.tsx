@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { CollapsibleSection } from "@/components/collapsible-section";
 import { LearnerNotesPanel } from "./_notes-panel";
+import { ExpressCompanyAssistant } from "./_express-company-assistant";
 import type { NoteCardItem } from "@/components/notes/note-list-card";
 import type { Learner } from "@/lib/learners/types";
 import type { Company } from "@/lib/companies/types";
@@ -318,6 +319,17 @@ export default async function LearnerDetailPage({
             {query.error}
           </div>
         )}
+        {/* Assistant de rattachement entreprise pour les apprenants Express
+            (Gilles 2026-06-25) : seulement si fiche Express ET pas encore
+            d'entreprise rattachée. */}
+        {learner.is_temporary && !learner.company_id && (
+          <ExpressCompanyAssistant
+            learnerId={id}
+            companyNameTemp={learner.company_name_temp ?? null}
+            companySiretTemp={learner.company_siret_temp ?? null}
+          />
+        )}
+
         {/* Consultations du portail apprenant (Gilles 2026-06-25) */}
         {portalVisitHistory.length > 0 && (
           <details className="rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 overflow-hidden">
