@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Sparkles } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { submitQuickSignup } from "./actions";
+import { QuickSignupForm } from "./_quick-signup-form";
 
 export const dynamic = "force-dynamic";
 
@@ -123,123 +124,8 @@ export default async function QuickSignupPage({
           </div>
         )}
 
-        {/* Formulaire */}
-        <form
-          action={action}
-          className="rounded-xl bg-white border border-zinc-200 shadow-sm p-4 space-y-3"
-        >
-          <div className="grid grid-cols-1 gap-3">
-            <label className="space-y-1">
-              <span className="text-xs font-medium text-zinc-700">
-                Votre société / employeur <span className="text-red-500">*</span>
-              </span>
-              <input
-                name="company_name_temp"
-                type="text"
-                required
-                autoComplete="organization"
-                className="w-full h-11 rounded-md border border-zinc-300 px-3 text-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-200 outline-none"
-                placeholder="Ex. SARL Dupont"
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs font-medium text-zinc-700">
-                SIRET (optionnel — 14 chiffres)
-              </span>
-              <input
-                name="company_siret_temp"
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9 ]*"
-                maxLength={18}
-                className="w-full h-11 rounded-md border border-zinc-300 px-3 text-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-200 outline-none"
-              />
-            </label>
-
-            <div className="grid grid-cols-3 gap-2">
-              <label className="space-y-1 col-span-1">
-                <span className="text-xs font-medium text-zinc-700">
-                  Civilité
-                </span>
-                <select
-                  name="civility"
-                  className="w-full h-11 rounded-md border border-zinc-300 px-2 text-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-200 outline-none bg-white"
-                  defaultValue=""
-                >
-                  <option value="">—</option>
-                  <option value="Mme">Mme</option>
-                  <option value="M.">M.</option>
-                </select>
-              </label>
-              <label className="space-y-1 col-span-2">
-                <span className="text-xs font-medium text-zinc-700">
-                  Fonction
-                </span>
-                <input
-                  name="job_title"
-                  type="text"
-                  autoComplete="organization-title"
-                  className="w-full h-11 rounded-md border border-zinc-300 px-3 text-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-200 outline-none"
-                />
-              </label>
-            </div>
-
-            <label className="space-y-1">
-              <span className="text-xs font-medium text-zinc-700">
-                Prénom <span className="text-red-500">*</span>
-              </span>
-              <input
-                name="first_name"
-                type="text"
-                required
-                autoComplete="given-name"
-                className="w-full h-11 rounded-md border border-zinc-300 px-3 text-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-200 outline-none"
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs font-medium text-zinc-700">
-                Nom <span className="text-red-500">*</span>
-              </span>
-              <input
-                name="last_name"
-                type="text"
-                required
-                autoComplete="family-name"
-                className="w-full h-11 rounded-md border border-zinc-300 px-3 text-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-200 outline-none"
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs font-medium text-zinc-700">
-                Email
-              </span>
-              <input
-                name="email"
-                type="email"
-                autoComplete="email"
-                className="w-full h-11 rounded-md border border-zinc-300 px-3 text-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-200 outline-none"
-                placeholder="prenom.nom@example.com"
-              />
-              <span className="text-[11px] text-zinc-500">
-                Recommandé pour recevoir l&apos;attestation à la fin
-                de la formation.
-              </span>
-            </label>
-          </div>
-
-          <button
-            type="submit"
-            className="w-full h-12 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-sm transition"
-          >
-            Valider & commencer le questionnaire →
-          </button>
-
-          <p className="text-[10px] text-zinc-400 text-center">
-            Les champs marqués d&apos;un astérisque (*) sont obligatoires.
-            Vos données sont enregistrées par l&apos;organisme de formation
-            uniquement pour les besoins administratifs (feuille de
-            présence, attestation).
-          </p>
-        </form>
+        {/* Formulaire + anti-doublon (Gilles 2026-06-26) */}
+        <QuickSignupForm token={token} orgName={orgName} action={action} />
       </div>
     </div>
   );

@@ -268,6 +268,87 @@ export async function createExpressLearnerForSession(
 }
 
 /**
+ * Inscrit un apprenant DÉJÀ EXISTANT à la session (chemin « c'est moi » de
+ * l'anti-doublon à la saisie express, Gilles 2026-06-26). Réutilise l'apprenant
+ * (pas de nouvelle fiche) + crée l'enrollment + request miroir + token portail.
+ * Si déjà inscrit, renvoie le token existant.
+ */
+export async function enrollExistingLearnerForSession(
+  supabase: SupabaseClient,
+  params: {
+    sessionId: string;
+    organizationId: string;
+    learnerId: string;
+    createdBy: string | null;
+  },
+): Promise<ExpressLearnerResult> {
+  const { sessionId, organizationId, learnerId } = params;
+
+  const { data: learner } = await supabase
+    .from("learners")
+    .select("id, organization_id")
+    .eq("id", learnerId)
+    .maybeSingle<{ id: string; organization_id: string }>();
+  if (!learner || learner.organization_id !== organizationId) {
+    return { ok: false, error: "Apprenant introuvable." };
+  }
+
+  // Déjà inscrit (hors annulé) ? -> on réutilise.
+  const { data: existing } = await supabase
+    .from("session_enrollments")
+    .select("id")
+    .eq("session_id", sessionId)
+    .eq("learner_id", learnerId)
+    .neq("status", "cancelled")
+    .maybeSingle<{ id: string }>();
+
+  let enrollmentId = existing?.id ?? null;
+  if (!enrollmentId) {
+    const { data: newEnrollment, error: enrollErr } = await supabase
+      .from("session_enrollments")
+      .insert({
+        session_id: sessionId,
+        learner_id: learnerId,
+        status: "confirmed",
+        enrolled_at: new Date().toISOString(),
+      })
+      .select("id")
+      .maybeSingle<{ id: string }>();
+    if (enrollErr || !newEnrollment) {
+      return {
+        ok: false,
+        error: enrollErr?.message ?? "Inscription à la session impossible.",
+      };
+    }
+    enrollmentId = newEnrollment.id;
+    // Request miroir (best-effort) pour cohérence Inscriptions/Participants.
+    try {
+      const requestId = await createMirroredRequestForEnrollment(supabase, {
+        id: enrollmentId,
+        session_id: sessionId,
+        learner_id: learnerId,
+        status: "confirmed",
+        enrolled_at: new Date().toISOString(),
+      });
+      if (requestId) {
+        await supabase
+          .from("session_enrollments")
+          .update({ inscription_request_id: requestId })
+          .eq("id", enrollmentId);
+      }
+    } catch (e) {
+      console.warn(
+        "[enrollExistingLearnerForSession] mirror request failed",
+        (e as Error).message,
+      );
+    }
+  }
+
+  const portalToken = await ensureEnrollmentPortalToken(supabase, enrollmentId);
+  return { ok: true, learnerId, enrollmentId, portalToken };
+}
+
+/**
  * Récupère le token existant pour cet enrollment, sinon en crée un.
  */
 export async function ensureEnrollmentPortalToken(
