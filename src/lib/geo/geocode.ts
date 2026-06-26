@@ -37,6 +37,49 @@ export async function geocodeAddressFR(
   }
 }
 
+/**
+ * Distance ROUTIÈRE (itinéraire le plus rapide, profil voiture) en km entre
+ * deux points GPS, via OpenRouteService (gratuit, Gilles 2026-06-26).
+ * Nécessite la clé ORS_API_KEY (env). Renvoie null si non configuré, erreur
+ * réseau, ou aucun itinéraire -> l'appelant retombe alors sur le vol d'oiseau.
+ */
+export async function drivingDistanceKm(
+  a: LatLng,
+  b: LatLng,
+): Promise<number | null> {
+  const key = process.env.ORS_API_KEY;
+  if (!key) return null;
+  try {
+    const res = await fetch(
+      "https://api.openrouteservice.org/v2/directions/driving-car",
+      {
+        method: "POST",
+        headers: {
+          Authorization: key,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          coordinates: [
+            [a.lng, a.lat],
+            [b.lng, b.lat],
+          ],
+        }),
+        // Cache 24h : un itinéraire entre deux points fixes ne change pas.
+        next: { revalidate: 86400 },
+      },
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      routes?: Array<{ summary?: { distance?: number } }>;
+    };
+    const meters = data.routes?.[0]?.summary?.distance;
+    if (typeof meters !== "number" || meters <= 0) return null;
+    return meters / 1000;
+  } catch {
+    return null;
+  }
+}
+
 /** Distance à vol d'oiseau en kilomètres entre deux points GPS. */
 export function haversineKm(a: LatLng, b: LatLng): number {
   const R = 6371; // rayon terrestre (km)

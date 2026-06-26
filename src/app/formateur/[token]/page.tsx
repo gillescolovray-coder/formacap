@@ -1,7 +1,11 @@
 import type { Metadata } from "next";
 import { Calendar, Hourglass } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { geocodeAddressFR, haversineKm } from "@/lib/geo/geocode";
+import {
+  geocodeAddressFR,
+  haversineKm,
+  drivingDistanceKm,
+} from "@/lib/geo/geocode";
 import {
   SessionCard,
   type SessionRow,
@@ -195,43 +199,43 @@ export default async function FormateurAgendaPage({
   const past = pastAll.filter((s) => s.status === "confirmed");
   const pastHiddenCount = pastAll.length - past.length;
 
-  // Distance KM lieu <-> formateur sur les sessions présentielles à venir.
-  // TEST (Gilles 2026-06-05) : activé uniquement pour Gilles Colovray.
-  // Coordonnées du lieu = GPS stocké, sinon géocodage de secours (mis en
-  // cache 24h par l'API) dédupliqué par lieu.
+  // Distance lieu <-> formateur sur les sessions présentielles à venir
+  // (Gilles 2026-06-26) : ITINÉRAIRE ROUTIER le plus rapide (OpenRouteService),
+  // repli vol d'oiseau. Actif pour TOUS les formateurs. Dédup par lieu +
+  // cache 24h de l'API pour limiter les appels.
   const distanceBySession = new Map<string, number>();
-  const isGilles =
-    trainer.last_name.toLowerCase().includes("colovray") ||
-    (trainer.email ?? "").toLowerCase().includes("colovray");
-  if (isGilles) {
-    const gilles = await geocodeAddressFR(
+  {
+    const trainerCoords = await geocodeAddressFR(
       trainer.company_address,
       trainer.company_postal_code,
       trainer.company_city,
     );
-    if (gilles) {
-      const locCache = new Map<string, { lat: number; lng: number } | null>();
+    if (trainerCoords) {
+      const coordCache = new Map<string, { lat: number; lng: number } | null>();
+      const distByLoc = new Map<string, number>();
       for (const s of future) {
         const loc = s.location_ref;
         if (!loc || s.modality === "distanciel") continue;
+        const key = `${loc.name}|${loc.address ?? ""}|${loc.postal_code ?? ""}|${loc.city ?? ""}`;
+        // Distance déjà calculée pour ce lieu ? on réutilise.
+        if (distByLoc.has(key)) {
+          distanceBySession.set(s.id, distByLoc.get(key)!);
+          continue;
+        }
         let coords: { lat: number; lng: number } | null = null;
         if (loc.latitude != null && loc.longitude != null) {
           coords = { lat: loc.latitude, lng: loc.longitude };
+        } else if (coordCache.has(key)) {
+          coords = coordCache.get(key) ?? null;
         } else {
-          const key = `${loc.name}|${loc.address ?? ""}|${loc.postal_code ?? ""}|${loc.city ?? ""}`;
-          if (locCache.has(key)) {
-            coords = locCache.get(key) ?? null;
-          } else {
-            coords = await geocodeAddressFR(
-              loc.address,
-              loc.postal_code,
-              loc.city,
-            );
-            locCache.set(key, coords);
-          }
+          coords = await geocodeAddressFR(loc.address, loc.postal_code, loc.city);
+          coordCache.set(key, coords);
         }
         if (coords) {
-          distanceBySession.set(s.id, haversineKm(coords, gilles));
+          const road = await drivingDistanceKm(trainerCoords, coords);
+          const dist = road ?? haversineKm(coords, trainerCoords);
+          distByLoc.set(key, dist);
+          distanceBySession.set(s.id, dist);
         }
       }
     }

@@ -21,7 +21,11 @@ import {
   Video,
 } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { geocodeAddressFR, haversineKm } from "@/lib/geo/geocode";
+import {
+  geocodeAddressFR,
+  haversineKm,
+  drivingDistanceKm,
+} from "@/lib/geo/geocode";
 import { RefreshButton } from "./_refresh-button";
 import { AutoRefresh } from "./_auto-refresh";
 import { ViewConvocationButton } from "./_view-convocation-button";
@@ -693,10 +697,12 @@ export default async function FormateurSessionDetailPage({
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddress)}`
     : null;
 
-  // Distance KM entre le lieu de formation et l'adresse du formateur.
-  // TEST (Gilles 2026-06-05) : activé uniquement pour Gilles Colovray ;
-  // on étendra aux autres formateurs ensuite.
+  // Distance entre l'adresse du formateur et le lieu de formation
+  // (Gilles 2026-06-26) : ITINÉRAIRE ROUTIER le plus rapide via
+  // OpenRouteService ; repli sur le vol d'oiseau si le routing échoue
+  // (clé absente / réseau). Actif pour TOUS les formateurs.
   let distanceKm: number | null = null;
+  let distanceIsRoad = false;
   if (
     !isRemote &&
     session.location_ref?.latitude != null &&
@@ -705,34 +711,31 @@ export default async function FormateurSessionDetailPage({
   ) {
     const { data: tr } = await supabase
       .from("trainers")
-      .select(
-        "last_name, email, company_address, company_postal_code, company_city",
-      )
+      .select("company_address, company_postal_code, company_city")
       .eq("id", session.trainer_id)
       .maybeSingle<{
-        last_name: string | null;
-        email: string | null;
         company_address: string | null;
         company_postal_code: string | null;
         company_city: string | null;
       }>();
-    const isGilles =
-      (tr?.last_name ?? "").toLowerCase().includes("colovray") ||
-      (tr?.email ?? "").toLowerCase().includes("colovray");
-    if (tr && isGilles) {
+    if (tr) {
       const trainerCoords = await geocodeAddressFR(
         tr.company_address,
         tr.company_postal_code,
         tr.company_city,
       );
       if (trainerCoords) {
-        distanceKm = haversineKm(
-          {
-            lat: session.location_ref.latitude,
-            lng: session.location_ref.longitude,
-          },
-          trainerCoords,
-        );
+        const loc = {
+          lat: session.location_ref.latitude,
+          lng: session.location_ref.longitude,
+        };
+        const road = await drivingDistanceKm(trainerCoords, loc);
+        if (road != null) {
+          distanceKm = road;
+          distanceIsRoad = true;
+        } else {
+          distanceKm = haversineKm(loc, trainerCoords);
+        }
       }
     }
   }
@@ -934,7 +937,12 @@ export default async function FormateurSessionDetailPage({
                     )}
                     {distanceKm != null && (
                       <div className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-bold text-indigo-700">
-                        📍 ≈ {Math.round(distanceKm)} km de votre adresse
+                        📍 {distanceIsRoad ? "" : "≈ "}
+                        {Math.round(distanceKm)} km
+                        {distanceIsRoad
+                          ? " par la route"
+                          : " (à vol d'oiseau)"}{" "}
+                        depuis votre adresse
                       </div>
                     )}
                   </>
