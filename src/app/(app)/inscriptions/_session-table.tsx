@@ -625,6 +625,31 @@ export function SessionInscriptionsTable({
                         r,
                         sessionCtx,
                       );
+                      // Sous-traitance (Gilles 2026-06-26) : facturation au
+                      // FORFAIT JOUR de session, indépendante du nb d'apprenants
+                      // (billing_pricing_mode = "flat_per_day"). On affiche le
+                      // forfait TOTAL de la session sur chaque ligne, avec le
+                      // libellé « forfait session » (le total ne se multiplie
+                      // pas par le nb d'apprenants — il reste = ce forfait).
+                      if (
+                        r.billing_pricing_mode === "flat_per_day" &&
+                        totalSessionHt > 0
+                      ) {
+                        return (
+                          <div title="Forfait journalier de sous-traitance, identique quel que soit le nombre d'apprenants.">
+                            <span className="font-semibold text-emerald-700">
+                              {totalSessionHt.toLocaleString("fr-FR", {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}{" "}
+                              €
+                            </span>
+                            <span className="block text-[10px] text-slate-500">
+                              forfait session
+                            </span>
+                          </div>
+                        );
+                      }
                       if (res.amount === null) {
                         return <span className="text-slate-400">—</span>;
                       }
