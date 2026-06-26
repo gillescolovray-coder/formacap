@@ -183,6 +183,11 @@ export function PartnerPortalSection({
           </div>
         )}
 
+        {/* Logo du partenaire — affiché EN PREMIER (Gilles 2026-06-26) :
+            identifie le partenaire avant l'accès au portail. Apparaît aussi
+            en haut de la page publique de pré-inscription. */}
+        <LogoEditor companyId={companyId} logoUrl={logoUrl} firstInSection />
+
         {/* État du portail */}
         {!token ? (
           <div className="rounded-lg bg-zinc-50 dark:bg-zinc-900/30 border border-zinc-200 dark:border-zinc-800 p-4 flex items-center justify-between gap-3 flex-wrap">
@@ -330,11 +335,6 @@ export function PartnerPortalSection({
             showOwnIntra={showOwnIntra}
           />
         )}
-
-        {/* Logo du partenaire — affiché sur la page publique de
-            pré-inscription. URL libre, le partenaire colle un lien vers
-            son logo déjà hébergé (site, Drive public, etc.). */}
-        <LogoEditor companyId={companyId} logoUrl={logoUrl} />
 
         {/* Tarif general + tarifs negocies par formation : DEPLACES dans
             le nouveau bloc "Tarifs" (PricingSection — refonte 2026-05-31)
@@ -686,9 +686,12 @@ function VisibilityToggles({
 function LogoEditor({
   companyId,
   logoUrl,
+  firstInSection,
 }: {
   companyId: string;
   logoUrl: string | null;
+  /** Si rendu en tête de section : pas de trait de séparation au-dessus. */
+  firstInSection?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -733,8 +736,14 @@ function LogoEditor({
   }
 
   return (
-    <div className="space-y-3 pt-2 border-t border-zinc-200 dark:border-zinc-800">
-      <div className="pt-3">
+    <div
+      className={
+        firstInSection
+          ? "space-y-3"
+          : "space-y-3 pt-2 border-t border-zinc-200 dark:border-zinc-800"
+      }
+    >
+      <div className={firstInSection ? "" : "pt-3"}>
         <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 inline-flex items-center gap-2">
           <ImageIcon className="h-4 w-4 text-purple-600" />
           Logo affiché sur le formulaire public
