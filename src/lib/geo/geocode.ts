@@ -47,37 +47,54 @@ export async function drivingDistanceKm(
   a: LatLng,
   b: LatLng,
 ): Promise<number | null> {
+  // 1) OpenRouteService si une clé est configurée (le plus fiable / quota dédié).
   const key = process.env.ORS_API_KEY;
-  if (!key) return null;
-  try {
-    const res = await fetch(
-      "https://api.openrouteservice.org/v2/directions/driving-car",
-      {
-        method: "POST",
-        headers: {
-          Authorization: key,
-          "Content-Type": "application/json",
+  if (key) {
+    try {
+      const res = await fetch(
+        "https://api.openrouteservice.org/v2/directions/driving-car",
+        {
+          method: "POST",
+          headers: { Authorization: key, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            coordinates: [
+              [a.lng, a.lat],
+              [b.lng, b.lat],
+            ],
+          }),
+          // Cache 24h : un itinéraire entre deux points fixes ne change pas.
+          next: { revalidate: 86400 },
         },
-        body: JSON.stringify({
-          coordinates: [
-            [a.lng, a.lat],
-            [b.lng, b.lat],
-          ],
-        }),
-        // Cache 24h : un itinéraire entre deux points fixes ne change pas.
-        next: { revalidate: 86400 },
-      },
-    );
-    if (!res.ok) return null;
-    const data = (await res.json()) as {
-      routes?: Array<{ summary?: { distance?: number } }>;
-    };
-    const meters = data.routes?.[0]?.summary?.distance;
-    if (typeof meters !== "number" || meters <= 0) return null;
-    return meters / 1000;
-  } catch {
-    return null;
+      );
+      if (res.ok) {
+        const data = (await res.json()) as {
+          routes?: Array<{ summary?: { distance?: number } }>;
+        };
+        const meters = data.routes?.[0]?.summary?.distance;
+        if (typeof meters === "number" && meters > 0) return meters / 1000;
+      }
+    } catch {
+      /* on tente le repli OSRM ci-dessous */
+    }
   }
+
+  // 2) Repli SANS clé : serveur public OSRM (itinéraire le plus rapide par
+  //    défaut). Permet d'avoir la distance routière sans configuration.
+  try {
+    const url = `https://router.project-osrm.org/route/v1/driving/${a.lng},${a.lat};${b.lng},${b.lat}?overview=false`;
+    const res = await fetch(url, { next: { revalidate: 86400 } });
+    if (res.ok) {
+      const data = (await res.json()) as {
+        routes?: Array<{ distance?: number }>;
+      };
+      const meters = data.routes?.[0]?.distance;
+      if (typeof meters === "number" && meters > 0) return meters / 1000;
+    }
+  } catch {
+    /* dernier repli = vol d'oiseau côté appelant */
+  }
+
+  return null;
 }
 
 /** Distance à vol d'oiseau en kilomètres entre deux points GPS. */

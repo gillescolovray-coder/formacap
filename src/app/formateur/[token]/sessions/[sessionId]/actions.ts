@@ -1,5 +1,6 @@
 "use server";
 
+import QRCode from "qrcode";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
@@ -123,6 +124,170 @@ export async function revealSubcontractBlock(
   if (error) return { ok: false, error: error.message };
   revalidatePath(`/formateur/${token}/sessions/${sessionId}`);
   return { ok: true };
+}
+
+/**
+ * Envoi GROUPÉ du lien portail apprenant (/mon-parcours + QR code) depuis le
+ * portail formateur (Gilles 2026-06-26). Le formateur sélectionne un ou
+ * plusieurs apprenants ; chacun reçoit par email son lien d'accès personnel
+ * à la session (quiz, émargement, supports, certificat).
+ */
+export async function sendPortalLinkToLearners(
+  token: string,
+  sessionId: string,
+  enrollmentIds: string[],
+): Promise<{ ok: boolean; error?: string; sent: number; failed: number }> {
+  const supabase = createAdminClient();
+  const ctx = await validateTrainerAccess(supabase, token, sessionId);
+  if (!ctx) return { ok: false, error: "Accès refusé.", sent: 0, failed: 0 };
+  if (!isResendConfigured())
+    return { ok: false, error: "Envoi d'email non configuré.", sent: 0, failed: 0 };
+  const ids = (enrollmentIds ?? []).filter((id) => typeof id === "string" && id);
+  if (ids.length === 0)
+    return { ok: false, error: "Aucun apprenant sélectionné.", sent: 0, failed: 0 };
+
+  const { data: org } = await supabase
+    .from("organizations")
+    .select("name, email")
+    .eq("id", ctx.organizationId)
+    .maybeSingle<{ name: string; email: string | null }>();
+  const orgName = org?.name ?? "CAP NUMERIQUE";
+
+  const h = await headers();
+  const host = h.get("host") ?? "localhost:3000";
+  const proto = h.get("x-forwarded-proto") ?? "https";
+  const origin = `${proto}://${host}`;
+
+  let sent = 0;
+  let failed = 0;
+  for (const eid of ids) {
+    const { data: enr } = await supabase
+      .from("session_enrollments")
+      .select(
+        "id, learner:learners(id, civility, first_name, last_name, email)",
+      )
+      .eq("id", eid)
+      .eq("session_id", sessionId)
+      .maybeSingle<{
+        id: string;
+        learner:
+          | {
+              id: string;
+              civility: string | null;
+              first_name: string | null;
+              last_name: string | null;
+              email: string | null;
+            }
+          | Array<{
+              id: string;
+              civility: string | null;
+              first_name: string | null;
+              last_name: string | null;
+              email: string | null;
+            }>
+          | null;
+      }>();
+    const learner = Array.isArray(enr?.learner)
+      ? enr?.learner[0]
+      : enr?.learner;
+    if (!enr || !learner?.email) {
+      failed += 1;
+      continue;
+    }
+
+    const ptoken = await ensureEnrollmentPortalToken(supabase, eid);
+    const url = `${origin}/mon-parcours/${ptoken}`;
+    const fullName = [learner.first_name, learner.last_name]
+      .filter(Boolean)
+      .join(" ");
+    const civilFull = [learner.civility, fullName]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+
+    let qrBuffer: Buffer | null = null;
+    try {
+      qrBuffer = await QRCode.toBuffer(url, {
+        type: "png",
+        errorCorrectionLevel: "M",
+        width: 220,
+        margin: 1,
+        color: { dark: "#0e7490", light: "#ffffff" },
+      });
+    } catch {
+      qrBuffer = null;
+    }
+    const qrCid = "portal-access-qr";
+    const qrImg = qrBuffer
+      ? `<p style="text-align:center;margin:8px 0 18px 0;"><img src="cid:${qrCid}" alt="QR code accès" width="220" height="220" style="border:1px solid #e5e7eb;border-radius:8px;padding:8px;background:#fff;" /></p>`
+      : "";
+
+    const subject = `${orgName} : votre accès à la formation`;
+    const html = `
+      <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#1f2937;">
+        <p>Bonjour <strong>${civilFull || "—"}</strong>,</p>
+        <p>Voici votre accès personnel à votre espace de formation (quiz,
+        émargement, supports, certificat) :</p>
+        <p style="text-align:center;margin:24px 0;">
+          <a href="${url}" style="display:inline-block;background:#0e7490;color:white;text-decoration:none;padding:14px 28px;border-radius:8px;font-weight:bold;font-size:15px;">🎓 Accéder à mon espace</a>
+        </p>
+        ${qrImg ? `<p style="text-align:center;font-size:13px;color:#6b7280;margin:0 0 4px;">Ou flashez ce QR code :</p>${qrImg}` : ""}
+        <p style="font-size:12px;color:#6b7280;background:#f3f4f6;padding:10px 12px;border-radius:6px;">Lien direct :<br/><a href="${url}" style="color:#0e7490;word-break:break-all;">${url}</a></p>
+        <p style="font-size:12px;color:#dc2626;border-left:3px solid #dc2626;padding-left:10px;margin-top:18px;">⚠️ Ce lien est strictement personnel et confidentiel.</p>
+        <p style="margin-top:24px;">Bien cordialement,<br/><strong>${orgName}</strong></p>
+      </div>`;
+    const text = `Bonjour ${civilFull || "—"},
+
+Voici votre acces personnel a votre espace de formation :
+${url}
+
+Ce lien est strictement personnel et confidentiel.
+
+Cordialement,
+${orgName}`;
+
+    const res = await sendEmail({
+      to: learner.email,
+      toName: fullName,
+      subject,
+      html,
+      text,
+      replyTo: org?.email ?? undefined,
+      attachments: qrBuffer
+        ? [
+            {
+              filename: "qrcode-acces.png",
+              content: qrBuffer,
+              contentType: "image/png",
+            },
+          ]
+        : undefined,
+    });
+    if (res.ok) {
+      sent += 1;
+      try {
+        const { data: cur } = await supabase
+          .from("learners")
+          .select("portal_link_sent_count")
+          .eq("id", learner.id)
+          .maybeSingle<{ portal_link_sent_count: number | null }>();
+        await supabase
+          .from("learners")
+          .update({
+            portal_link_sent_at: new Date().toISOString(),
+            portal_link_sent_count: (cur?.portal_link_sent_count ?? 0) + 1,
+          })
+          .eq("id", learner.id);
+      } catch {
+        /* migration 0136 absente -> on ignore la trace */
+      }
+    } else {
+      failed += 1;
+    }
+  }
+
+  revalidatePath(`/formateur/${token}/sessions/${sessionId}`);
+  return { ok: true, sent, failed };
 }
 
 /**

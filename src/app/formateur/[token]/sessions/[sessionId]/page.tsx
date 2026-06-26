@@ -46,6 +46,7 @@ import { TrainerReportForm } from "./_trainer-report-form";
 import { TrainerQrEvaluationButton } from "./_trainer-qr-evaluation-button";
 import { BlankEvaluationButton } from "./_blank-evaluation-button";
 import { SubcontractGate } from "./_subcontract-gate";
+import { SendPortalLinksBlock } from "./_send-portal-links-block";
 import { TrainerQrQuizButton } from "./_trainer-qr-quiz-button";
 import {
   BlankQuizButton,
@@ -243,6 +244,38 @@ export default async function FormateurSessionDetailPage({
   }));
 
   const enrollmentIds = participants.map((p) => p.enrollmentId);
+
+  // Date du dernier envoi du lien portail par apprenant (trace, migration 0136).
+  const portalSentByLearner = new Map<string, string>();
+  {
+    const learnerIds = participants
+      .map((p) => p.learnerId)
+      .filter((id): id is string => !!id);
+    if (learnerIds.length > 0) {
+      const { data: sentRows } = await supabase
+        .from("learners")
+        .select("id, portal_link_sent_at")
+        .in("id", learnerIds);
+      for (const r of (sentRows ?? []) as Array<{
+        id: string;
+        portal_link_sent_at: string | null;
+      }>) {
+        if (r.portal_link_sent_at)
+          portalSentByLearner.set(r.id, r.portal_link_sent_at);
+      }
+    }
+  }
+  const portalLinkLearners = participants.map((p) => ({
+    enrollmentId: p.enrollmentId,
+    fullName:
+      [p.civility, p.fullName].filter(Boolean).join(" ").trim() ||
+      p.fullName ||
+      "Apprenant",
+    hasEmail: Boolean(p.email),
+    lastSentAt: p.learnerId
+      ? (portalSentByLearner.get(p.learnerId) ?? null)
+      : null,
+  }));
 
   // Rattachement quiz ROBUSTE par apprenant (Gilles 2026-06-08) : un quiz
   // joué en saisie express peut être lié à un AUTRE enrollment du même
@@ -1058,6 +1091,25 @@ export default async function FormateurSessionDetailPage({
               );
             }}
           />
+        )}
+
+        {/* Envoi groupé du lien d'accès apprenant (Gilles 2026-06-26) :
+            le formateur sélectionne des apprenants et leur envoie par email
+            leur lien personnel (/mon-parcours + QR). */}
+        {participants.length > 0 && (
+          <Module
+            icon={<Mail className="h-5 w-5" />}
+            color="cyan"
+            title="Envoyer le lien d'accès aux apprenants"
+            description="Lien personnel (quiz, émargement, supports) + QR code, par email."
+            collapsible
+          >
+            <SendPortalLinksBlock
+              token={token}
+              sessionId={sessionId}
+              learners={portalLinkLearners}
+            />
+          </Module>
         )}
 
         {/* Bloc 1 — Convocations envoyées (Gilles 2026-05-25 :
