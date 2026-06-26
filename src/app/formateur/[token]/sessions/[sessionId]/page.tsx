@@ -1093,25 +1093,6 @@ export default async function FormateurSessionDetailPage({
           />
         )}
 
-        {/* Envoi groupé du lien d'accès apprenant (Gilles 2026-06-26) :
-            le formateur sélectionne des apprenants et leur envoie par email
-            leur lien personnel (/mon-parcours + QR). */}
-        {participants.length > 0 && (
-          <Module
-            icon={<Mail className="h-5 w-5" />}
-            color="cyan"
-            title="Envoyer le lien d'accès aux apprenants"
-            description="Lien personnel (quiz, émargement, supports) + QR code, par email."
-            collapsible
-          >
-            <SendPortalLinksBlock
-              token={token}
-              sessionId={sessionId}
-              learners={portalLinkLearners}
-            />
-          </Module>
-        )}
-
         {/* Bloc 1 — Convocations envoyées (Gilles 2026-05-25 :
             place en 1er, replie par defaut, info secondaire mais
             verifiee en premier en debut de session). */}
@@ -1392,6 +1373,23 @@ export default async function FormateurSessionDetailPage({
           )}
         </Module>
 
+        {/* Envoi groupé du lien d'accès apprenant — APRÈS la liste des
+            participants (Gilles 2026-06-26). */}
+        {participants.length > 0 && (
+          <Module
+            icon={<Mail className="h-5 w-5" />}
+            color="cyan"
+            title="Envoyer le lien d'accès aux apprenants"
+            description="Lien personnel (quiz, émargement, supports) + QR code, par email."
+            collapsible
+          >
+            <SendPortalLinksBlock
+              token={token}
+              sessionId={sessionId}
+              learners={portalLinkLearners}
+            />
+          </Module>
+        )}
 
         {/* Module 2 — Test de positionnement (replié par défaut,
             Gilles 2026-05-25 : info secondaire pour le formateur en
