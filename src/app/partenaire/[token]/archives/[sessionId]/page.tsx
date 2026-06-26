@@ -305,6 +305,52 @@ export default async function ArchiveSessionDetailPage({
     .filter((id): id is string => !!id)
     .join(",");
 
+  // Bloc « Supports remis » : documents partagés d'abord, sinon lien Drive
+  // (consultation), sinon message. Affiché APRÈS le tableau quiz (Gilles
+  // 2026-06-26).
+  const supportsSection =
+    sharedDocs.length > 0 ? (
+      <div className="rounded-lg border border-zinc-200 bg-white p-4 space-y-2">
+        <h2 className="text-sm font-bold text-zinc-900 inline-flex items-center gap-1.5">
+          <FileText className="h-4 w-4 text-cyan-600" />
+          Supports remis lors de la formation
+        </h2>
+        <ul className="divide-y divide-zinc-100">
+          {sharedDocs.map((d, i) => (
+            <li
+              key={i}
+              className="flex items-center justify-between gap-3 py-2"
+            >
+              <span className="text-sm text-zinc-700 truncate">{d.name}</span>
+              <a
+                href={d.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md border border-cyan-300 bg-white hover:bg-cyan-50 text-cyan-700 text-xs font-semibold whitespace-nowrap"
+              >
+                <FileText className="h-3.5 w-3.5" />
+                Consulter
+              </a>
+            </li>
+          ))}
+        </ul>
+        <p className="text-[11px] text-zinc-500">
+          Documents partagés par {ctx.organization.name} pour cette session.
+        </p>
+      </div>
+    ) : supportPreviewUrl ? (
+      <div className="flex flex-wrap gap-2">
+        <SupportViewerButton
+          previewUrl={supportPreviewUrl}
+          title={formation?.title ?? "Session"}
+        />
+      </div>
+    ) : (
+      <div className="rounded-lg border border-dashed border-zinc-300 bg-zinc-50 p-3 text-xs text-zinc-500">
+        Aucun support n&apos;a encore été déposé pour cette session.
+      </div>
+    );
+
   return (
     <div className="space-y-4">
       {/* Retour : vers les archives si session passée, sinon le catalogue. */}
@@ -369,52 +415,8 @@ export default async function ArchiveSessionDetailPage({
         </div>
       </div>
 
-      {/* Supports remis (Gilles 2026-06-25) : documents partagés d'abord,
-          sinon lien Drive (consultation), sinon message. Visible en cours
-          ET en archive. */}
-      {sharedDocs.length > 0 ? (
-        <div className="rounded-lg border border-zinc-200 bg-white p-4 space-y-2">
-          <h2 className="text-sm font-bold text-zinc-900 inline-flex items-center gap-1.5">
-            <FileText className="h-4 w-4 text-cyan-600" />
-            Supports remis lors de la formation
-          </h2>
-          <ul className="divide-y divide-zinc-100">
-            {sharedDocs.map((d, i) => (
-              <li
-                key={i}
-                className="flex items-center justify-between gap-3 py-2"
-              >
-                <span className="text-sm text-zinc-700 truncate">
-                  {d.name}
-                </span>
-                <a
-                  href={d.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md border border-cyan-300 bg-white hover:bg-cyan-50 text-cyan-700 text-xs font-semibold whitespace-nowrap"
-                >
-                  <FileText className="h-3.5 w-3.5" />
-                  Consulter
-                </a>
-              </li>
-            ))}
-          </ul>
-          <p className="text-[11px] text-zinc-500">
-            Documents partagés par {ctx.organization.name} pour cette session.
-          </p>
-        </div>
-      ) : supportPreviewUrl ? (
-        <div className="flex flex-wrap gap-2">
-          <SupportViewerButton
-            previewUrl={supportPreviewUrl}
-            title={formation?.title ?? "Session"}
-          />
-        </div>
-      ) : (
-        <div className="rounded-lg border border-dashed border-zinc-300 bg-zinc-50 p-3 text-xs text-zinc-500">
-          Aucun support n&apos;a encore été déposé pour cette session.
-        </div>
-      )}
+      {/* Bloc « Supports remis » déplacé APRÈS le tableau quiz (Gilles
+          2026-06-26) — voir {supportsSection} en bas. */}
 
       {/* Boutons telechargements */}
       {rows.length > 0 && enrollmentIdsCsv.length > 0 && (
@@ -536,6 +538,9 @@ export default async function ArchiveSessionDetailPage({
           </table>
         )}
       </div>
+
+      {/* Supports remis — APRÈS le tableau quiz (Gilles 2026-06-26) */}
+      {supportsSection}
     </div>
   );
 }

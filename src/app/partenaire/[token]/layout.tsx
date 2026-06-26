@@ -149,9 +149,26 @@ export default async function PartnerLayout({
 
       <main className="max-w-6xl mx-auto p-3 sm:p-6">{children}</main>
 
-      <footer className="max-w-6xl mx-auto px-3 sm:px-4 py-4 sm:py-6 text-center text-[10px] sm:text-[11px] text-zinc-500">
+      <footer className="max-w-6xl mx-auto px-3 sm:px-4 py-5 sm:py-6 text-center text-sm sm:text-base font-medium text-zinc-600">
         Espace réservé aux partenaires de {ctx.organization.name}. Pour toute
-        question : {ctx.organization.email ?? "—"}
+        question :{" "}
+        {ctx.organization.email && (
+          <>
+            <a
+              href={`mailto:${ctx.organization.email}`}
+              className="font-semibold text-cyan-700 hover:underline"
+            >
+              {ctx.organization.email}
+            </a>
+            {" · "}
+          </>
+        )}
+        <a
+          href="tel:+33665023132"
+          className="font-semibold text-cyan-700 hover:underline whitespace-nowrap"
+        >
+          06 65 02 31 32
+        </a>
       </footer>
     </div>
   );
