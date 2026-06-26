@@ -174,18 +174,25 @@ export function computeBillingForInscription(
         `Tarif sous-traitance manquant pour ${sub.name ?? "l'OF organisateur"} (modalite ${input.sessionModality ?? "n/d"}).`,
       );
     }
-    const total =
+    // Total JOURNALIER de la session (indépendant du nb d'apprenants).
+    const sessionTotal =
       rate != null && days && days > 0 ? round2(rate * days) : null;
+    // On RÉPARTIT ce total sur les apprenants facturables : billing_total_ht
+    // est stocké PAR inscription, et la somme des inscriptions doit égaler le
+    // total session (sinon l'onglet Participants affiche total × nb apprenants
+    // — bug Gilles 2026-06-26 : 650 €/apprenant au lieu de 650 € pour 4).
+    const nb = Math.max(input.sessionBillableLearners ?? 1, 1);
+    const perHead = sessionTotal != null ? round2(sessionTotal / nb) : null;
     return {
       scenario: "subcontracting",
       targetCompanyId: sub.id,
       targetCompanyName: sub.name,
       mode: "flat_per_day",
-      unitPriceHt: rate,
-      totalHt: total,
+      unitPriceHt: perHead,
+      totalHt: perHead,
       explain:
-        rate != null && days
-          ? `Sous-traitance : ${rate.toFixed(2)} EUR/j × ${days} j (forfait session — independant du nb apprenants)`
+        rate != null && days && sessionTotal != null
+          ? `Sous-traitance : ${rate.toFixed(2)} EUR/j × ${days} j = ${sessionTotal.toFixed(2)} EUR pour la session (forfait, indépendant du nb d'apprenants), réparti sur ${nb} apprenant(s) = ${perHead?.toFixed(2)} EUR/inscription`
           : "Sous-traitance : tarif a definir sur la fiche OF",
       warnings,
     };
