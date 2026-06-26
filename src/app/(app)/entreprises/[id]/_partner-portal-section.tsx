@@ -9,6 +9,7 @@ import {
   ExternalLink,
   Handshake,
   Image as ImageIcon,
+  Mail,
   Plus,
   RefreshCw,
   Trash2,
@@ -23,8 +24,16 @@ import {
   savePartnerGeneralRate,
   savePartnerPortalVisibility,
   savePartnerPrice,
+  sendPartnerPortalLink,
   uploadPartnerLogo,
 } from "./partner-actions";
+
+type ContactOption = {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+};
 
 type FormationOption = {
   id: string;
@@ -62,6 +71,11 @@ type Props = {
   logoUrl: string | null;
   formations: FormationOption[];
   pricing: PricingRow[];
+  /** Contacts de l'entreprise (destinataires possibles de l'email du lien). */
+  contacts: ContactOption[];
+  /** Dernier envoi du lien portail par email (trace). */
+  linkSentAt: string | null;
+  linkSentTo: string | null;
 };
 
 export function PartnerPortalSection({
@@ -77,11 +91,37 @@ export function PartnerPortalSection({
   logoUrl,
   formations,
   pricing,
+  contacts,
+  linkSentAt,
+  linkSentTo,
 }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Envoi du lien par email à un contact de l'entreprise.
+  const contactsWithEmail = contacts.filter((c) => c.email);
+  const [emailContactId, setEmailContactId] = useState("");
+  const [emailMsg, setEmailMsg] = useState<{ ok: boolean; text: string } | null>(
+    null,
+  );
+
+  function sendLinkEmail() {
+    if (!emailContactId) {
+      setEmailMsg({ ok: false, text: "Choisissez un contact." });
+      return;
+    }
+    setEmailMsg(null);
+    startTransition(async () => {
+      const res = await sendPartnerPortalLink(companyId, emailContactId);
+      if (res.ok) {
+        setEmailMsg({ ok: true, text: `Lien envoyé à ${res.recipient}.` });
+        router.refresh();
+      } else {
+        setEmailMsg({ ok: false, text: res.error ?? "Échec de l'envoi." });
+      }
+    });
+  }
   // Origin calcule cote client uniquement, apres mount.
   // Au premier rendu (SSR ET premier paint client), origin = "" pour
   // que le HTML serveur et client soient identiques (sinon erreur
@@ -218,6 +258,66 @@ export function PartnerPortalSection({
                   Révoquer
                 </Button>
               </div>
+            </div>
+
+            {/* Envoi du lien par email à un contact (Gilles 2026-06-26) */}
+            <div className="pt-3 border-t border-emerald-200 dark:border-emerald-900 space-y-2">
+              <p className="text-[11px] uppercase tracking-wider font-bold text-emerald-700">
+                Envoyer le lien par email
+              </p>
+              {contactsWithEmail.length === 0 ? (
+                <p className="text-xs text-zinc-600">
+                  Aucun contact avec email sur cette fiche. Ajoutez un contact
+                  (avec email) dans « Contacts entreprise » pour l&apos;envoyer.
+                </p>
+              ) : (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <select
+                    value={emailContactId}
+                    onChange={(e) => setEmailContactId(e.target.value)}
+                    className="h-9 rounded-md border border-emerald-300 bg-white px-2 text-sm min-w-[200px]"
+                  >
+                    <option value="">— Choisir un contact —</option>
+                    {contactsWithEmail.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {[c.first_name, c.last_name].filter(Boolean).join(" ")} (
+                        {c.email})
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    type="button"
+                    onClick={sendLinkEmail}
+                    size="sm"
+                    disabled={pending || !emailContactId}
+                  >
+                    <Mail className="h-4 w-4" />
+                    Envoyer
+                  </Button>
+                </div>
+              )}
+              {emailMsg && (
+                <p
+                  className={`text-[11px] font-medium ${
+                    emailMsg.ok ? "text-emerald-700" : "text-red-600"
+                  }`}
+                >
+                  {emailMsg.text}
+                </p>
+              )}
+              {linkSentAt && (
+                <p className="text-[11px] text-zinc-500">
+                  Dernier envoi :{" "}
+                  {new Date(linkSentAt).toLocaleString("fr-FR", {
+                    day: "2-digit",
+                    month: "2-digit",
+                    year: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                  {linkSentTo ? ` à ${linkSentTo}` : ""}
+                </p>
+              )}
             </div>
           </div>
         )}

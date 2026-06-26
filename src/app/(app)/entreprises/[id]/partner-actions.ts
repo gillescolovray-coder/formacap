@@ -1,9 +1,156 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isResendConfigured, sendEmail } from "@/lib/email/resend";
 import { getOrCreatePartnerPortalToken } from "@/lib/portal/partner-token";
+
+/**
+ * Envoie par email le lien d'accès au portail partenaire à un CONTACT de
+ * l'entreprise (Gilles 2026-06-26), avec une explication du fonctionnement
+ * et l'invitation à conserver le lien pour ses prochaines sessions. Trace le
+ * dernier envoi (date/heure + destinataire) sur la fiche entreprise.
+ */
+export async function sendPartnerPortalLink(
+  companyId: string,
+  contactId: string,
+): Promise<{ ok: boolean; error?: string; recipient?: string }> {
+  const userClient = await createClient();
+  const {
+    data: { user },
+  } = await userClient.auth.getUser();
+  if (!user) return { ok: false, error: "Non authentifié." };
+  if (!isResendConfigured())
+    return { ok: false, error: "Envoi d'email non configuré." };
+
+  const admin = createAdminClient();
+  const { data: company } = await admin
+    .from("companies")
+    .select("id, organization_id, name, type")
+    .eq("id", companyId)
+    .maybeSingle<{
+      id: string;
+      organization_id: string;
+      name: string;
+      type: string | null;
+    }>();
+  if (!company) return { ok: false, error: "Entreprise introuvable." };
+
+  // Autorisation : l'utilisateur doit appartenir à l'organisation.
+  const { data: memberships } = await admin
+    .from("organization_members")
+    .select("organization_id")
+    .eq("profile_id", user.id)
+    .eq("is_active", true);
+  if (
+    !(memberships ?? []).some(
+      (m) => m.organization_id === company.organization_id,
+    )
+  ) {
+    return { ok: false, error: "Non autorisé pour cette organisation." };
+  }
+
+  const { data: contact } = await admin
+    .from("company_contacts")
+    .select("id, company_id, first_name, last_name, email")
+    .eq("id", contactId)
+    .maybeSingle<{
+      id: string;
+      company_id: string;
+      first_name: string | null;
+      last_name: string | null;
+      email: string | null;
+    }>();
+  if (!contact || contact.company_id !== companyId) {
+    return { ok: false, error: "Contact introuvable." };
+  }
+  if (!contact.email) {
+    return { ok: false, error: "Ce contact n'a pas d'email renseigné." };
+  }
+
+  // Token + URL du portail (idempotent : crée si besoin).
+  const { token } = await getOrCreatePartnerPortalToken(userClient, companyId);
+  const h = await headers();
+  const host = h.get("host") ?? "localhost:3000";
+  const proto = h.get("x-forwarded-proto") ?? "https";
+  const portalUrl = `${proto}://${host}/partenaire/${token}`;
+
+  const { data: org } = await admin
+    .from("organizations")
+    .select("name, email")
+    .eq("id", company.organization_id)
+    .maybeSingle<{ name: string; email: string | null }>();
+  const orgName = org?.name ?? "CAP NUMERIQUE";
+  const contactName = [contact.first_name, contact.last_name]
+    .filter(Boolean)
+    .join(" ");
+  const isOf = company.type === "of";
+
+  const subject = `${orgName} : votre accès au portail partenaire`;
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#1f2937;">
+      <p>Bonjour <strong>${contactName || "—"}</strong>,</p>
+      <p><strong>${orgName}</strong> met à votre disposition un <strong>espace partenaire privé</strong> dédié à
+      <strong>${company.name}</strong>. Vous y pouvez à tout moment :</p>
+      <ul style="padding-left:20px;">
+        <li><strong>Consulter vos sessions</strong> à venir et passées (catalogue + vos sessions dédiées) ;</li>
+        <li><strong>Inscrire vos apprenants</strong> en autonomie ;</li>
+        ${isOf ? "<li>Suivre les <strong>résultats des quiz</strong> de vos apprenants ;</li>" : ""}
+        <li>Accéder aux <strong>documents partagés</strong> et supports des sessions.</li>
+      </ul>
+      <p style="text-align:center;margin:24px 0;">
+        <a href="${portalUrl}" style="display:inline-block;background:#0e7490;color:white;text-decoration:none;padding:14px 28px;border-radius:8px;font-weight:bold;font-size:15px;">🤝 Accéder à mon espace partenaire</a>
+      </p>
+      <div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:12px 14px;font-size:13px;color:#92400e;">
+        ⚠️ <strong>Important :</strong> conservez précieusement cet email et surtout ce lien.
+        C'est votre <strong>accès permanent</strong> pour consulter et inscrire vos apprenants à
+        <strong>toutes vos prochaines sessions</strong>. Il est personnel à ${company.name} — ne le diffusez pas publiquement.
+      </div>
+      <p style="font-size:12px;color:#6b7280;background:#f3f4f6;padding:10px 12px;border-radius:6px;margin-top:14px;">
+        Lien direct :<br/><a href="${portalUrl}" style="color:#0e7490;word-break:break-all;">${portalUrl}</a>
+      </p>
+      <p style="margin-top:24px;">Bien cordialement,<br/><strong>${orgName}</strong></p>
+    </div>`;
+  const text = `Bonjour ${contactName || "—"},
+
+${orgName} met a votre disposition un espace partenaire prive dedie a ${company.name} :
+consulter vos sessions, inscrire vos apprenants, acceder aux documents partages.
+
+Votre acces : ${portalUrl}
+
+IMPORTANT : conservez precieusement cet email et surtout ce lien. C'est votre acces permanent
+pour vos prochaines sessions. Il est personnel a ${company.name}.
+
+Cordialement,
+${orgName}`;
+
+  const res = await sendEmail({
+    to: contact.email,
+    toName: contactName,
+    subject,
+    html,
+    text,
+    replyTo: org?.email ?? undefined,
+  });
+  if (!res.ok) return { ok: false, error: res.error };
+
+  // Trace du dernier envoi (best-effort, migration 0141).
+  try {
+    await admin
+      .from("companies")
+      .update({
+        partner_portal_link_sent_at: new Date().toISOString(),
+        partner_portal_link_sent_to: contactName || contact.email,
+      })
+      .eq("id", companyId);
+  } catch {
+    /* colonnes absentes -> on ignore la trace */
+  }
+  revalidatePath(`/entreprises/${companyId}`);
+  return { ok: true, recipient: contact.email };
+}
 import {
   deletePartnerPrice,
   upsertPartnerPrice,

@@ -546,6 +546,15 @@ export default async function CompanyDetailPage({
             logoUrl={partnerLogoUrl}
             formations={partnerFormations}
             pricing={partnerPricing}
+            contacts={(contacts ?? []) as CompanyContact[]}
+            linkSentAt={
+              (company as { partner_portal_link_sent_at?: string | null })
+                .partner_portal_link_sent_at ?? null
+            }
+            linkSentTo={
+              (company as { partner_portal_link_sent_to?: string | null })
+                .partner_portal_link_sent_to ?? null
+            }
           />
         )}
 
