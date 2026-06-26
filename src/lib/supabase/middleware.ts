@@ -21,7 +21,12 @@ const PUBLIC_PATHS = [
   // en admin. Les routes /api/partner/ revalident le token cote serveur.
   "/api/partner/", // API token-based du portail partenaire (PDF synthese, export)
   "/preinscription/", // Page publique de pré-inscription (lien diffusé par un partenaire)
-  "/mon-parcours/", // Portail apprenant (quiz, emargement, certificat...)
+  "/mon-parcours/", // Portail apprenant PAR SESSION (quiz, emargement, certificat...)
+  // BUG FIX Gilles 2026-06-26 : /apprenant/ (espace apprenant GLOBAL : supports,
+  // attestations, lien portail) etait ABSENT -> les liens email (support,
+  // attestation, "lien portail apprenant") redirigeaient vers /login => l'apprenant
+  // croyait devoir "creer un compte". Le token URL fait office d'authentification.
+  "/apprenant/", // Portail apprenant global (token = auth)
   "/formateur/", // Portail formateur (planning, emargement, positionnement)
   "/emarger/", // Signature emargement apprenant (lien email)
   "/eval/", // Lien evaluation a chaud (depuis email)

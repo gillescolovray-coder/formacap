@@ -3,10 +3,7 @@
 import { headers } from "next/headers";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isResendConfigured, sendEmail } from "@/lib/email/resend";
-import {
-  buildLearnerPortalUrl,
-  getOrCreateLearnerPortalToken,
-} from "@/lib/portal/learner-token";
+import { ensureEnrollmentPortalToken } from "@/lib/portal/express-signup";
 import { resolvePartnerContext } from "./_resolve";
 
 const UUID_REGEX =
@@ -112,13 +109,12 @@ export async function sendSupportLinkToLearner(
     };
   }
 
-  // Token + URL du portail apprenant.
-  const { token: learnerToken } = await getOrCreateLearnerPortalToken(
-    admin,
-    learner.id,
-  );
+  // Lien vers l'espace DE LA SESSION (/mon-parcours/{token}/documents) — le
+  // même que le QR/convocation, déjà public (Gilles 2026-06-26). L'apprenant
+  // atterrit direct sur ses supports, sans compte.
+  const enrollmentToken = await ensureEnrollmentPortalToken(admin, enrollmentId);
   const origin = await getAppOrigin();
-  const portalUrl = buildLearnerPortalUrl(origin, learnerToken);
+  const portalUrl = `${origin.replace(/\/$/, "")}/mon-parcours/${enrollmentToken}/documents`;
 
   const orgName = ctx.organization.name;
   const fullName = [learner.first_name, learner.last_name]
