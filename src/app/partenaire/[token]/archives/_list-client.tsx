@@ -215,7 +215,11 @@ export function ArchivesListClient({
           {filtered.map((s) => (
             <article
               key={s.id}
-              className="rounded-2xl bg-white border-2 border-zinc-200 p-3 sm:p-5 flex flex-col gap-3 hover:border-cyan-400 hover:shadow-md transition-all"
+              className={`rounded-2xl p-3 sm:p-5 flex flex-col gap-3 border-2 hover:shadow-md transition-all ${
+                s.nb_learners > 0
+                  ? "bg-blue-100 border-blue-400 hover:border-blue-500"
+                  : "bg-white border-zinc-200 hover:border-cyan-400"
+              }`}
             >
               {/* Header : titre + badges (Gilles 2026-06-01 : badges sur
                   une seule ligne pour gagner de la place vertical) */}
