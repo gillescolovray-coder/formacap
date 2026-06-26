@@ -12,6 +12,7 @@ import {
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolvePartnerContext } from "../../_resolve";
 import { SupportViewerButton } from "../../_support-viewer-button";
+import { SendSupportButton } from "../../_send-support-button";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -158,6 +159,7 @@ export default async function ArchiveSessionDetailPage({
       id: string;
       first_name: string | null;
       last_name: string | null;
+      email: string | null;
       company: { name: string | null } | { name: string | null }[] | null;
       company_name_temp: string | null;
     } | null;
@@ -170,7 +172,7 @@ export default async function ArchiveSessionDetailPage({
     const { data } = await supabase
       .from("session_enrollments")
       .select(
-        "id, learner_id, status, learner:learners(id, first_name, last_name, company:companies(name), company_name_temp)",
+        "id, learner_id, status, learner:learners(id, first_name, last_name, email, company:companies(name), company_name_temp)",
       )
       .eq("session_id", sessionId)
       .neq("status", "cancelled");
@@ -194,7 +196,7 @@ export default async function ArchiveSessionDetailPage({
       const { data } = await supabase
         .from("session_enrollments")
         .select(
-          "id, learner_id, status, learner:learners(id, first_name, last_name, company:companies(name), company_name_temp)",
+          "id, learner_id, status, learner:learners(id, first_name, last_name, email, company:companies(name), company_name_temp)",
         )
         .eq("session_id", sessionId)
         .in("learner_id", learnerIds)
@@ -204,6 +206,24 @@ export default async function ArchiveSessionDetailPage({
   }
 
   const enrollmentIds = enrollmentRows.map((e) => e.id);
+
+  // Trace des envois de support à l'apprenant (preuve Qualiopi, migration 0139).
+  const lastSentByEnrollment = new Map<string, string>();
+  if (enrollmentIds.length > 0) {
+    const { data: sendRows } = await supabase
+      .from("support_link_sends")
+      .select("enrollment_id, sent_at")
+      .in("enrollment_id", enrollmentIds)
+      .order("sent_at", { ascending: false });
+    for (const r of (sendRows ?? []) as Array<{
+      enrollment_id: string | null;
+      sent_at: string;
+    }>) {
+      if (r.enrollment_id && !lastSentByEnrollment.has(r.enrollment_id)) {
+        lastSentByEnrollment.set(r.enrollment_id, r.sent_at);
+      }
+    }
+  }
 
   // Scores quiz pre/post pour ces enrollments
   const { data: quizAttempts } =
@@ -272,6 +292,8 @@ export default async function ArchiveSessionDetailPage({
       prePct,
       postPct,
       progression,
+      hasEmail: Boolean(learner?.email),
+      lastSentAt: lastSentByEnrollment.get(e.id) ?? null,
     };
   });
 
@@ -444,6 +466,7 @@ export default async function ArchiveSessionDetailPage({
                 <th className="px-3 py-2 text-right">Quiz pré</th>
                 <th className="px-3 py-2 text-right">Quiz post</th>
                 <th className="px-3 py-2 text-right">Progression</th>
+                <th className="px-3 py-2 text-right">Support</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
@@ -495,6 +518,17 @@ export default async function ArchiveSessionDetailPage({
                     ) : (
                       <span className="text-zinc-400 text-xs italic">—</span>
                     )}
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <div className="flex justify-end">
+                      <SendSupportButton
+                        token={token}
+                        sessionId={sessionId}
+                        enrollmentId={r.enrollmentId}
+                        hasEmail={r.hasEmail}
+                        lastSentAt={r.lastSentAt}
+                      />
+                    </div>
                   </td>
                 </tr>
               ))}
