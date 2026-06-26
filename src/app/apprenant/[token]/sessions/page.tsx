@@ -285,11 +285,19 @@ function SessionGroup({
         {sessions.map((s) => (
           <article
             key={s.enrollmentId}
-            className={
-              variant === "upcoming"
-                ? "rounded-2xl bg-white border-2 border-cyan-200 p-3 sm:p-5 flex flex-col gap-3 hover:border-cyan-400 hover:shadow-md transition-all"
-                : "rounded-2xl bg-white border border-zinc-200 p-3 sm:p-5 flex flex-col gap-3 hover:border-zinc-300 transition-all"
-            }
+            className={(() => {
+              // Code couleur par statut (Gilles 2026-06-26) : confirmée = bleu,
+              // annulée = rouge pastel ; sinon mise en forme par variante.
+              const base =
+                "rounded-2xl p-3 sm:p-5 flex flex-col gap-3 transition-all";
+              if (s.sessionStatus === "cancelled")
+                return `${base} bg-red-100 border-2 border-red-300`;
+              if (s.sessionStatus === "confirmed")
+                return `${base} bg-blue-100 border-2 border-blue-400 hover:border-blue-500 hover:shadow-md`;
+              return variant === "upcoming"
+                ? `${base} bg-white border-2 border-cyan-200 hover:border-cyan-400 hover:shadow-md`
+                : `${base} bg-white border border-zinc-200 hover:border-zinc-300`;
+            })()}
           >
             <div className="flex items-start justify-between gap-2">
               <div className="flex-1 min-w-0">

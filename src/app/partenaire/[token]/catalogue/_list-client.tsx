@@ -413,24 +413,25 @@ export function CatalogueList({
                   //   3. PLANIFIEE / DRAFT -> visibilite normale (bordure
                   //      pale, fond blanc/leger, pas de shadow).
                   //      Si "Mes sessions" : indigo pale.
+                  // Code couleur par STATUT (Gilles 2026-06-26, lisibilité) :
+                  //   - CONFIRMÉE -> fond BLEU
+                  //   - ANNULÉE   -> fond ROUGE PASTEL
+                  //   - REPORTÉE  -> orange pâle
+                  //   - sinon (planifiée/brouillon) -> blanc.
                   const base =
                     "rounded-2xl p-3 sm:p-5 flex flex-col gap-3 transition-all";
                   if (s.status === "cancelled") {
-                    return `${base} bg-zinc-50 border-2 border-dashed border-red-200 opacity-60 hover:opacity-80`;
+                    return `${base} bg-red-100 border-2 border-red-300 hover:border-red-400`;
                   }
                   if (s.status === "postponed") {
                     return `${base} bg-orange-50/40 border-2 border-dashed border-orange-300 opacity-75 hover:opacity-100`;
                   }
-                  const isMine = s.is_own || s.is_subcontracting;
-                  const isConfirmed = s.status === "confirmed";
-                  if (isMine && isConfirmed) {
-                    return `${base} bg-indigo-100 border-2 border-indigo-400 shadow-md hover:border-indigo-500 hover:shadow-lg`;
+                  if (s.status === "confirmed") {
+                    return `${base} bg-blue-100 border-2 border-blue-400 shadow-md hover:border-blue-500 hover:shadow-lg`;
                   }
+                  const isMine = s.is_own || s.is_subcontracting;
                   if (isMine) {
                     return `${base} bg-white border border-indigo-200 hover:border-indigo-300`;
-                  }
-                  if (isConfirmed) {
-                    return `${base} bg-emerald-100 border-2 border-emerald-400 shadow-md hover:border-emerald-500 hover:shadow-lg`;
                   }
                   if (s.modality === "distanciel") {
                     return `${base} bg-white border border-cyan-200 hover:border-cyan-300`;
