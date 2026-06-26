@@ -45,6 +45,7 @@ import {
 import { TrainerReportForm } from "./_trainer-report-form";
 import { TrainerQrEvaluationButton } from "./_trainer-qr-evaluation-button";
 import { BlankEvaluationButton } from "./_blank-evaluation-button";
+import { SubcontractGate } from "./_subcontract-gate";
 import { TrainerQrQuizButton } from "./_trainer-qr-quiz-button";
 import {
   BlankQuizButton,
@@ -127,7 +128,7 @@ export default async function FormateurSessionDetailPage({
   const { data: session } = await supabase
     .from("sessions")
     .select(
-      "id, status, start_date, end_date, modality, location, video_link, video_app, trainer_id, quiz_template_id, is_inter, is_subcontracted, subcontractor_name, default_morning_start, default_morning_end, default_afternoon_start, default_afternoon_end, formation:formations(title, quiz_template_id), location_ref:formation_locations!location_id(name, address, postal_code, city, latitude, longitude), organization:organizations(name, phone, email)",
+      "id, status, start_date, end_date, modality, location, video_link, video_app, trainer_id, quiz_template_id, is_inter, is_subcontracted, subcontractor_name, trainer_show_positionnement, trainer_show_emargement, trainer_show_evaluation, default_morning_start, default_morning_end, default_afternoon_start, default_afternoon_end, formation:formations(title, quiz_template_id), location_ref:formation_locations!location_id(name, address, postal_code, city, latitude, longitude), organization:organizations(name, phone, email)",
     )
     .eq("id", sessionId)
     .maybeSingle<{
@@ -144,6 +145,9 @@ export default async function FormateurSessionDetailPage({
       is_inter: boolean | null;
       is_subcontracted: boolean | null;
       subcontractor_name: string | null;
+      trainer_show_positionnement: boolean | null;
+      trainer_show_emargement: boolean | null;
+      trainer_show_evaluation: boolean | null;
       default_morning_start: string | null;
       default_morning_end: string | null;
       default_afternoon_start: string | null;
@@ -1345,7 +1349,11 @@ export default async function FormateurSessionDetailPage({
           color="amber"
           title={`Tests de positionnement (${positioningRows?.length ?? 0}/${participants.length})`}
           description="Auto-évaluations remplies par les apprenants avant la formation."
-          subcontractedManagedByOf={session.is_subcontracted === true}
+          subcontractedManagedByOf={
+            session.is_subcontracted === true &&
+            !session.trainer_show_positionnement
+          }
+          subcontractGate={{ token, sessionId, block: "positionnement" }}
           collapsible
         >
           {participants.length === 0 ? (
@@ -1399,6 +1407,11 @@ export default async function FormateurSessionDetailPage({
           color="cyan"
           title="Émargement"
           description={`Signatures recueillies (${totalSlots} demi-journées par apprenant).`}
+          subcontractedManagedByOf={
+            session.is_subcontracted === true &&
+            !session.trainer_show_emargement
+          }
+          subcontractGate={{ token, sessionId, block: "emargement" }}
           actionButton={
             <Link
               href={`/formateur/${token}/sessions/${sessionId}/emargement`}
@@ -1687,10 +1700,13 @@ export default async function FormateurSessionDetailPage({
               ? `Note de recommandation moyenne : ${npsAvg}/10`
               : "Évaluations remplies par les apprenants en fin de session."
           }
-          /* Évaluation à chaud TOUJOURS accessible, même en sous-traitance OF
-             (Gilles 2026-06-08) : permet de mesurer la performance du formateur
-             et la satisfaction des apprenants, y compris quand CAP NUMERIQUE est
-             sous-traitant d'un OF donneur d'ordre. */
+          /* En sous-traitance, masqué par défaut (géré par l'OF) mais
+             déverrouillable par le formateur (Gilles 2026-06-26). */
+          subcontractedManagedByOf={
+            session.is_subcontracted === true &&
+            !session.trainer_show_evaluation
+          }
+          subcontractGate={{ token, sessionId, block: "evaluation" }}
           collapsible
           defaultOpen
         >
@@ -2065,6 +2081,10 @@ function Module({
    *  donneur d'ordre — on les grise visuellement pour que le formateur
    *  comprenne qu'il n'a rien à faire ici. Gilles 2026-05-24. */
   subcontractedManagedByOf,
+  /** Si fourni en mode sous-traitance : affiche un volet déverrouillable
+   *  (case à cocher + confirmation) au lieu d'un verrou total. Gilles
+   *  2026-06-26. */
+  subcontractGate,
   /** Plie le bloc derrière un <details>. Par défaut replié — le
    *  formateur clique sur le header pour voir le contenu. Utilisé pour
    *  les modules secondaires (positionnement, convocations) que le
@@ -2080,11 +2100,29 @@ function Module({
   actionButton?: React.ReactNode;
   children: React.ReactNode;
   subcontractedManagedByOf?: boolean;
+  subcontractGate?: {
+    token: string;
+    sessionId: string;
+    block: "positionnement" | "emargement" | "evaluation";
+  };
   collapsible?: boolean;
   defaultOpen?: boolean;
 }) {
   const colors = MODULE_COLORS[color];
   if (subcontractedManagedByOf) {
+    // Volet déverrouillable (case à cocher + confirmation) si demandé.
+    if (subcontractGate) {
+      return (
+        <SubcontractGate
+          token={subcontractGate.token}
+          sessionId={subcontractGate.sessionId}
+          block={subcontractGate.block}
+          icon={icon}
+          title={title}
+          description={description}
+        />
+      );
+    }
     return (
       <section className="rounded-xl bg-zinc-50 border border-zinc-200 p-4 opacity-70">
         <div className="flex items-start gap-3 mb-2">

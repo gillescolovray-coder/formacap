@@ -98,6 +98,34 @@ async function validateTrainerAccess(
 }
 
 /**
+ * Sous-traitance (Gilles 2026-06-26) : le formateur déverrouille un volet
+ * normalement géré par l'OF (positionnement / émargement / évaluation à chaud).
+ * Le choix est mémorisé sur la session (drapeaux trainer_show_*, migration 0140).
+ */
+export async function revealSubcontractBlock(
+  token: string,
+  sessionId: string,
+  block: "positionnement" | "emargement" | "evaluation",
+): Promise<{ ok: boolean; error?: string }> {
+  const supabase = createAdminClient();
+  const ctx = await validateTrainerAccess(supabase, token, sessionId);
+  if (!ctx) return { ok: false, error: "Accès refusé." };
+  const col =
+    block === "positionnement"
+      ? "trainer_show_positionnement"
+      : block === "emargement"
+        ? "trainer_show_emargement"
+        : "trainer_show_evaluation";
+  const { error } = await supabase
+    .from("sessions")
+    .update({ [col]: true })
+    .eq("id", sessionId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/formateur/${token}/sessions/${sessionId}`);
+  return { ok: true };
+}
+
+/**
  * Upload d'un support depuis le portail formateur. Le document est
  * automatiquement marqué `visibility = 'shared_with_learners'` pour
  * apparaître dans le portail apprenant.
