@@ -13,6 +13,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { resolvePartnerContext } from "../../_resolve";
 import { SupportViewerButton } from "../../_support-viewer-button";
 import { SendSupportButton } from "../../_send-support-button";
+import { SupportLinkButton } from "../../_support-link-button";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -140,6 +141,13 @@ export default async function ArchiveSessionDetailPage({
   const supportPreviewUrl = toDrivePreviewUrl(
     sess.support_drive_url ?? formation?.support_drive_url ?? null,
   );
+
+  // Un support existe-t-il (document partagé OU lien Drive) ? Sinon le bouton
+  // support est grisé. Gilles 2026-06-27.
+  const hasSupport = sharedDocs.length > 0 || Boolean(supportPreviewUrl);
+  // OF : lien/QR uniquement (jamais d'envoi email — ne pas révéler que CAP a
+  // l'email de l'apprenant). Prescripteur : email + lien/QR.
+  const isOfPartner = ctx.company.type === "of";
 
   // Strategie de chargement (Gilles 2026-06-01) :
   //   - Si cet OF/Prescripteur est subcontracting OU prescriber de la
@@ -523,13 +531,37 @@ export default async function ArchiveSessionDetailPage({
                   </td>
                   <td className="px-3 py-2 text-right">
                     <div className="flex justify-end">
-                      <SendSupportButton
-                        token={token}
-                        sessionId={sessionId}
-                        enrollmentId={r.enrollmentId}
-                        hasEmail={r.hasEmail}
-                        lastSentAt={r.lastSentAt}
-                      />
+                      {!hasSupport ? (
+                        <span
+                          className="text-[11px] text-zinc-400 italic"
+                          title="Aucun support déposé pour cette session"
+                        >
+                          Aucun support
+                        </span>
+                      ) : isOfPartner ? (
+                        // OF : lien/QR à diffuser soi-même (jamais l'email).
+                        <SupportLinkButton
+                          token={token}
+                          sessionId={sessionId}
+                          enrollmentId={r.enrollmentId}
+                        />
+                      ) : (
+                        // Prescripteur : email OU lien/QR (au choix).
+                        <div className="flex flex-col items-end gap-1.5">
+                          <SendSupportButton
+                            token={token}
+                            sessionId={sessionId}
+                            enrollmentId={r.enrollmentId}
+                            hasEmail={r.hasEmail}
+                            lastSentAt={r.lastSentAt}
+                          />
+                          <SupportLinkButton
+                            token={token}
+                            sessionId={sessionId}
+                            enrollmentId={r.enrollmentId}
+                          />
+                        </div>
+                      )}
                     </div>
                   </td>
                 </tr>

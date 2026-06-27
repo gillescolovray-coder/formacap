@@ -1,5 +1,6 @@
 "use server";
 
+import QRCode from "qrcode";
 import { headers } from "next/headers";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isResendConfigured, sendEmail } from "@/lib/email/resend";
@@ -14,6 +15,88 @@ async function getAppOrigin(): Promise<string> {
   const host = h.get("host") ?? "localhost:3000";
   const protocol = h.get("x-forwarded-proto") ?? "https";
   return `${protocol}://${host}`;
+}
+
+/**
+ * Renvoie le LIEN du portail apprenant (/mon-parcours) + son QR code, pour que
+ * l'OF/prescripteur le diffuse PAR SES PROPRES MOYENS (Gilles 2026-06-27).
+ * Ne touche JAMAIS à l'email de l'apprenant (confidentialité : l'OF ne doit
+ * pas savoir que CAP dispose de l'email).
+ */
+export async function getLearnerPortalLinkForPartner(
+  token: string,
+  sessionId: string,
+  enrollmentId: string,
+): Promise<
+  { ok: true; url: string; qrDataUrl: string } | { ok: false; error: string }
+> {
+  if (!UUID_REGEX.test(sessionId) || !UUID_REGEX.test(enrollmentId)) {
+    return { ok: false, error: "Paramètre invalide." };
+  }
+  const ctx = await resolvePartnerContext(token);
+  if (!ctx) return { ok: false, error: "Accès portail invalide." };
+  const admin = createAdminClient();
+  const orgId = ctx.company.organization_id;
+
+  const { data: sess } = await admin
+    .from("sessions")
+    .select(
+      "id, organization_id, subcontracting_company_id, prescriber_company_id",
+    )
+    .eq("id", sessionId)
+    .eq("organization_id", orgId)
+    .maybeSingle<{
+      id: string;
+      organization_id: string;
+      subcontracting_company_id: string | null;
+      prescriber_company_id: string | null;
+    }>();
+  if (!sess) return { ok: false, error: "Session introuvable." };
+  const isMine =
+    sess.subcontracting_company_id === ctx.company.id ||
+    sess.prescriber_company_id === ctx.company.id;
+
+  const { data: enr } = await admin
+    .from("session_enrollments")
+    .select("id, session_id, learner_id")
+    .eq("id", enrollmentId)
+    .maybeSingle<{
+      id: string;
+      session_id: string;
+      learner_id: string | null;
+    }>();
+  if (!enr || enr.session_id !== sessionId) {
+    return { ok: false, error: "Apprenant introuvable sur cette session." };
+  }
+  if (!isMine) {
+    const { count } = await admin
+      .from("inscription_requests")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", orgId)
+      .eq("target_session_id", sessionId)
+      .eq("inscription_channel", "of")
+      .eq("inscription_channel_company_id", ctx.company.id)
+      .eq("learner_id", enr.learner_id);
+    if (!count || count === 0) {
+      return { ok: false, error: "Apprenant non rattaché à votre organisme." };
+    }
+  }
+
+  const learnerToken = await ensureEnrollmentPortalToken(admin, enrollmentId);
+  const origin = await getAppOrigin();
+  const url = `${origin}/mon-parcours/${learnerToken}`;
+  let qrDataUrl = "";
+  try {
+    qrDataUrl = await QRCode.toDataURL(url, {
+      errorCorrectionLevel: "M",
+      width: 220,
+      margin: 1,
+      color: { dark: "#0e7490", light: "#ffffff" },
+    });
+  } catch {
+    qrDataUrl = "";
+  }
+  return { ok: true, url, qrDataUrl };
 }
 
 export type SendSupportResult =
