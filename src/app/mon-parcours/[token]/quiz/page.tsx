@@ -147,12 +147,17 @@ export default async function QuizPlayPage({
       ? "post"
       : null;
 
-  // Gilles 2026-05-27 : le DETAIL des reponses (corrige + bonne reponse)
-  // n'est visible par l'apprenant qu'a partir de 18h00 Paris (fin de
-  // journee de formation). Empeche un apprenant qui aurait fini son
-  // post quiz avant 18h de voir les corrections en plein milieu de
-  // session.
-  const canSeeQuizDetail = minutesNow >= 18 * 60;
+  // Détail des réponses (corrigé) : anti-triche LE JOUR J uniquement
+  // (Gilles 2026-06-29). Tant qu'on est sur/dans la journée de formation, le
+  // corrigé n'apparaît qu'à partir de 18h00 Paris (pour ne pas révéler les
+  // réponses entre le quiz du matin et celui de l'après-midi). Dès que la
+  // session est PASSÉE (jour suivant et après), le détail est TOUJOURS
+  // consultable. Corrige le bug où c'était bloqué tous les jours avant 18h.
+  const parisDateStr = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Paris",
+  }).format(new Date()); // YYYY-MM-DD
+  const sessionOver = parisDateStr > session.end_date.slice(0, 10);
+  const canSeeQuizDetail = sessionOver || minutesNow >= 18 * 60;
 
   const fullName = [
     enrollment.learner?.first_name,

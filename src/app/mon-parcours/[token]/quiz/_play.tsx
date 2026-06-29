@@ -187,18 +187,32 @@ export function QuizPlay({
             <ProgressBadge pre={preAttempt} post={postAttempt} />
           )}
         </div>
-        {/* Corrigé du post uniquement, et seulement a partir de
-            18h00 Paris (Gilles 2026-05-27). Avant 18h on affiche un
-            message d'attente. */}
+        {/* Corrigé détaillé des DEUX passations (matin + après-midi) une
+            fois la journée de formation passée (Gilles 2026-06-29). Le jour J,
+            verrou jusqu'à 18h (anti-triche). */}
         {postAttempt && canSeeDetail && (
-          <ResultsView
-            questions={questions}
-            attempt={postAttempt}
-            score={postAttempt.score ?? 0}
-            maxScore={postAttempt.max_score ?? 0}
-            phase="post"
-            otherAttempt={preAttempt}
-          />
+          <>
+            {preAttempt && (
+              <ResultsView
+                questions={questions}
+                attempt={preAttempt}
+                score={preAttempt.score ?? 0}
+                maxScore={preAttempt.max_score ?? 0}
+                phase="pre"
+                otherAttempt={postAttempt}
+                title="🌅 Quiz du matin — avant la formation"
+              />
+            )}
+            <ResultsView
+              questions={questions}
+              attempt={postAttempt}
+              score={postAttempt.score ?? 0}
+              maxScore={postAttempt.max_score ?? 0}
+              phase="post"
+              otherAttempt={preAttempt}
+              title="🌇 Quiz de l'après-midi — après la formation"
+            />
+          </>
         )}
         {postAttempt && !canSeeDetail && <DetailLockedUntil18 />}
       </div>
@@ -628,6 +642,7 @@ function ResultsView({
   phase,
   otherAttempt,
   userAnswers,
+  title,
 }: {
   questions: QuizQuestion[];
   attempt: QuizAttempt | null;
@@ -639,6 +654,9 @@ function ResultsView({
     question_id: string;
     answer: string | string[] | boolean | number | null;
   }>;
+  /** Titre affiché à la place de "Merci !/Bravo !" (mode consultation des
+   *  2 quiz : matin / après-midi). Gilles 2026-06-29. */
+  title?: string;
 }) {
   const data = attempt?.data ?? null;
   return (
@@ -646,7 +664,7 @@ function ResultsView({
       <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-5 text-center">
         <CheckCircle2 className="h-12 w-12 text-emerald-600 mx-auto mb-2" />
         <h2 className="text-lg font-bold text-zinc-900">
-          {phase === "pre" ? "Merci !" : "Bravo !"}
+          {title ?? (phase === "pre" ? "Merci !" : "Bravo !")}
         </h2>
         <p className="text-sm text-zinc-600">
           Votre score :{" "}
