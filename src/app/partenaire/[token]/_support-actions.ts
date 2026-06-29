@@ -84,7 +84,9 @@ export async function getLearnerPortalLinkForPartner(
 
   const learnerToken = await ensureEnrollmentPortalToken(admin, enrollmentId);
   const origin = await getAppOrigin();
-  const url = `${origin}/mon-parcours/${learnerToken}`;
+  // Lien direct sur les SUPPORTS (Gilles 2026-06-29) : l'apprenant atterrit
+  // sur la page des documents, pas le tableau de bord.
+  const url = `${origin}/mon-parcours/${learnerToken}/documents`;
   let qrDataUrl = "";
   try {
     qrDataUrl = await QRCode.toDataURL(url, {

@@ -359,13 +359,28 @@ export async function ensureEnrollmentPortalToken(
     .from("enrollment_portal_tokens")
     .select("token")
     .eq("enrollment_id", enrollmentId)
+    .limit(1)
     .maybeSingle<{ token: string }>();
   if (existing?.token) return existing.token;
 
   const token = generateToken();
-  await supabase
+  const { error } = await supabase
     .from("enrollment_portal_tokens")
     .insert({ enrollment_id: enrollmentId, token });
+  if (error) {
+    // Conflit (créé entre-temps) ou autre échec : on RELIT le token persisté
+    // pour ne JAMAIS renvoyer un token absent de la base (lien « invalide »).
+    const { data: retry } = await supabase
+      .from("enrollment_portal_tokens")
+      .select("token")
+      .eq("enrollment_id", enrollmentId)
+      .limit(1)
+      .maybeSingle<{ token: string }>();
+    if (retry?.token) return retry.token;
+    throw new Error(
+      `Token portail non créé pour l'inscription ${enrollmentId} : ${error.message}`,
+    );
+  }
   return token;
 }
 
