@@ -170,7 +170,9 @@ export default async function QuizPlayPage({
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
-      <div className="max-w-2xl mx-auto p-4 md:p-8 space-y-4">
+      {/* max-w-4xl pour permettre l'affichage côte à côte des 2 corrigés
+          (matin / après-midi) en mode lecture. Gilles 2026-06-29. */}
+      <div className="max-w-4xl mx-auto p-4 md:p-8 space-y-4">
         <Link
           href={`/mon-parcours/${token}`}
           className="inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-700"

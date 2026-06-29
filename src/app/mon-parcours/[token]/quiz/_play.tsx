@@ -191,7 +191,7 @@ export function QuizPlay({
             fois la journée de formation passée (Gilles 2026-06-29). Le jour J,
             verrou jusqu'à 18h (anti-triche). */}
         {postAttempt && canSeeDetail && (
-          <>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
             {preAttempt && (
               <ResultsView
                 questions={questions}
@@ -212,7 +212,7 @@ export function QuizPlay({
               otherAttempt={preAttempt}
               title="🌇 Quiz de l'après-midi — après la formation"
             />
-          </>
+          </div>
         )}
         {postAttempt && !canSeeDetail && <DetailLockedUntil18 />}
       </div>
