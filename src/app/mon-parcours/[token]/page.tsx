@@ -76,7 +76,7 @@ export default async function ParcoursApprenantPage({
   const { data: enrollment } = await supabase
     .from("session_enrollments")
     .select(
-      "id, session_id, learner:learners(id, civility, first_name, last_name), session:sessions(id, start_date, end_date, modality, location, video_link, video_app, quiz_template_id, default_morning_start, default_morning_end, default_afternoon_start, default_afternoon_end, trainer:trainers!trainer_id(first_name, last_name, phone, mobile, email), location_ref:formation_locations!location_id(name, address, postal_code, city), formation:formations(title, duration_hours, duration_days, quiz_template_id), organization:organizations(name, logo_url, phone, email, realization_certificate_threshold_percent))",
+      "id, session_id, learner:learners(id, civility, first_name, last_name), session:sessions(id, start_date, end_date, modality, location, video_link, video_app, quiz_template_id, is_subcontracted, subcontracting_company_id, default_morning_start, default_morning_end, default_afternoon_start, default_afternoon_end, trainer:trainers!trainer_id(first_name, last_name, phone, mobile, email), location_ref:formation_locations!location_id(name, address, postal_code, city), formation:formations(title, duration_hours, duration_days, quiz_template_id), organization:organizations(name, logo_url, phone, email, realization_certificate_threshold_percent))",
     )
     .eq("id", tokenRow.enrollment_id)
     .maybeSingle<{
@@ -97,6 +97,8 @@ export default async function ParcoursApprenantPage({
         video_link: string | null;
         video_app: string | null;
         quiz_template_id: string | null;
+        is_subcontracted: boolean | null;
+        subcontracting_company_id: string | null;
         default_morning_start: string | null;
         default_morning_end: string | null;
         default_afternoon_start: string | null;
@@ -378,11 +380,14 @@ export default async function ParcoursApprenantPage({
     .join(", ");
 
   const orgPhone = session.organization?.phone ?? null;
-  const trainer = session.trainer;
-  const trainerName = trainer
-    ? [trainer.first_name, trainer.last_name].filter(Boolean).join(" ")
-    : null;
-  const trainerPhone = trainer?.mobile ?? trainer?.phone ?? null;
+  // Contexte OF (sous-traitance OU inscription via un OF partenaire) : on
+  // masque la zone « En cas de problème » côté apprenant (Gilles 2026-06-29)
+  // — le contact de l'apprenant est l'OF, pas CAP. Le formateur n'est JAMAIS
+  // affiché sur l'espace apprenant, quel que soit le cas.
+  const isOfContext =
+    isViaPartnerOf ||
+    session.is_subcontracted === true ||
+    session.subcontracting_company_id != null;
 
   // === URLs d'ajout au calendrier (Gilles 2026-05-22) ===
   // 3 voies au choix : Google Calendar, Outlook, .ics (universel).
@@ -558,36 +563,24 @@ export default async function ParcoursApprenantPage({
                 </div>
               )
             )}
-            {/* Contact en cas de problème */}
-            {(orgPhone || trainerPhone) && (
+            {/* Contact en cas de problème — formateur JAMAIS affiché ; zone
+                entière masquée en contexte OF (contact = l'OF). Gilles 2026-06-29. */}
+            {!isOfContext && orgPhone && (
               <div className="flex items-start gap-2 pt-1 border-t border-zinc-100">
                 <Phone className="h-4 w-4 text-cyan-600 mt-0.5 shrink-0" />
                 <div className="text-xs">
                   <span className="font-bold text-zinc-900">
                     En cas de problème :
                   </span>
-                  {orgPhone && (
-                    <div className="text-zinc-700 mt-0.5">
-                      {orgName} —{" "}
-                      <a
-                        href={`tel:${orgPhone.replace(/\s/g, "")}`}
-                        className="font-mono font-semibold text-cyan-700 hover:underline"
-                      >
-                        {orgPhone}
-                      </a>
-                    </div>
-                  )}
-                  {trainerPhone && trainerName && (
-                    <div className="text-zinc-700 mt-0.5">
-                      Formateur {trainerName} —{" "}
-                      <a
-                        href={`tel:${trainerPhone.replace(/\s/g, "")}`}
-                        className="font-mono font-semibold text-cyan-700 hover:underline"
-                      >
-                        {trainerPhone}
-                      </a>
-                    </div>
-                  )}
+                  <div className="text-zinc-700 mt-0.5">
+                    {orgName} —{" "}
+                    <a
+                      href={`tel:${orgPhone.replace(/\s/g, "")}`}
+                      className="font-mono font-semibold text-cyan-700 hover:underline"
+                    >
+                      {orgPhone}
+                    </a>
+                  </div>
                 </div>
               </div>
             )}

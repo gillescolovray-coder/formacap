@@ -8,7 +8,6 @@ import {
   Clock,
   Globe,
   MapPin,
-  User,
 } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveLearnerContext } from "../_resolve";
@@ -410,12 +409,7 @@ function SessionGroup({
                   <span>{s.videoApp}</span>
                 </div>
               )}
-              {s.trainerName && (
-                <div className="flex items-center gap-1.5 text-zinc-600">
-                  <User className="h-3.5 w-3.5 text-zinc-400 shrink-0" />
-                  Formateur : <span className="font-semibold">{s.trainerName}</span>
-                </div>
-              )}
+              {/* Formateur NON affiché sur l'espace apprenant (Gilles 2026-06-29). */}
             </dl>
 
             <div className="mt-auto pt-3 border-t border-zinc-100 flex flex-col sm:flex-row sm:items-center sm:justify-end gap-2">

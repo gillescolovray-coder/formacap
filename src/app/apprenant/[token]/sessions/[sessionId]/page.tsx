@@ -15,7 +15,6 @@ import {
   Hash,
   Lock,
   MapPin,
-  User,
 } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveLearnerContext } from "../../_resolve";
@@ -131,9 +130,8 @@ export default async function LearnerSessionDetailPage({
   const formation = Array.isArray(sess.formation)
     ? sess.formation[0] ?? null
     : sess.formation;
-  const trainer = Array.isArray(sess.trainer)
-    ? sess.trainer[0] ?? null
-    : sess.trainer;
+  // Formateur volontairement NON exposé sur l'espace apprenant (Gilles 2026-06-29).
+
   const locObj = Array.isArray(sess.location_obj)
     ? sess.location_obj[0] ?? null
     : sess.location_obj;
@@ -352,13 +350,7 @@ export default async function LearnerSessionDetailPage({
           </InfoCard>
         )}
 
-        {trainer && (
-          <InfoCard icon={User} label="Formateur" color="amber">
-            <div className="font-bold text-zinc-900">
-              {trainer.first_name} {trainer.last_name}
-            </div>
-          </InfoCard>
-        )}
+        {/* Formateur NON affiché sur l'espace apprenant (Gilles 2026-06-29). */}
 
         {(sess.modality === "presentiel" || sess.modality === "hybride") &&
           (locObj || sess.location) && (
