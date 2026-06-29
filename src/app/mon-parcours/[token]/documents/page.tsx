@@ -41,14 +41,13 @@ export default async function PortailDocumentsPage({
   const { data: portalRow } = await supabase
     .from("enrollment_portal_tokens")
     .select(
-      "enrollment:session_enrollments(id, session_id, quiz_template_id, session:sessions(support_drive_url, is_subcontracted, subcontracting_company_id, quiz_template_id, formation:formations(title, programme_pdf_url, programme_pdf_name, support_drive_url, quiz_template_id), organization:organizations(name, logo_url)))",
+      "enrollment:session_enrollments(id, session_id, session:sessions(support_drive_url, is_subcontracted, subcontracting_company_id, quiz_template_id, formation:formations(title, programme_pdf_url, programme_pdf_name, support_drive_url, quiz_template_id), organization:organizations(name, logo_url)))",
     )
     .eq("token", token)
     .maybeSingle<{
       enrollment: {
         id: string;
         session_id: string;
-        quiz_template_id: string | null;
         session: {
           support_drive_url: string | null;
           is_subcontracted: boolean | null;
