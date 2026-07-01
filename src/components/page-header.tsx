@@ -27,7 +27,12 @@ export function PageHeader({
           passage en colonne, et décalage à gauche (pl-16) pour ne pas passer
           sous le bouton « hamburger » flottant (lg:hidden) de la coquille.
           La purge pl-16 s'applique jusqu'à lg (le burger est visible < lg). */}
-      <div className="px-4 py-4 sm:px-10 sm:py-8 pl-16 lg:pl-10 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 sm:gap-6">
+      {/* Passage en LIGNE (titre | actions) seulement à partir de lg (1024px)
+          — même seuil que le menu drawer. En dessous (téléphones, PLIABLES
+          ~780px, tablettes), on EMPILE : titre pleine largeur puis actions
+          dessous. Évite que les boutons d'action (shrink-0) écrasent le titre
+          jusqu'à le rendre vertical sur écran large < lg (Gilles 2026-07-01). */}
+      <div className="px-4 py-4 lg:px-10 lg:py-8 pl-16 lg:pl-10 flex flex-col lg:flex-row lg:items-end lg:justify-between gap-3 lg:gap-6">
         <div className="min-w-0 flex-1">
           {breadcrumbs && breadcrumbs.length > 0 && (
             <nav
@@ -78,7 +83,7 @@ export function PageHeader({
           )}
         </div>
         {actions && (
-          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto sm:shrink-0">
+          <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto lg:shrink-0">
             {actions}
           </div>
         )}
